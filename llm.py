@@ -8,23 +8,9 @@ import requests
 import json
 import os
 
+from tool_map import tool_catologue
 
-tools = []
-say_bob = {
-    "type": "function",
-    "function": {
-        "name": "say_bob",
-        "description": "if u want to say bob a certain amtn of times",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "times": {"type": "integer"}
-            },
-            "required": ["times"]
-        }
-    }
-}
-tools.append(say_bob)
+
 
 def invoke_llm(msg_history: list[dict]):
     ## Make post to OpenRouter
@@ -38,7 +24,7 @@ def invoke_llm(msg_history: list[dict]):
     data=json.dumps({
         "model": "moonshotai/kimi-k3",
         "stream": True,
-        "tools": tools,
+        "tools": tool_catologue,
         "messages": msg_history,
         "reasoning": {"enabled": False}
     }),
@@ -72,6 +58,5 @@ def invoke_llm(msg_history: list[dict]):
                     }
                 tool_calls[i]["function"]["arguments"] += call["function"].get("arguments", "")
     
-    block = {"role": "assistant", "content": rspns}
-    print(tool_calls)
-    return (block)
+    response_block = {"role": "assistant", "content": rspns}
+    return (response_block, tool_calls)
