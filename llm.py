@@ -34,6 +34,7 @@ def invoke_llm(msg_history: list[dict]):
     ## Stream response, return response block
     rspns = ""
     tool_calls = {}
+    print("Assistant: ", end="")
     for line in response.iter_lines():
         line = line.decode("utf-8")
         if line.startswith("data: "):
@@ -59,4 +60,6 @@ def invoke_llm(msg_history: list[dict]):
                 tool_calls[i]["function"]["arguments"] += call["function"].get("arguments", "")
     
     response_block = {"role": "assistant", "content": rspns}
+    if tool_calls:
+        response_block["tool_calls"] = list(tool_calls.values())
     return (response_block, tool_calls)

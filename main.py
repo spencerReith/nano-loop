@@ -27,20 +27,18 @@ def process(cleaned_tool_call):
     func = tool_map[cleaned_tool_call["name"]]["function"]
     res = func(cleaned_tool_call["arguments"])
     tool_response_block = {"role": "tool", "tool_call_id": cleaned_tool_call["id"], "content": res}
-    print(tool_response_block)
+    return tool_response_block
 
 
 
-def chat_loop():
-    user_msg = input("\nUser: ")
-    msg_history.append({"role": "user", "content": user_msg})
+def chat_loop(ask_input):
+    if ask_input:
+        user_msg = input("\nUser: ")
+        msg_history.append({"role": "user", "content": user_msg})
 
     response_block, tool_calls = invoke_llm(msg_history)
 
     msg_history.append(response_block)
-    if tool_calls: msg_history.append({"role": "assistant", "tool_calls": tool_calls.values()})
-
-    print(f"\n##############################\nMSG HISTORY:\n##############################\n{msg_history}\n##############################\n")
 
     if tool_calls:
         print('\n### processing tool call \n')
@@ -51,10 +49,13 @@ def chat_loop():
                 "name": tool_calls[idx]['function']['name'],
                 "arguments": ast.literal_eval(tool_calls[idx]['function']['arguments'])
             }
-            # print(cleaned_tool_call)
-            process(cleaned_tool_call)
+            tool_response_block = process(cleaned_tool_call)
+            msg_history.append(tool_response_block)
+            chat_loop(False)
+            
 
-    msg_history.append(response_block)
-    chat_loop()
+    
+    print(f"\n##############################\nMSG HISTORY:\n##############################\n{msg_history}\n##############################\n")
+    chat_loop(True)
 
-chat_loop()
+chat_loop(True)
