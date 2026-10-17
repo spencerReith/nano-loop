@@ -7,7 +7,6 @@ core query loop
 import ast
 from llm import invoke_llm 
 from dotenv import load_dotenv 
-from tool_map import tool_map
 
 
 load_dotenv()
@@ -40,29 +39,33 @@ msg_history.append({"role": "system", "content": system_prompt})
 ##############################################################################
 
 
+class NanoLoop:
+    def __init__(self, HEADLESS):
+        self.HEADLESS = HEADLESS
+        self.tool_catologue = [get_weather_header, get_population_header]
 
-def nano_loop():
-    LOOPING = True
-    ASK_INPUT = True
-    while LOOPING:
-        if ASK_INPUT:
-            user_msg = input("\nUser: ")
-            msg_history.append({"role": "user", "content": user_msg})
-        response_block, tool_calls = invoke_llm(msg_history)
-        msg_history.append(response_block)
-
-        if tool_calls:
-            for idx in tool_calls.keys():
-                cleaned_tool_call = {
-                    "id": tool_calls[idx]['id'],
-                    "name": tool_calls[idx]['function']['name'],
-                    "arguments": ast.literal_eval(tool_calls[idx]['function']['arguments'])
-                }
-                tool_response_block = use_tool(cleaned_tool_call)
-                msg_history.append(tool_response_block)
-            ASK_INPUT = False
-            continue
-
+    def start(self):
+        LOOPING = True
         ASK_INPUT = True
+        while LOOPING:
+            if ASK_INPUT:
+                user_msg = input("\nUser: ")
+                msg_history.append({"role": "user", "content": user_msg})
+            response_block, tool_calls = invoke_llm(msg_history, self.tool_catologue, self.HEADLESS)
+            msg_history.append(response_block)
+
+            if tool_calls:
+                for idx in tool_calls.keys():
+                    cleaned_tool_call = {
+                        "id": tool_calls[idx]['id'],
+                        "name": tool_calls[idx]['function']['name'],
+                        "arguments": ast.literal_eval(tool_calls[idx]['function']['arguments'])
+                    }
+                    tool_response_block = use_tool(cleaned_tool_call)
+                    msg_history.append(tool_response_block)
+                ASK_INPUT = False
+                continue
+
+            ASK_INPUT = True
 
 nano_loop()

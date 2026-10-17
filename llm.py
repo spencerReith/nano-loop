@@ -8,26 +8,28 @@ import requests
 import json
 import os
 
-from tool_map import tool_catologue
 
-
-
-def invoke_llm(msg_history: list[dict]):
+def invoke_llm(msg_history: list[dict], tool_catologue, HEADLESS):
     ## Make post to OpenRouter
     token = os.getenv("KEY")
+    data = {
+        "model": "moonshotai/kimi-k3",
+        "stream": True,
+        "tools": tool_catologue,
+        "messages": msg_history,
+        "reasoning": {"enabled": False}
+    }
+    if HEADLESS:
+        data["tool_choice"] = "required"
+        data["provider"] = {"require_parameters": True}
+
     response = requests.post(
     url="https://openrouter.ai/api/v1/chat/completions",
     headers={
         "Authorization": f"Bearer, {token}",
         "Content-Type": "application/json",
     },
-    data=json.dumps({
-        "model": "moonshotai/kimi-k3",
-        "stream": True,
-        "tools": tool_catologue,
-        "messages": msg_history,
-        "reasoning": {"enabled": False}
-    }),
+    data = json.dumps(data),
     stream=True
     )
 
