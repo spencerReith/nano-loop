@@ -58,9 +58,6 @@ class NanoLoop:
                 self.msg_history.append({"role": "user", "content": user_msg})
             response_block, tool_calls = self.model_invoker.invoke(self.msg_history, self.tool_catologue)
             self.msg_history.append(response_block)
-
-            print(self.msg_history)
-
             if tool_calls:
                 for idx in tool_calls.keys():
                     cleaned_tool_call = {
