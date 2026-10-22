@@ -19,5 +19,5 @@ get_population_header = {
         }
     }
 }
-def get_population(arguments):
+def get_population(location):
    return "population is 5"

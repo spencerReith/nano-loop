@@ -18,5 +18,5 @@ get_weather_header = {
         }
     }
 }
-def get_weather(arguments):
+def get_weather(location):
     return "it is sunny"

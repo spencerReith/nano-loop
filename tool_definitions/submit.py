@@ -19,6 +19,6 @@ submit_header = {
         }
     }
 }
-def submit(arguments):
+def submit(answer):
    print("submiting")
-   return arguments
+   return answer

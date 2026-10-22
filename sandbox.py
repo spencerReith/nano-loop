@@ -1,9 +1,10 @@
 import subprocess
+import uuid
 
 
 class Sandbox:
-    def __init__(self, name):
-        self.name = name
+    def __init__(self):
+        self.name = f"sandbox-{uuid.uuid4().hex}"
         subprocess.run(["docker", "run", "-d", "--name", self.name, "-w", "/work", "python:3.13-slim", "sleep", "infinity"], check=True)
 
     def kill(self):
