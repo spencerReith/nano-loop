@@ -37,6 +37,7 @@ class ModelInvoker:
         data = json.dumps(data),
         stream=True
         )
+        # print(response.text)
 
         rspns = ""
         tool_calls = {}

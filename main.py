@@ -23,6 +23,7 @@ from llm import ModelInvoker
 from sandbox import Sandbox
 
 
+
 class ToolProcessor:
     def __init__(self, sandbox):
         self.tool_map = {
@@ -46,7 +47,7 @@ class NanoLoop:
     def __init__(self, HEADLESS, prompt=""):
         self.HEADLESS = HEADLESS
         
-        self.msg_history = [{"role": "system", "content": "You answer everything extremely clearly and concisely"}]
+        self.msg_history = [{"role": "system", "content": "Write your solution to a .py file with write_file, run it with run_python to test against the examples, then call submit with the code."}]
         if self.HEADLESS: self.msg_history.append({"role": "user", "content": prompt})
         
         self.tool_catologue = [get_weather_header, get_population_header, write_file_header, read_file_header, run_python_header]
@@ -54,7 +55,8 @@ class NanoLoop:
         
         self.sandbox = Sandbox()
         self.tool_processor = ToolProcessor(self.sandbox)
-        self.model_invoker = ModelInvoker("moonshotai/kimi-k3", HEADLESS)
+        # self.model_invoker = ModelInvoker("moonshotai/kimi-k3", HEADLESS)
+        self.model_invoker = ModelInvoker("ibm-granite/granite-4.2-8b", HEADLESS)
 
     def start(self):
         LOOPING = True
@@ -86,5 +88,11 @@ class NanoLoop:
 # myLoop = NanoLoop(True, "what is gaurdians of the galaxy. also whats the weather in philly. also whats the poplaton in tianemen sauare.s. also pls write it to a file using ur tool.")
 # print(myLoop.start())
 
-myLoop2 = NanoLoop(False)
-myLoop2.start()
+
+
+PALINDROMIC_OPS = open("problems/palindromic_ops.md").read()
+SHADOW_PAIRS = open("problems/shadow_pairs.md").read()
+ALTERNATING_SUM_DELETION = open("problems/alternating_sum_deletion.md").read()
+
+myLoop2 = NanoLoop(True, PALINDROMIC_OPS)
+print(myLoop2.start())
