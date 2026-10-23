@@ -9,18 +9,36 @@ import json
 import pathlib
 import re
 import subprocess
+import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from sandbox import Sandbox
 from main import NanoLoop
 from control.main import Control
 
-MODEL = "ibm-granite/granite-4.2-8b"
+DEFAULT_MODELS = ["ibm-granite/granite-4.2-8b"]
 AGENTS = {
-    "nanoloop": lambda prompt: NanoLoop(MODEL, True, prompt),
-    "control": lambda prompt: Control(MODEL, prompt),
+    "nanoloop": lambda model, prompt: NanoLoop(model, True, prompt),
+    "control": lambda model, prompt: Control(model, prompt),
 }
 TIMEOUT_BUFFER = 5  # seconds on top of the problem's limit before docker kills a hung process
+MAX_WORKERS = 16  # agent jobs running at once. grading is always one at a time, after all agents finish
+LOG_TO_FILES = True  # each job's prints go to logs/<run>/<model>/<problem>_<agent>.log instead of the terminal
+
+
+class ThreadRouter:
+    """stand-in for sys.stdout: writes from a thread with a log file set go there, everything else to the terminal"""
+    def __init__(self, default):
+        self.default = default
+        self.local = threading.local()
+
+    def write(self, s):
+        return (getattr(self.local, "file", None) or self.default).write(s)
+
+    def flush(self):
+        (getattr(self.local, "file", None) or self.default).flush()
 
 # runs inside the sandbox. timer starts after import so container/import overhead doesn't count
 GRADER = '''
@@ -91,42 +109,82 @@ def grade(problem, code):
         sandbox.kill()
 
 
-def run_agent(make_agent, problem):
-    agent = make_agent(problem["prompt"])
+def run_agent(make_agent, model, problem, log_path=None):
+    """runs one agent on one problem. returns (error result or None, final text)"""
+    log = open(log_path, "w") if log_path else None
+    if log:
+        sys.stdout.local.file = log
+    agent = None
     try:
-        text = agent.start()
+        agent = make_agent(model, problem["prompt"])
+        return None, agent.start()
     except Exception as e:  # agent crashed (e.g. bad tool call); don't kill the whole run
         return {"status": "AGENT_ERROR", "error": repr(e)}, None
     finally:
         if hasattr(agent, "sandbox"):
             agent.sandbox.kill()
-    code = extract_code(text)
-    if code is None:
-        return {"status": "NO_CODE"}, text
-    return grade(problem, code), code
+        if log:
+            sys.stdout.local.file = None
+            log.close()
 
 
-def main():
+def main(models=None):
+    models = models or sys.argv[1:] or DEFAULT_MODELS
     problems = load_problems()
-    out = pathlib.Path("results") / f"{time.strftime('%Y%m%d-%H%M%S')}.json"
+    run_id = time.strftime("%Y%m%d-%H%M%S")
+    out = pathlib.Path("results") / f"{run_id}.json"
     out.parent.mkdir(exist_ok=True)
-    results = {}
-    for name, problem in problems.items():
-        results[name] = {}
-        for agent_name, make_agent in AGENTS.items():
-            print(f"\n=== {name} / {agent_name} ===")
-            result, output = run_agent(make_agent, problem)
-            result["output"] = output
-            results[name][agent_name] = result
-            print(f"\n-> {result['status']}")
-            out.write_text(json.dumps({"model": MODEL, "results": results}, indent=2))  # save as we go
+    results = {m: {name: {} for name in problems} for m in models}
+    lock = threading.Lock()
 
-    width = max(map(len, results))
-    print("\n" + "problem".ljust(width) + "".join(a.rjust(12) for a in AGENTS))
-    for name, row in results.items():
-        print(name.ljust(width) + "".join(row[a]["status"].rjust(12) for a in AGENTS))
-    print("passed".ljust(width) + "".join(
-        f"{sum(row[a]['status'] == 'PASS' for row in results.values())}/{len(results)}".rjust(12) for a in AGENTS))
+    def save():
+        with lock:
+            out.write_text(json.dumps({"models": models, "results": results}, indent=2))
+
+    if LOG_TO_FILES and not isinstance(sys.stdout, ThreadRouter):
+        sys.stdout = ThreadRouter(sys.stdout)
+
+    def job(model, name, agent_name):
+        log_path = None
+        if LOG_TO_FILES:
+            log_dir = pathlib.Path("logs") / run_id / model.replace("/", "__")
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_path = log_dir / f"{name}_{agent_name}.log"
+        return run_agent(AGENTS[agent_name], model, problems[name], log_path)
+
+    # phase 1: all agents on all problems, in parallel
+    jobs = [(m, name, a) for m in models for name in problems for a in AGENTS]
+    print(f"running {len(jobs)} agent jobs ({len(models)} models x {len(problems)} problems x {len(AGENTS)} agents), {MAX_WORKERS} at a time")
+    with ThreadPoolExecutor(MAX_WORKERS) as pool:
+        futures = {pool.submit(job, *j): j for j in jobs}
+        for done, f in enumerate(as_completed(futures), 1):
+            m, name, a = futures[f]
+            error, text = f.result()
+            with lock:
+                results[m][name][a] = dict(error or {"status": "UNGRADED"}, output=text)
+            save()
+            print(f"[{done}/{len(jobs)}] {m} / {name} / {a}: {(error or {}).get('status', 'done')}")
+
+    # phase 2: grade one at a time so solutions don't compete for CPU
+    print("grading...")
+    for m in models:
+        for name, problem in problems.items():
+            for a in AGENTS:
+                r = results[m][name][a]
+                if r["status"] != "UNGRADED":
+                    continue
+                code = extract_code(r["output"])
+                if code is None:
+                    r.update(status="NO_CODE")
+                else:
+                    r.update(grade(problem, code), output=code)
+                save()
+
+    width = max(map(len, models))
+    print("\n" + "model".ljust(width) + "".join(a.rjust(12) for a in AGENTS))
+    for m in models:
+        print(m.ljust(width) + "".join(
+            f"{sum(row[a]['status'] == 'PASS' for row in results[m].values())}/{len(problems)}".rjust(12) for a in AGENTS))
 
     print(f"\nsaved {out}")
 
