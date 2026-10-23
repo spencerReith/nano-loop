@@ -48,7 +48,7 @@ class ToolProcessor:
 
 
 class NanoLoop:
-    def __init__(self, HEADLESS, prompt=""):
+    def __init__(self, model, HEADLESS, prompt=""):
         self.HEADLESS = HEADLESS
         
         self.msg_history = [{"role": "system", "content": SOLVER_PROMPT}]
@@ -60,7 +60,7 @@ class NanoLoop:
         self.sandbox = Sandbox()
         self.tool_processor = ToolProcessor(self.sandbox)
         # self.model_invoker = ModelInvoker("moonshotai/kimi-k3", HEADLESS)
-        self.model_invoker = ModelInvoker("ibm-granite/granite-4.2-8b")
+        self.model_invoker = ModelInvoker(model)
 
     def start(self):
         LOOPING = True
@@ -108,5 +108,5 @@ TRANSFORM_ARRAY_USING_PAIR_OPERATIONS = open("problems/transform_array_using_pai
 COUNT_GOOD_CYCLIC_ROTATIONS = open("problems/count_good_cyclic_rotations.md").read()
 K_TH_DIGIT_IN_INFINITE_STRING = open("problems/k_th_digit_in_infinite_string.md").read()
 
-myLoop2 = NanoLoop(True, K_TH_DIGIT_IN_INFINITE_STRING)
+myLoop2 = NanoLoop("ibm-granite/granite-4.2-8b", True, K_TH_DIGIT_IN_INFINITE_STRING)
 print(myLoop2.start())
