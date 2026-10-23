@@ -11,7 +11,7 @@ load_dotenv()
 
 class Control:
     def __init__(self, model):
-        self.model_invoker = ModelInvoker(model, False)
+        self.model_invoker = ModelInvoker(model)
 
     def start(self, prompt):
         res = self.model_invoker.invoke([{"role": "system", "content": "You will be posed a coding question. Return the answer and only the answer in python."}, {"role": "user", "content": prompt}], [])
@@ -36,4 +36,4 @@ K_TH_DIGIT_IN_INFINITE_STRING = open("problems/k_th_digit_in_infinite_string.md"
 
 # control = Control("moonshotai/kimi-k3")
 control = Control("ibm-granite/granite-4.2-8b")
-control.start(MAXIMUM_PRODUCT_PAIR_WITH_TARGET_SUM)
+control.start(K_TH_DIGIT_IN_INFINITE_STRING)
