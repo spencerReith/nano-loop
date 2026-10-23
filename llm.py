@@ -11,9 +11,9 @@ import os
 
 
 class ModelInvoker:
-    def __init__(self, model, REQUIRE_TOOLS):
+    def __init__(self, model):
         self.model = model
-        self.REQUIRE_TOOLS = REQUIRE_TOOLS
+
 
     def invoke(self, msg_history, tool_catologue):
         token = os.getenv("KEY")
@@ -24,9 +24,9 @@ class ModelInvoker:
             "messages": msg_history,
             "reasoning": {"enabled": False}
         }
-        if self.REQUIRE_TOOLS:
-            data["tool_choice"] = "required"
-            data["provider"] = {"require_parameters": True}
+        # if self.REQUIRE_TOOLS:
+        #     data["tool_choice"] = "required"
+        #     data["provider"] = {"require_parameters": True}
 
         response = requests.post(
         url="https://openrouter.ai/api/v1/chat/completions",

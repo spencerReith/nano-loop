@@ -55,12 +55,12 @@ class NanoLoop:
         if self.HEADLESS: self.msg_history.append({"role": "user", "content": prompt})
         
         self.tool_catologue = [write_file_header, read_file_header, run_python_header]
-        if self.HEADLESS: self.tool_catologue.append(submit_header)
+        # if self.HEADLESS: self.tool_catologue.append(submit_header)
         
         self.sandbox = Sandbox()
         self.tool_processor = ToolProcessor(self.sandbox)
         # self.model_invoker = ModelInvoker("moonshotai/kimi-k3", HEADLESS)
-        self.model_invoker = ModelInvoker("ibm-granite/granite-4.2-8b", HEADLESS)
+        self.model_invoker = ModelInvoker("ibm-granite/granite-4.2-8b")
 
     def start(self):
         LOOPING = True
@@ -81,12 +81,12 @@ class NanoLoop:
                         "arguments": ast.literal_eval(tool_calls[idx]['function']['arguments'])
                     }
                     tool_response_block = self.tool_processor.use_tool(cleaned_tool_call)
-                    if cleaned_tool_call["name"] == "submit":
-                        return tool_response_block
                     self.msg_history.append(tool_response_block)
                 ASK_INPUT = False
                 continue
 
+            if self.HEADLESS:
+                return response_block
             ASK_INPUT = True
 
 # myLoop = NanoLoop(True, "what is gaurdians of the galaxy. also whats the weather in philly. also whats the poplaton in tianemen sauare.s. also pls write it to a file using ur tool.")
@@ -108,5 +108,5 @@ TRANSFORM_ARRAY_USING_PAIR_OPERATIONS = open("problems/transform_array_using_pai
 COUNT_GOOD_CYCLIC_ROTATIONS = open("problems/count_good_cyclic_rotations.md").read()
 K_TH_DIGIT_IN_INFINITE_STRING = open("problems/k_th_digit_in_infinite_string.md").read()
 
-myLoop2 = NanoLoop(True, MAXIMUM_PRODUCT_PAIR_WITH_TARGET_SUM)
+myLoop2 = NanoLoop(True, K_TH_DIGIT_IN_INFINITE_STRING)
 print(myLoop2.start())
