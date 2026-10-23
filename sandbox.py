@@ -21,5 +21,7 @@ class Sandbox:
         else: return f"stderr:\n{r.stderr}"
 
     def run_python(self, path):
-        r = subprocess.run(["docker", "exec", self.name, "python", path], capture_output=True, text=True)
+        r = subprocess.run(["docker", "exec", self.name, "timeout", "10", "python", path], capture_output=True, text=True)
+        if r.returncode == 124:
+            return f"timed out after 10s. stdout + stderr so far: {r.stdout + r.stderr}"
         return f"stdout + stderr: {r.stdout + r.stderr}"

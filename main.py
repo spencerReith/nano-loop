@@ -22,6 +22,8 @@ from tool_definitions.submit import submit, submit_header
 from llm import ModelInvoker
 from sandbox import Sandbox
 
+SOLVER_PROMPT = open("system_prompts/solver.md").read()
+
 
 
 class ToolProcessor:
@@ -37,7 +39,9 @@ class ToolProcessor:
     
     def use_tool(self, cleaned_tool_call):
         func = self.tool_map[cleaned_tool_call["name"]]["function"]
+        print(f"[{cleaned_tool_call['name']}] args: {str(cleaned_tool_call['arguments'])[:300]}")
         res = func(**cleaned_tool_call["arguments"])
+        print(f"[{cleaned_tool_call['name']}] result: {str(res)[:500]}")
         tool_response_block = {"role": "tool", "tool_call_id": cleaned_tool_call["id"], "content": f"{res}"}
         return tool_response_block
 
@@ -47,7 +51,7 @@ class NanoLoop:
     def __init__(self, HEADLESS, prompt=""):
         self.HEADLESS = HEADLESS
         
-        self.msg_history = [{"role": "system", "content": "Write your solution to a .py file with write_file, run it with run_python to test against the examples, then call submit with the code."}]
+        self.msg_history = [{"role": "system", "content": SOLVER_PROMPT}]
         if self.HEADLESS: self.msg_history.append({"role": "user", "content": prompt})
         
         self.tool_catologue = [get_weather_header, get_population_header, write_file_header, read_file_header, run_python_header]
@@ -94,5 +98,5 @@ PALINDROMIC_OPS = open("problems/palindromic_ops.md").read()
 SHADOW_PAIRS = open("problems/shadow_pairs.md").read()
 ALTERNATING_SUM_DELETION = open("problems/alternating_sum_deletion.md").read()
 
-myLoop2 = NanoLoop(True, PALINDROMIC_OPS)
+myLoop2 = NanoLoop(True, ALTERNATING_SUM_DELETION)
 print(myLoop2.start())
