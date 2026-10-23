@@ -22,14 +22,15 @@ def sharp_brute(nums):
                 return d
 
 def max_product_pair(nums, target):
-    # returns best product or None; multiple index answers are valid so check by product
-    best = None
+    # ties -> smallest i, then smallest j (loop order + strict >)
+    best, ans = None, [-1, -1]
     for i in range(len(nums)):
         for j in range(len(nums)):
             if i != j and nums[i] + nums[j] == target and nums[i] > nums[j]:
                 p = nums[i] * nums[j]
-                best = p if best is None else max(best, p)
-    return best
+                if best is None or p > best:
+                    best, ans = p, [i, j]
+    return ans
 
 def rearrange(nums):
     c, ans = Counter(nums), []
@@ -177,13 +178,11 @@ c = [[1, 1, 2, 2, 2, 3], [4, 4, 9, 4], [1, 1], [1, 2], [5] * 100, list(range(1, 
 c += [rnd(random.randint(2, 100), 1, random.choice([2, 3, 100])) for _ in range(40)]
 dump("minimum_deletions_to_make_array_sharp", [{"input": {"nums": a}, "expected": sharp(a)} for a in c])
 
-# max product pair. expected_product = None means answer must be [-1,-1]
+# max product pair
 c = [([1, 2, 3, 4], 5), ([-3, -1, 4, 2], 1), ([3, 3, 5], 6), ([0, 0], 0), ([-100, 100], 0), ([50, 50, 50], 100)]
 c += [(rnd(random.randint(2, 100), -100, 100), random.randint(-100, 100)) for _ in range(40)]
 c += [(rnd(random.randint(2, 20), -5, 5), random.randint(-5, 5)) for _ in range(20)]
-dump("maximum_product_pair_with_target_sum",
-     [{"input": {"nums": a, "target": t}, "expected_product": max_product_pair(a, t),
-       "note": "any [i,j] valid w/ max product ok; [-1,-1] if expected_product is null"} for a, t in c])
+dump("maximum_product_pair_with_target_sum", [{"input": {"nums": a, "target": t}, "expected": max_product_pair(a, t)} for a, t in c])
 
 # rearrange
 c = [[3, 1, 3, 2, 1, 3], [7, 7, 4, 4, 4], [1], [100] * 100, list(range(100, 0, -1))]

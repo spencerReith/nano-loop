@@ -51,3 +51,10 @@ Return the **maximum** possible number of pairs of adjacent elements that are eq
 
 - `2 <= nums.length <= 10^5`
 - `1 <= nums[i] <= 10^9`
+
+**Time limit:** 2s
+
+```python
+class Solution:
+    def maxEqualPairs(self, nums: list[int]) -> int:
+```

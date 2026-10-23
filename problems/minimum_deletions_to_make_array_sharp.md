@@ -36,3 +36,10 @@ Return the **minimum** number of deletions needed to make `nums` sharp.
 
 - `2 <= nums.length <= 100`
 - `1 <= nums[i] <= 100`
+
+**Time limit:** 2s
+
+```python
+class Solution:
+    def minDeletions(self, nums: list[int]) -> int:
+```

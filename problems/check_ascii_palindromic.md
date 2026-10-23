@@ -35,3 +35,10 @@ Return `true` if the resulting binary string is a **palindrome**. Otherwise, ret
 
 - `1 <= s.length <= 100`
 - `s` consists of lowercase English letters.
+
+**Time limit:** 2s
+
+```python
+class Solution:
+    def isAsciiPalindromic(self, s: str) -> bool:
+```

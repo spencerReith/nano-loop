@@ -45,3 +45,10 @@ Return the array `ans`.
 
 - `1 <= nums.length <= 100`
 - `1 <= nums[i] <= 100`
+
+**Time limit:** 2s
+
+```python
+class Solution:
+    def rearrangeArray(self, nums: list[int]) -> list[int]:
+```

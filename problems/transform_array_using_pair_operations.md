@@ -59,3 +59,10 @@ It can be shown that no matter what operations are performed, `source` can never
 
 - `2 <= source.length == target.length <= 10^5`
 - `-10^9 <= source[i], target[i] <= 10^9`
+
+**Time limit:** 2s
+
+```python
+class Solution:
+    def canTransform(self, source: list[int], target: list[int]) -> bool:
+```

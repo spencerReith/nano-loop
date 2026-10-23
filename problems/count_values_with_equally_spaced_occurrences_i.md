@@ -47,3 +47,10 @@ Therefore, the answer is 2.
 
 - `3 <= nums.length <= 100`
 - `1 <= nums[i] <= 100`
+
+**Time limit:** 2s
+
+```python
+class Solution:
+    def countEquallySpaced(self, nums: list[int]) -> int:
+```

@@ -9,7 +9,7 @@ A pair of **distinct** indices `(i, j)` is **valid** if:
 
 Return a **valid** pair `[i, j]` whose **product** `nums[i] * nums[j]` is **maximum** among all valid pairs. If no valid pair exists, return `[-1, -1]`.
 
-If multiple valid pairs achieve the **maximum** product, you may return **any** of them.
+If multiple valid pairs achieve the **maximum** product, return the one with the **smallest** `i`, and among those the **smallest** `j`.
 
 **Example 1:**
 
@@ -59,3 +59,10 @@ Since `-2 > -12`, the pair at indices `(3, 1)` is chosen and the answer is `[3, 
 
 - `2 <= nums.length <= 100`
 - `-100 <= nums[i], target <= 100`​​​​​​​
+
+**Time limit:** 2s
+
+```python
+class Solution:
+    def maxProductPair(self, nums: list[int], target: int) -> list[int]:
+```

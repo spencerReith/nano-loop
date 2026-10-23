@@ -46,3 +46,10 @@ Return an integer array `[r, c]` representing the **row and column indices** of 
 - `1 <= n == grid[i].length <= 10^5`
 - `m * n <= 10^5`
 - `grid[i][j]` is one of `'L'`, `'R'`, `'U'`, or `'D'`.
+
+**Time limit:** 2s
+
+```python
+class Solution:
+    def lastVisitedCell(self, grid: list[list[str]]) -> list[int]:
+```

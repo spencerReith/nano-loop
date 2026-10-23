@@ -46,3 +46,10 @@ The string begins as `"12345678919.."`. The 11^th digit is `'9'`.
 **Constraints:**
 
 - `1 <= k <= 10^15`
+
+**Time limit:** 2s
+
+```python
+class Solution:
+    def kthDigit(self, k: int) -> int:
+```
