@@ -1,0 +1,231 @@
+
+Assistant: Let me analyze this problem.
+
+We select a non-empty subset of non-overlapping meetings. For each selected meeting we get its revenue, and for each adjacent pair (in chronological order) we get idle gap = next_start - prev_end.
+
+If we select meetings $m_1, m_2, \ldots, m_k$ in order, total earnings = $\sum_i revenue_i + \sum_{i=1}^{k-1} (start_{i+1} - end_i)$.
+
+Let me think about DP. Sort meetings by end time (or start time). Let $dp[i]$ = maximum earnings considering meetings up to index $i$, where meeting $i$ is selected and is the last selected meeting.
+
+$dp[i] = revenue_i + \max_{j: end_j \le start_i} (dp[j] + start_i - end_j)$, or just $revenue_i$ if $i$ is the only meeting.
+
+Actually, $dp[i] = revenue_i + \max(0, \max_{j: end_j \le start_i}(dp[j] - end_j + start_i))$.
+
+Wait, if meeting $i$ is selected after meeting $j$: total = $dp[j] + (start_i - end_j) + revenue_i = (dp[j] - end_j) + start_i + revenue_i$.
+
+So $dp[i] = revenue_i + start_i + \max(0, \max_{j: end_j \le start_i} (dp[j] - end_j))$.
+
+Wait, but the "0" represents selecting meeting $i$ alone. Actually $dp[i] = revenue_i$ alone, or $revenue_i + start_i + \max_{j}(dp[j] - end_j)$. We can write:
+
+$dp[i] = revenue_i + \max(0, start_i + \max_{j: end_j \le start_i}(dp[j] - end_j))$
+
+Hmm, but note if $\max(dp[j]-end_j)$ is negative we might still want to take it if $start_i$ is large... Actually $start_i \ge 0$ and... let's just define $best = \max$ over valid $j$ of $(dp[j] - end_j)$; then $dp[i] = \max(revenue_i, revenue_i + start_i + best)$ if any valid $j$ exists, else $revenue_i$.
+
+Hmm wait, actually, we could also be clever: taking meeting $j$ alone gives value $revenue_j$; the term $dp[j] - end_j$ could be negative. But since we're taking max, just compute both options.
+
+The answer is $\max_i dp[i]$.
+
+For efficient computation: process meetings sorted by start time; for each meeting, we need max of $(dp[j] - end_j)$ over all $j$ with $end_j \le start_i$. Sort meetings by end time, and use a pointer with a running max.
+
+Plan:
+- Create list of (start, end, revenue).
+- Sort by end time to compute dp? But we need to query by start time. Sort by start time for processing order, and maintain a pointer into the end-sorted list, adding $dp[j] - end_j$ values as their end becomes ≤ current start.
+
+Let's define meetings sorted by start: order $s_1 \le s_2 \le \ldots$. For each in that order, advance pointer over meetings sorted by end while end ≤ current start, updating best = max(best, dp - end). But dp values are computed in start order, and a meeting's dp is computed once. Since end > start, a meeting sorted by start... hmm, we need dp of meetings whose end ≤ current start. Those meetings have start < end ≤ current start, so their start < current start, meaning they come earlier in start order (or equal start... if equal start and end ≤ start? No, end > start so if start_j = start_i then end_j > start_i, not ≤). So all meetings with end_j ≤ start_i have start_j < start_i, hence processed earlier in start order. Good.
+
+Algorithm:
+1. Sort meetings by start time.
+2. Keep a separate sorted-by-end list of (end, index) — actually we need dp value. Since meetings processed in start order, and we add to "available pool" those with end ≤ current start. Use pointer into end-sorted order.
+
+Let me code:
+
+```python
+class Solution:
+    def maxEarnings(self, meetings):
+        n = len(meetings)
+        # sort by start
+        by_start = sorted(range(n), key=lambda i: meetings[i][0])
+        # sort by end
+        by_end = sorted(range(n), key=lambda i: meetings[i][1])
+        
+        dp = [0]*n
+        best = -float('inf')
+        p = 0
+        ans = 0
+        for i in by_start:
+            s, e, r = meetings[i]
+            while p < n and meetings[by_end[p]][1] <= s:
+                j = by_end[p]
+                val = dp[j] - meetings[j][1]
+                if val > best:
+                    best = val
+                p += 1
+            # option: alone
+            cur = r
+            if best != -float('inf'):
+                cand = r + s + best
+                if cand > cur:
+                    cur = cand
+            dp[i] = cur
+            if cur > ans:
+                ans = cur
+        return ans
+```
+
+Wait — there's a subtlety. The dp value of meeting j is computed when processing in start order. Since all meetings with end ≤ s have start < s, they've already been processed. Good.
+
+Let me verify examples.
+
+Example 1: meetings = [[2,5,4],[6,8,3]].
+by_start: [0,1]. by_end: [0,1].
+i=0: s=2,e=5,r=4. p: end[0]=5 ≤ 2? No. cur=4. dp[0]=4, ans=4.
+i=1: s=6,e=8,r=3. p: end[0]=5 ≤6: best = dp[0]-5 = -1, p=1. end[1]=8≤6? no. cur = max(3, 3+6-1=8) = 8. ans=8. ✓
+
+Example 2: [[3,5,4],[4,7,8],[8,10,3]]
+by_start: [0,1,2]. by_end: index 0 end5, index1 end7, index2 end10 → [0,1,2].
+i=0: s=3. no ends ≤3. cur=4. dp0=4 ans=4.
+i=1: s=4. no ends ≤4 (5>4). cur=8. dp1=8, ans=8.
+i=2: s=8. add end5: best=4-5=-1. add end7: best=max(-1,8-7=1)=1. cur = max(3, 3+8+1=12)=12. ans=12 ✓.
+
+Example 3: [[1,2,2],[4,5,2],[7,9,3]]
+by_start=[0,1,2]; by_end: ends 2,5,9 → [0,1,2].
+i=0: s=1, no ends ≤1. cur=2. dp0=2.
+i=1: s=4. add end2: best=2-2=0. cur=max(2,2+4+0=6)=6. dp1=6.
+i=2: s=7. add end5: best=max(0,6-5=1)=1. cur=max(3,3+7+1=11)=11. ✓
+
+Great.
+
+Complexity: O(n log n). Fine for 1e5.
+
+One concern: values can be large — revenue up to 1e9, n up to 1e5, gaps up to 1e9. Total fits in Python int easily.
+
+I could write with sorting the meetings themselves rather than indices for clarity. Let me write cleanly:
+
+```python
+class Solution:
+    def maxEarnings(self, meetings: list[list[int]]) -> int:
+        n = len(meetings)
+        by_start = sorted(meetings, key=lambda m: m[0])
+        by_end = sorted(meetings, key=lambda m: m[1])
+        ...
+```
+
+But then dp association is tricky. Simpler: sort meetings by start into array `ms`. Compute dp array in that order. For by_end pointer, need dp of meeting by end order. Since dp computed in start order, and by_end entries processed only after their dp computed, we can store tuples.
+
+Alternative: sort meetings by start; compute dp[i] for i-th in start order. For the end pointer, sort indices 0..n-1 by end (of the sorted array). dp[j] available.
+
+```python
+class Solution:
+    def maxEarnings(self, meetings: list[list[int]]) -> int:
+        ms = sorted(meetings)  # sorts by start, then end, then revenue
+        n = len(ms)
+        dp = [0] * n
+        order_by_end = sorted(range(n), key=lambda i: ms[i][1])
+        best = -(10**30)  # or None
+        p = 0
+        ans = 0
+        NEG = float('-inf')
+        best = NEG
+        for i in range(n):
+            s, e, r = ms[i]
+            while p < n and ms[order_by_end[p]][1] <= s:
+                j = order_by_end[p]
+                v = dp[j] - ms[j][1]
+                if v > best:
+                    best = v
+                p += 1
+            cur = r
+            if best != NEG:
+                cand = r + s + best
+                if cand > cur:
+                    cur = cand
+            dp[i] = cur
+            if cur > ans:
+                ans = cur
+        return ans
+```
+
+Wait, sorting meetings directly: Python sorts lists lexicographically, so sorted(meetings) sorts by start then end then revenue. That's fine for by-start ordering. But careful: two meetings can have same start. Processing order among them: end_j ≤ start_i with equal start impossible (end_j > start_j = start_i). So no dependency among same-start meetings, fine.
+
+Edge case: single meeting → returns its revenue. Correct.
+
+Let me double check the transition logic: when chaining j before i, total = dp[j] + revenue_i + (start_i - end_j). We require end_j ≤ start_i (half-open intervals allow touching: end_j = start_i gives gap 0, allowed since [start,end) touch at endpoints don't overlap). Our condition `<=` includes equality. Good.
+
+dp[i] = revenue_i + max(0, start_i + best). Our code takes max(revenue_i, revenue_i + start_i + best). Equivalent. Good.
+
+Answer = max dp[i] over all i. Since dp[i] ≥ revenue_i ≥ 1, non-empty requirement satisfied.
+
+This is O(n log n) time, O(n) space. Should run within 2 seconds in Python — sorting 1e5 elements twice plus linear scan, fine.
+
+One more test: overlapping meetings. meetings=[[0,10,5],[1,2,100]]. Sorted by start: [0,10,5],[1,2,100]. by_end: index1 (end2), index0 (end10).
+i=0: s=0, no ends ≤0. cur=5. dp0=5.
+i=1: s=1, ends ≤1: end2 no, end10 no. cur=100. ans=100. Correct — can't chain [1,2] after [0,10] anyway.
+
+Another: meetings=[[0,3,10],[3,5,1],[5,6,1]].
+sorted same. by_end: ends 3,5,6 → [0,1,2].
+i=0: s=0: no ends. cur=10. dp0=10.
+i=1: s=3: add end3: best=10-3=7. cur=max(1,1+3+7=11)=11. dp1=11.
+i=2: s=5: add end5: best=max(7,11-5=6)=7. cur=max(1,1+5+7=13)=13. ans=13. Check: all three: 10+1+1 + gaps 0+0 =12. Hmm, dp says 13? Wait: dp2 = r + s + best = 1+5+7 = 13. best=7 corresponds to dp0 - end0 = 10-3=7. Chain meeting0 then meeting2: revenue 10+1=11, gap = 5-3 = 2 → total 13. Yes correct, selecting meeting0 and meeting2 gives 13. Good.
+
+The best from meeting0 dominates even though meeting1 has higher dp, because of earlier end. Correct behavior.
+
+Looks solid. Final answer code block.## Approach
+
+Sort meetings by start time and process them in order, maintaining DP where `dp[i]` = best total earnings of a valid selection whose **last** meeting is meeting `i`.
+
+If meeting `j` precedes meeting `i` (`end_j ≤ start_i`), chaining them gives:
+
+`dp[j] + revenue_i + (start_i - end_j) = revenue_i + start_i + (dp[j] - end_j)`
+
+So for each meeting `i` (in start order), we need the maximum of `(dp[j] - end_j)` over all meetings with `end_j ≤ start_i`. Using a second list sorted by end time and a pointer, we maintain this running max in amortized O(1) per meeting. Each meeting can also start a fresh selection (value = its own revenue).
+
+Key correctness note: any meeting with `end_j ≤ start_i` has `start_j < start_i`, so its DP value is already computed when processing in start order.
+
+```python
+class Solution:
+    def maxEarnings(self, meetings: list[list[int]]) -> int:
+        # Sort by start time (lexicographic sort works: start, then end, then revenue)
+        ms = sorted(meetings)
+        n = len(ms)
+        
+        dp = [0] * n  # dp[i]: best earnings of a selection ending with meeting i
+        order_by_end = sorted(range(n), key=lambda i: ms[i][1])
+        
+        NEG = float('-inf')
+        best = NEG  # max of (dp[j] - end_j) over all j with end_j <= current start
+        p = 0
+        ans = 0
+        
+        for i in range(n):
+            s, e, r = ms[i]
+            
+            # Make all meetings ending at or before s available as predecessors.
+            # (Touching endpoints are allowed since intervals are half-open.)
+            while p < n and ms[order_by_end[p]][1] <= s:
+                j = order_by_end[p]
+                val = dp[j] - ms[j][1]
+                if val > best:
+                    best = val
+                p += 1
+            
+            # Option 1: select meeting i alone
+            cur = r
+            # Option 2: append meeting i after the best compatible predecessor
+            if best != NEG:
+                cand = r + s + best
+                if cand > cur:
+                    cur = cand
+            
+            dp[i] = cur
+            if cur > ans:
+                ans = cur
+        
+        return ans
+```
+
+**Complexity:** O(n log n) time from sorting, O(n) space. The two-pointer sweep makes all DP transitions total O(n).
+
+**Verification with the examples:**
+- `[[2,5,4],[6,8,3]]` → `dp = [4, 3+6+(4-5)] = [4, 8]` → **8** ✓
+- `[[3,5,4],[4,7,8],[8,10,3]]` → `dp = [4, 8, 3+8+(8-7)] = [4, 8, 12]` → **12** ✓
+- `[[1,2,2],[4,5,2],[7,9,3]]` → `dp = [2, 2+4+0, 3+7+1] = [2, 6, 11]` → **11** ✓
