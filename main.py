@@ -54,7 +54,7 @@ class NanoLoop:
         self.msg_history = [{"role": "system", "content": SOLVER_PROMPT}]
         if self.HEADLESS: self.msg_history.append({"role": "user", "content": prompt})
         
-        self.tool_catologue = [get_weather_header, get_population_header, write_file_header, read_file_header, run_python_header]
+        self.tool_catologue = [write_file_header, read_file_header, run_python_header]
         if self.HEADLESS: self.tool_catologue.append(submit_header)
         
         self.sandbox = Sandbox()
@@ -108,5 +108,5 @@ TRANSFORM_ARRAY_USING_PAIR_OPERATIONS = open("problems/transform_array_using_pai
 COUNT_GOOD_CYCLIC_ROTATIONS = open("problems/count_good_cyclic_rotations.md").read()
 K_TH_DIGIT_IN_INFINITE_STRING = open("problems/k_th_digit_in_infinite_string.md").read()
 
-myLoop2 = NanoLoop(True, SHADOW_PAIRS)
+myLoop2 = NanoLoop(True, MAXIMUM_PRODUCT_PAIR_WITH_TARGET_SUM)
 print(myLoop2.start())

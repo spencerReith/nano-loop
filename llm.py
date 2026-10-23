@@ -49,6 +49,10 @@ class ModelInvoker:
                 if data == "[DONE]":
                     break
                 chunk = json.loads(data)
+                if "error" in chunk:
+                    print(f"\n[stream error] {chunk['error']}")
+                if not chunk.get("choices"):
+                    continue
                 delta = chunk["choices"][0]["delta"]
                 if "content" in delta and delta["content"]:
                     print(delta["content"], end="", flush=True)

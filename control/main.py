@@ -34,5 +34,6 @@ TRANSFORM_ARRAY_USING_PAIR_OPERATIONS = open("problems/transform_array_using_pai
 COUNT_GOOD_CYCLIC_ROTATIONS = open("problems/count_good_cyclic_rotations.md").read()
 K_TH_DIGIT_IN_INFINITE_STRING = open("problems/k_th_digit_in_infinite_string.md").read()
 
-control = Control("moonshotai/kimi-k3")
-control.start(SHADOW_PAIRS)
+# control = Control("moonshotai/kimi-k3")
+control = Control("ibm-granite/granite-4.2-8b")
+control.start(MAXIMUM_PRODUCT_PAIR_WITH_TARGET_SUM)
