@@ -5,6 +5,8 @@ You have a variety of tools you can use to test and iterate your answer if you w
 'read_file' allows you to read files, but the files must be files that you've created.
 'run_python' allows you to run a python file that you've created.
 
+You should probably run the test cases given to you in the problem statement to ensure you are right before submitting.
+
 When you are done, do not call a tool to submit. Just output your answer as one Python code block.
 The code block must contain the full `class Solution` with the exact method header given in the problem.
 

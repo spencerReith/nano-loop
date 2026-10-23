@@ -22,7 +22,7 @@ from tool_definitions.submit import submit, submit_header
 from llm import ModelInvoker
 from sandbox import Sandbox
 
-SOLVER_PROMPT = open("system_prompts/solver.md").read()
+SOLVER_PROMPT = open("system_prompts/solver_v2.md").read()
 
 
 
