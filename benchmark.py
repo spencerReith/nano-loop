@@ -95,6 +95,8 @@ def run_agent(make_agent, problem):
     agent = make_agent(problem["prompt"])
     try:
         text = agent.start()
+    except Exception as e:  # agent crashed (e.g. bad tool call); don't kill the whole run
+        return {"status": "AGENT_ERROR", "error": repr(e)}, None
     finally:
         if hasattr(agent, "sandbox"):
             agent.sandbox.kill()
@@ -106,6 +108,8 @@ def run_agent(make_agent, problem):
 
 def main():
     problems = load_problems()
+    out = pathlib.Path("results") / f"{time.strftime('%Y%m%d-%H%M%S')}.json"
+    out.parent.mkdir(exist_ok=True)
     results = {}
     for name, problem in problems.items():
         results[name] = {}
@@ -115,6 +119,7 @@ def main():
             result["output"] = output
             results[name][agent_name] = result
             print(f"\n-> {result['status']}")
+            out.write_text(json.dumps({"model": MODEL, "results": results}, indent=2))  # save as we go
 
     width = max(map(len, results))
     print("\n" + "problem".ljust(width) + "".join(a.rjust(12) for a in AGENTS))
@@ -123,9 +128,6 @@ def main():
     print("passed".ljust(width) + "".join(
         f"{sum(row[a]['status'] == 'PASS' for row in results.values())}/{len(results)}".rjust(12) for a in AGENTS))
 
-    out = pathlib.Path("results") / f"{time.strftime('%Y%m%d-%H%M%S')}.json"
-    out.parent.mkdir(exist_ok=True)
-    out.write_text(json.dumps({"model": MODEL, "results": results}, indent=2))
     print(f"\nsaved {out}")
 
 
