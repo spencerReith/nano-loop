@@ -6,13 +6,14 @@ problems/<name>.md + cases/<name>.json are linked by name.
 """
 
 import json
+import os
 import pathlib
 import re
 import subprocess
 import sys
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 from sandbox import Sandbox
 from main import NanoLoop
@@ -26,6 +27,7 @@ AGENTS = {
 TIMEOUT_BUFFER = 5  # seconds on top of the problem's limit before docker kills a hung process
 MAX_WORKERS = 16  # agent jobs running at once. grading is always one at a time, after all agents finish
 LOG_TO_FILES = True  # each job's prints go to logs/<run>/<model>/<problem>_<agent>.log instead of the terminal
+JOB_TIMEOUT = 3600  # seconds an agent job may run before it's marked AGENT_TIMEOUT and abandoned
 
 
 class ThreadRouter:
@@ -109,7 +111,7 @@ def grade(problem, code):
         sandbox.kill()
 
 
-def run_agent(make_agent, model, problem, log_path=None):
+def run_agent(make_agent, model, problem, log_path=None, agents=None, key=None):
     """runs one agent on one problem. returns (error result or None, final text)"""
     log = open(log_path, "w") if log_path else None
     if log:
@@ -117,6 +119,8 @@ def run_agent(make_agent, model, problem, log_path=None):
     agent = None
     try:
         agent = make_agent(model, problem["prompt"])
+        if agents is not None:
+            agents[key] = agent  # so main() can kill its sandbox if the job is abandoned
         return None, agent.start()
     except Exception as e:  # agent crashed (e.g. bad tool call); don't kill the whole run
         return {"status": "AGENT_ERROR", "error": repr(e)}, None
@@ -144,26 +148,39 @@ def main(models=None):
     if LOG_TO_FILES and not isinstance(sys.stdout, ThreadRouter):
         sys.stdout = ThreadRouter(sys.stdout)
 
+    started, agents = {}, {}
+
     def job(model, name, agent_name):
+        started[(model, name, agent_name)] = time.time()
         log_path = None
         if LOG_TO_FILES:
             log_dir = pathlib.Path("logs") / run_id / model.replace("/", "__")
             log_dir.mkdir(parents=True, exist_ok=True)
             log_path = log_dir / f"{name}_{agent_name}.log"
-        return run_agent(AGENTS[agent_name], model, problems[name], log_path)
+        return run_agent(AGENTS[agent_name], model, problems[name], log_path, agents, (model, name, agent_name))
 
     # phase 1: all agents on all problems, in parallel
     jobs = [(m, name, a) for m in models for name in problems for a in AGENTS]
     print(f"running {len(jobs)} agent jobs ({len(models)} models x {len(problems)} problems x {len(AGENTS)} agents), {MAX_WORKERS} at a time")
-    with ThreadPoolExecutor(MAX_WORKERS) as pool:
-        futures = {pool.submit(job, *j): j for j in jobs}
-        for done, f in enumerate(as_completed(futures), 1):
+    pool = ThreadPoolExecutor(MAX_WORKERS)
+    futures = {pool.submit(job, *j): j for j in jobs}
+    pending, done, abandoned = set(futures), 0, []
+    while pending:
+        finished, pending = wait(pending, timeout=10, return_when=FIRST_COMPLETED)
+        # threads can't be killed: a job over JOB_TIMEOUT is recorded and no longer waited on
+        overdue = [f for f in pending if futures[f] in started and time.time() - started[futures[f]] > JOB_TIMEOUT]
+        for f in overdue:
+            pending.discard(f)
+            abandoned.append(futures[f])
+        for f in list(finished) + overdue:
             m, name, a = futures[f]
-            error, text = f.result()
+            error, text = f.result() if f in finished else ({"status": "AGENT_TIMEOUT"}, None)
             with lock:
                 results[m][name][a] = dict(error or {"status": "UNGRADED"}, output=text)
             save()
+            done += 1
             print(f"[{done}/{len(jobs)}] {m} / {name} / {a}: {(error or {}).get('status', 'done')}")
+    pool.shutdown(wait=False)
 
     # phase 2: grade one at a time so solutions don't compete for CPU
     print("grading...")
@@ -187,6 +204,13 @@ def main(models=None):
             f"{sum(row[a]['status'] == 'PASS' for row in results[m].values())}/{len(problems)}".rjust(12) for a in AGENTS))
 
     print(f"\nsaved {out}")
+
+    if abandoned:  # their threads are still running: kill their sandboxes and exit without waiting on them
+        for k in abandoned:
+            if hasattr(agents.get(k), "sandbox"):
+                agents[k].sandbox.kill()
+        sys.stdout.flush()
+        os._exit(0)
 
 
 if __name__ == "__main__":
