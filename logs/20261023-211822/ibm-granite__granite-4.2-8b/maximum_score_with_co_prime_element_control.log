@@ -1,0 +1,674 @@
+
+Assistant: ```python
+import math
+from typing import List
+
+class Solution:
+    def maxScore(self, nums: List[int], maxVal: int) -> int:
+        n = len(nums)
+        
+        # Preprocess: for each possible final value v (1..maxVal), compute
+        # the minimum number of modifications needed so that v can be the
+        # selected element that is co-prime with all others.
+        # For a candidate selected index i with final value v,
+        # we must ensure that for every j != i, gcd(v, nums[j]') == 1,
+        # where nums[j]' is the final value at j (which may be changed or unchanged).
+        # However, we can choose to change any element arbitrarily (<=maxVal) at cost 1.
+        # To minimize modification cost for a given candidate (i, v), we would:
+        # - Keep original nums[i] if it equals v (or change it to v if different, costing 1).
+        # - For j != i, we may change nums[j] if gcd(v, nums[j]) != 1, otherwise keep.
+        # But note: even if gcd(v, nums[j]) == 1 currently, changing it might be forced? No, we can always keep it.
+        # So for fixed i and v, the minimal modifications are:
+        #   cost_i(v) = (1 if nums[i] != v else 0) + count_{j != i} [gcd(v, nums[j]) != 1]
+        # However, this counts j where original nums[j] is not co-prime with v. But we could also change nums[j] to some value that IS co-prime with v, costing 1 per such j.
+        # So the above count is correct: we must change every j != i where gcd(v, nums[j]) != 1.
+        # But wait: what if we change nums[j] to a value that is co-prime with v? Yes, that's the only option.
+        # So the minimal modifications for candidate i with value v is as above.
+        # However, we are allowed to change any element to any positive integer <= maxVal.
+        # So for j where gcd(v, nums[j]) != 1, we can change nums[j] to some w (<=maxVal) with gcd(v,w)=1. Such w always exists? Not necessarily for all v? But maxVal>=1, and for any v, there is at least one number <= maxVal that is co-prime with v? Not always: e.g., v=2, maxVal=1 -> only 1 is available and gcd(2,1)=1, so yes exists. Actually 1 is co-prime with everything. So always we can change to 1. So yes, we can always fix a non-co-prime j by changing it to 1 (if 1<=maxVal, which it is). So the count of j != i with gcd(v, nums[j]) != 1 must be changed.
+        # Therefore, for each i and v, cost = (nums[i]!=v) + (# of j != i with gcd(v, nums[j]) != 1)
+        # But n up to 1e5, maxVal up to 1e5, iterating all i and v would be O(n * maxVal * log) too slow.
+        # We need a smarter way.
+
+        # Alternative viewpoint: We choose a final value v for the selected element (at some index i), and we must change all other elements that are not co-prime with v. Additionally, we may change the selected element itself from its original to v (cost 1 if different).
+        # Let’s denote:
+        #   For a candidate value v (1<=v<=maxVal), define:
+        #       total_non_coprime_count(v) = number of indices j such that gcd(v, nums[j]) != 1.
+        #   If we choose v as the selected value at some index i, then we must change all indices j != i that are non-coprime with v. However, if the selected index i itself is non-coprime with v (i.e., gcd(v, nums[i]) != 1), then we have two options:
+        #       - Change nums[i] to v (cost 1) and then it becomes coprime with itself (trivially, gcd(v,v)=v, which is 1 only if v==1? Wait: selected element must be co-prime with every other element, but it doesn't need to be co-prime with itself? The condition says: "nums[i] is co-prime with every other element nums[j]". Usually "every other" means j != i. So self is not considered. So selectedValue v can have gcd(v,v)=v !=1, but that's fine because it's not compared with itself. So the selected element does not need to be co-prime with itself. So if we set nums[i]=v, even if v>1, it's fine.
+        #       However, the condition for other indices j != i is that gcd(v, nums[j]')=1. So for j != i, we must ensure they are co-prime with v.
+        #       For the selected index i, we set it to v (if changed) or keep it if already v.
+        #       So for candidate v, the minimal modification cost if we choose it as the selected value (at any index) is:
+        #           cost(v) = (number of indices j such that gcd(v, nums[j]) != 1) - (1 if there exists at least one index i with gcd(v, nums[i]) != 1? Actually, we can choose i to be one of the indices that is already non-coprime with v, and we will change it to v (cost 1), but then it no longer counts as a non-coprime for others? Wait: we count j != i that are non-coprime with v. So if we pick i from the set of indices that are non-coprime with v, then for that i we change it to v (cost 1 if nums[i]!=v), and then for the other non-coprime indices (excluding i) we must change them. So the total modifications = (1 if we change i from nums[i] to v) + (count of non-coprime indices excluding i).
+        #           But if we pick i that is coprime with v (i.e., gcd(v, nums[i])==1), then we don't need to change i (if nums[i]==v we might keep it, if nums[i]!=v but coprime, we could keep it? But keeping nums[i] might be !=v, but then selectedValue would be nums[i], not v. Wait: we are fixing the selected value to be v. So if we choose index i to be the selected one, we must set nums[i] to v (if it isn't already). So even if nums[i] is coprime with v and not equal to v, we must change it to v (cost 1) to have selectedValue = v. Because the selectedValue is the final value at nums[i]. So we cannot keep nums[i] if it is not v.
+        #       Therefore, for a fixed v, we must set the selected index i to v (cost 1 if nums[i]!=v). Then for all other indices j != i, we must change them if gcd(v, nums[j]) != 1 (cost 1 per such j). So total modifications for choosing i as selected with value v is:
+        #           cost(i, v) = (1 if nums[i] != v else 0) + (# of j != i with gcd(v, nums[j]) != 1)
+        #       = (# of j with gcd(v, nums[j]) != 1) - (1 if gcd(v, nums[i]) != 1 else 0) + (1 if nums[i]!=v else 0)
+        #       But careful: if nums[i] != v but gcd(v, nums[i]) == 1, then we change nums[i] to v (cost 1), and since gcd(v, nums[i])==1, nums[i] is not in the non-coprime set (because non-coprime means gcd !=1), so the non-coprime set excludes i. So the count of j != i with gcd !=1 is exactly total_non_coprime(v). So cost = 1 + total_non_coprime(v).
+        #       If nums[i] != v and gcd(v, nums[i]) != 1, then nums[i] is in the non-coprime set. When we choose i as selected, we change nums[i] to v (cost 1), and we do not need to change nums[i] as a "other" index. So the other indices that are non-coprime (excluding i) are total_non_coprime(v) - 1. So cost = 1 + (total_non_coprime(v) - 1) = total_non_coprime(v).
+        #       If nums[i] == v, then cost = 0 + total_non_coprime(v) - (1 if gcd(v, nums[i]) !=1? But gcd(v, nums[i]) = gcd(v,v)=v, which is 1 only if v==1. So if v==1, gcd(1,1)=1 -> coprime. If v>1, gcd(v,v)=v>1 -> not coprime. However, the non-coprime set for v includes indices where gcd(v, nums[j]) !=1. For j=i with nums[i]=v, gcd(v,v)=v, which is !=1 if v>1. So such an index would be counted in total_non_coprime(v). But since we are selecting i, we do not need to change other indices including i as other. So we should subtract 1 from total_non_coprime(v) because i is not an "other". So cost = 0 + (total_non_coprime(v) - 1) if v>1? But if v==1, gcd(1,1)=1, so total_non_coprime(1) counts only indices with gcd(1,nums[j])!=1, which is none because gcd(1,x)=1 always. So total_non_coprime(1)=0, and cost=0.
+        #       This gets messy.
+
+        # Let's define:
+        #   total[v] = number of indices j such that gcd(v, nums[j]) != 1.
+        #   best[i][v] is not feasible to compute per i.
+
+        # Instead, for each v, we want the minimal modifications among all choices of i with final value v.
+        #   min_mod[v] = min_{i} cost(i, v) = min_{i} [ (nums[i]!=v) + (total[v] - (1 if gcd(v, nums[i]) !=1 else 0)) ]
+        #   Because for a fixed v, the count of j != i with gcd(v, nums[j]) !=1 is total[v] - (1 if gcd(v, nums[i]) !=1 else 0).
+        #   So cost(i,v) = (nums[i]!=v) + total[v] - (1 if gcd(v, nums[i]) !=1 else 0)
+        #   = total[v] + (nums[i]!=v) - (1 if gcd(v, nums[i]) !=1 else 0)
+
+        #   We need to minimize this over i.
+        #   Note: (nums[i]!=v) is 0 or 1, and (1 if gcd(v, nums[i]) !=1) is 0 or 1.
+        #   So for each i and v, cost = total[v] + delta_i(v), where delta_i(v) = (nums[i]!=v) - (gcd(v, nums[i])!=1)
+        #   delta_i(v) can be -1, 0, or 1:
+        #       - If gcd(v, nums[i]) !=1 and nums[i]==v: delta = 0 - 1 = -1
+        #       - If gcd(v, nums[i]) !=1 and nums[i]!=v: delta = 1 - 1 = 0
+        #       - If gcd(v, nums[i]) ==1 and nums[i]==v: delta = 0 - 0 = 0
+        #       - If gcd(v, nums[i]) ==1 and nums[i]!=v: delta = 1 - 0 = 1
+        #   So the minimal delta for v is -1 if there exists an index i with nums[i]==v and gcd(v, nums[i])!=1 (i.e., v>1 and nums[i]==v), otherwise 0 if there exists an index with gcd(v, nums[i])==1 and nums[i]==v? But gcd(v,v)=v!=1 for v>1, so for v>1, gcd(v, nums[i])!=1 when nums[i]==v. So for v>1, any index with nums[i]==v automatically has gcd(v,nums[i])!=1. For v=1, gcd(1,1)=1, so delta = 0 if nums[i]==1, and 1 if nums[i]!=1 and gcd(1,nums[i])==1 (always true), so delta=1 for nums[i]!=1.
+        #   Therefore, for v>1, the minimal delta is -1 if there is at least one occurrence of v in nums. Otherwise minimal delta is 0 (achieved by picking an i with gcd(v,nums[i])==1 and nums[i]==v? but no v not present, so we pick i with gcd(v,nums[i])==1 and nums[i]!=v gives delta=1, or gcd(v,nums[i])!=1 and nums[i]!=v gives delta=0). So we need to check.
+
+        #   Let's compute for each v:
+        #       has_v = whether v appears in nums
+        #       has_coprime_with_v = whether there exists i with gcd(v, nums[i])==1
+        #       But we need the minimal delta = min_i [ (nums[i]!=v) - (gcd(v, nums[i])!=1) ]
+        #       = min( 
+        #             min over i with nums[i]==v: (0 - 1) = -1, if exists,
+        #             min over i with nums[i]!=v and gcd(v,nums[i])==1: (1 - 0) = 1,
+        #             min over i with nums[i]!=v and gcd(v,nums[i])!=1: (1 - 1) = 0
+        #         )
+        #       So if there is any i with nums[i]==v, then delta_min = -1 (since -1 < 0 < 1). If not, then delta_min = min(0,1) = 0, achieved by any i with gcd(v,nums[i])!=1 (if exists), otherwise only i with gcd==1, then delta=1.
+        #       But if no i with gcd(v,nums[i])!=1, then all gcd==1, then for nums[i]!=v, delta=1, and no nums[i]==v (since no v), so delta_min=1.
+        #   So we can compute for each v:
+        #       delta_min[v] = -1 if v in set(nums) else 0 if there exists i with gcd(v, nums[i])!=1 else 1
+        #       However, if v not in nums but there is i with gcd(v,nums[i])!=1, then delta_min=0 (from the !=v and !=1 case). If no such i, then only gcd==1 for all, so delta_min=1.
+        #   But we must also consider that for v=1, gcd(1,x)=1 always, so gcd(v,nums[i])!=1 never happens. So for v=1, if 1 is in nums, delta_min=-1? But gcd(1,1)=1, so (gcd!=1) is false, so for nums[i]==1, delta = 0 - 0 = 0, not -1. Because for v=1, gcd(1,1)=1, so (gcd!=1)=0. So our earlier case "gcd(v, nums[i])!=1" for nums[i]==v only holds if v>1. For v=1, gcd(1,1)=1, so it is coprime. So we need to handle v=1 separately.
+
+        # Given the complexity, let's adopt a simpler but efficient approach:
+        #   Since maxVal <= 1e5, we can iterate over all possible v from 1 to maxVal, and for each v compute total[v] = number of j with gcd(v, nums[j]) != 1.
+        #   How to compute total[v] for all v quickly? We have up to 1e5 numbers, and v up to 1e5. Naively O(n * maxVal * log) is too slow.
+        #   But we can use a sieve-like method: for each distinct value in nums, factorize it and then for multiples, mark non-coprime? However, gcd(v, nums[j]) != 1 iff they share a prime factor.
+        #   We can compute for each prime p, the count of numbers divisible by p. Then for a given v, the set of numbers that share a prime factor with v is the union over primes dividing v. But we need the count of numbers that share at least one prime factor with v. We can use inclusion-exclusion, but with up to 6-7 prime factors (since 1e5), it might be acceptable if we do it per v? But maxVal=1e5, doing inclusion-exclusion per v could be O(maxVal * 2^omega) which might be heavy.
+        #   Alternatively, we can iterate over j and for each nums[j], iterate over its divisors and increment a counter for those divisors? But we want for each v, count of j with gcd(v, nums[j]) !=1, which is equivalent to v and nums[j] sharing a prime factor.
+        #   A common technique: create an array cnt[1..maxVal] where cnt[d] = number of nums[j] divisible by d. Then for a given v, the number of nums[j] that share a prime factor with v is the number of nums[j] divisible by at least one prime divisor of v. We can compute this by inclusion-exclusion over the prime factors of v using cnt[d] for d being the product of primes.
+        #   However, doing inclusion-exclusion for each v might be O(maxVal * 2^omega) which in worst-case omega ~ 6 (since 2*3*5*7*11*13=30030, 2*3*5*7*11*13*17=510510 >1e5, so max omega is 6), so 2^6=64 per v, total 6.4e6, which is acceptable in 2s in Python? Possibly borderline but likely okay.
+        #   But we also need to compute for each v the minimal delta, which requires knowing if v appears and if there is any j with gcd(v, nums[j]) !=1 (which total[v] >0?).
+        #   Actually, total[v] >0 means there is at least one j with gcd(v, nums[j])!=1.
+        #   So delta_min[v] = -1 if v in set(nums) and v>1? But for v=1, if 1 in nums, delta_min = 0 because gcd(1,1)=1 so (gcd!=1)=0. So:
+        #       if v == 1:
+        #           delta_min = 0 if 1 in nums? Actually, for v=1, gcd(1,x)=1 for all x, so (gcd!=1)=0 for all j. So for any i with nums[i]==1, delta = 0 - 0 = 0. For i with nums[i]!=1, delta = 1 - 0 = 1. So delta_min = 0 if 1 in nums, else 1.
+        #       if v > 1:
+        #           if v in nums: then there exists i with nums[i]==v and gcd(v,v)=v>1 !=1, so delta = -1 achievable. So delta_min = -1.
+        #           else: if total[v] > 0 (i.e., there is at least one j with gcd(v,nums[j])!=1), then we can pick i with gcd(v,nums[i])!=1 and nums[i]!=v (since v not in nums), giving delta=0. So delta_min = 0.
+        #           else (total[v]==0, meaning all nums[j] are coprime with v), then for any i, nums[i]!=v (since v not in nums), and gcd==1, so delta=1. So delta_min=1.
+        #   So delta_min[v] = 
+        #       if v == 1: 0 if 1 in nums else 1
+        #       else: 
+        #           if v in nums: -1
+        #           else if total[v] > 0: 0
+        #           else: 1
+        #   Then min_mod[v] = total[v] + delta_min[v]
+        #   And the score for selecting value v is v - min_mod[v]
+        #   We take the maximum over v in [1, maxVal] of (v - min_mod[v])
+
+        # Let's test with examples.
+
+        # Example 1: nums=[3,4,6], maxVal=5
+        # Compute total[v] for v=1..5
+        #   v=1: gcd(1,x)=1 for all, so total[1]=0
+        #   v=2: gcd(2,3)=1, gcd(2,4)=2!=1, gcd(2,6)=2!=1 -> total[2]=2
+        #   v=3: gcd(3,3)=3!=1, gcd(3,4)=1, gcd(3,6)=3!=1 -> total[3]=2
+        #   v=4: gcd(4,3)=1, gcd(4,4)=4!=1, gcd(4,6)=2!=1 -> total[4]=2
+        #   v=5: gcd(5,3)=1, gcd(5,4)=1, gcd(5,6)=1 -> total[5]=0
+        # set(nums) = {3,4,6}
+        # v=1: in nums? no -> delta_min=1 -> min_mod=0+1=1 -> score=1-1=0
+        # v=2: not in nums, total[2]=2>0 -> delta_min=0 -> min_mod=2+0=2 -> score=2-2=0
+        # v=3: in nums -> delta_min=-1 -> min_mod=2-1=1 -> score=3-1=2
+        # v=4: in nums -> delta_min=-1 -> min_mod=2-1=1 -> score=4-1=3
+        # v=5: not in nums, total[5]=0 -> delta_min=1 -> min_mod=0+1=1 -> score=5-1=4
+        # max score = max(0,0,2,3,4)=4 -> matches.
+
+        # Example 2: nums=[1,2,3], maxVal=4
+        # total[1]=0, total[2]: gcd(2,1)=1, gcd(2,2)=2!=1, gcd(2,3)=1 -> total[2]=1
+        # total[3]: gcd(3,1)=1, gcd(3,2)=1, gcd(3,3)=3!=1 -> total[3]=1
+        # total[4]: gcd(4,1)=1, gcd(4,2)=2!=1, gcd(4,3)=1 -> total[4]=1
+        # set={1,2,3}
+        # v=1: in nums -> delta_min=0 (since v=1 special: 0 if 1 in nums) -> min_mod=0+0=0 -> score=1-0=1
+        # v=2: in nums -> delta_min=-1 -> min_mod=1-1=0 -> score=2-0=2
+        # v=3: in nums -> delta_min=-1 -> min_mod=1-1=0 -> score=3-0=3
+        # v=4: not in nums, total[4]=1>0 -> delta_min=0 -> min_mod=1+0=1 -> score=4-1=3
+        # max=3 -> matches.
+
+        # Example 3: nums=[2,2], maxVal=1
+        # only v=1
+        # total[1]=0 (since gcd(1,2)=1)
+        # v=1: 1 in nums? no -> delta_min=1 -> min_mod=0+1=1 -> score=1-1=0? but expected 1.
+        # Let's compute manually:
+        #   maxVal=1, so we can only change to 1.
+        #   nums=[2,2], change one 2 to 1 (cost1), choose the other 2 as selected (value=2), gcd(2,1)=1 -> score=2-1=1.
+        # Our method for v=1 gives score=0, but we should also consider v=2? but maxVal=1, so v cannot be 2. Only v<=maxVal, so v=1 only.
+        # But the selectedValue must be <=maxVal? The problem says: "change any element to any positive integer less than or equal to maxVal". The selected element is after modifications, so it must be <=maxVal. Therefore, selectedValue v must be in [1, maxVal]. So in example 3, maxVal=1, so selectedValue must be 1. But the explanation says choose nums[1]=2, which is 2 > maxVal? That seems contradictory.
+        # Let's re-read example 3:
+        #   Input: nums = [2,2], maxVal = 1
+        #   Output: 1
+        #   Explanation: Change nums[0] from 2 to 1, which costs 1. Choose nums[1] = 2, since it is co-prime with 1.
+        #   selectedValue = 2, modificationCost = 1, score = 2-1=1.
+        # But maxVal=1, so we are allowed to change to <=1, but can we keep 2? The selected element is nums[1]=2, which was not changed (since only nums[0] changed to 1). But 2 > maxVal? The constraint says "change any element to any positive integer less than or equal to maxVal", but we are not forced to change all elements; we can leave elements unchanged even if they are > maxVal? The array nums initially has nums[i] up to 10^5, and maxVal might be smaller. The operation allows changing to <=maxVal, but not changing to >maxVal. However, we are allowed to not change an element, even if it is >maxVal. So the final nums[i] can be >maxVal if we don't change it. But the selectedValue is the final value at nums[i], which could be >maxVal. Is that allowed? The problem statement: "After all modifications, you must choose an index i such that nums[i] is co-prime with every other element nums[j]." It doesn't say selectedValue must be <=maxVal. Only modifications are constrained to <=maxVal. So selectedValue can be greater than maxVal if we don't modify that element. That means v (selected value) can be any integer that appears in the final array, which may be >maxVal if we don't change it. However, we are iterating v from 1 to maxVal in our method, which would miss selected values >maxVal.
+
+        # Therefore, our approach of iterating v only up to maxVal is insufficient because the selected element might be an unchanged original value that is >maxVal.
+
+        # We need to consider all possible final values for the selected element. The selected element must be one of the original nums[i] (if not changed) or a changed value <=maxVal. So the selected value can be:
+        #   - Any original nums[i] (even if >maxVal), or
+        #   - Any value in [1, maxVal] (if we change the selected index to that value).
+        # But note: if we change the selected index, we can set it to any value <=maxVal, but we wouldn't set it to a value >maxVal because that would cost? Actually changing to >maxVal is not allowed. So only <=maxVal for changed elements.
+        #   So the set of possible selected values is: all original nums[i] (since we may not change the selected index), plus all integers in [1, maxVal] (since we may change the selected index to any <=maxVal). However, if we change the selected index, we set it to some v<=maxVal, so v in [1,maxVal]. If we do not change the selected index, then selected value = nums[i] (which might be >maxVal).
+        #   Therefore, we need to consider v in the set S = {all nums[i]} ∪ {1,2,...,maxVal}.
+
+        #   But |S| <= n + maxVal <= 2e5, which is acceptable.
+
+        #   However, computing total[v] for v not necessarily <=maxVal? total[v] is defined as number of j with gcd(v, nums[j]) !=1, and v might be >maxVal. But when we compute total[v] for v>maxVal, we only need it for v in S that are >maxVal (i.e., original nums[i] possibly >maxVal). But we can still compute gcd(v, nums[j]) for v up to max(nums) which is <=1e5? Actually nums[i] <=1e5, maxVal<=1e5, so v>maxVal but v<=1e5 (since nums[i]<=1e5), so v is at most 1e5. So S ⊆ [1, 1e5] because nums[i]<=1e5 and maxVal<=1e5. So v is always <=1e5. Good.
+
+        #   Therefore, we can consider v from 1 to max_possible = max(maxVal, max(nums))? But max(nums) <=1e5, maxVal<=1e5, so v up to 1e5. So we can iterate v=1..M where M = max(maxVal, max(nums))? But if max(nums) > maxVal, then v can be up to max(nums), which may be >maxVal, but we must include those v that are >maxVal (original nums[i] > maxVal). However, when we change other elements, they must be <=maxVal, but the selected element if unchanged can be >maxVal.
+
+        #   So let M = max(maxVal, max(nums)) = max(nums) since max(nums) could be >maxVal. But max(nums) <=1e5, so M<=1e5.
+
+        #   We need to compute total[v] for all v=1..M, where M = max(nums) (or max(maxVal, max(nums))? Actually if maxVal > max(nums), then v up to maxVal are needed, and v up to max(nums) are also needed? But v up to maxVal are already covered. So M = max(maxVal, max(nums)) = maxVal or max(nums), whichever larger, but both <=1e5.
+
+        #   However, for v > maxVal that we consider (i.e., original nums[i] > maxVal), we cannot change the selected element to v if v > maxVal? But if the selected element is unchanged and v = nums[i] > maxVal, that's fine. But if we change the selected element to v > maxVal, that's not allowed because changed values must be <=maxVal. So for v > maxVal, the only way to have selected value v is to not change that index (i.e., keep the original nums[i]=v). So for v > maxVal, we must have v in nums (i.e., v appears as an original value), and we cannot change the selected index to v if v>maxVal (since changing would require v<=maxVal). Therefore, for v > maxVal, delta_min and min_mod need adjustment: we cannot change the selected index to v if v>maxVal; we must use an index i where nums[i]=v and not change it (cost 0 for that index), and then change other non-coprime indices.
+
+        #   Similarly, for v <= maxVal, we have the freedom to change the selected index to v even if v not in nums.
+
+        #   So we need to handle two cases for candidate v:
+        #       Case A: v <= maxVal. Then we can change the selected index to v (cost 1 if nums[i]!=v), and v can be any in [1,maxVal] regardless of presence.
+        #       Case B: v > maxVal. Then v must appear in nums (otherwise we cannot have selected value v, since we cannot change any index to v because v>maxVal), and for any index i with nums[i]=v, we do not change it (cost 0), and for other indices we must change if non-coprime.
+
+        #   But note: v > maxVal only occurs for original nums[i] > maxVal, and since maxVal<=1e5 and nums[i]<=1e5, v > maxVal implies v <= 1e5, so it's fine.
+
+        #   We can unify by defining for each candidate v (1..M, where M = max(nums) maybe, but we only need v that are either in nums or <=maxVal), and for each v, define:
+        #       allowed_as_selected = (v <= maxVal) or (v in nums)  [because if v>maxVal and not in nums, impossible]
+        #       For v allowed:
+        #           We consider selecting an index i such that after modifications, nums[i]=v.
+        #           If v <= maxVal, we can change any index to v (cost 1 if original !=v).
+        #           If v > maxVal, then we must select an index i with nums[i]=v (and not change it, cost 0), because we cannot change to v>maxVal.
+        #       Then minimal modifications for v is as before, but with the restriction on i for v>maxVal.
+
+        #   However, to avoid complexity, we can simply iterate over all indices i as candidate selected index, and for each i, iterate over possible v that we can set nums[i] to. But that would be O(n * maxVal) again.
+
+        # Given time, I'll implement the following pragmatic approach:
+        #   Let M = max(maxVal, max(nums))  # up to 1e5
+        #   Precompute cnt[d] for d=1..M: number of nums[j] divisible by d.
+        #   For each prime? Actually, we need total[v] = number of j with gcd(v, nums[j]) != 1.
+        #   We can compute total[v] by inclusion-exclusion using cnt for divisors.
+        #   Steps:
+        #       1. Compute cnt[d] for d=1..M: for each nums[j], increment cnt[div] for all divisors of nums[j]? But iterating divisors for each nums[j] (up to 1e5 numbers) might be O(n * sqrt(1e5)) ~ 1e5 * 316 = 3e7, borderline but maybe okay in Py with optimization.
+        #       2. Alternatively, use a sieve: for d from 1 to M, cnt[d] = 0; for each nums[j], do cnt[nums[j]]++? No, we need for each d, count of nums[j] divisible by d. We can do: for d=1 to M: for multiple m = d, 2d, ..., M: cnt[d] += freq[m], where freq[m] is frequency of m in nums. This is O(M log M) which is about 1e5 * log(1e5) ~ 1e6, good.
+        #       3. So first compute freq array of size M+1 (index up to M), freq[x] = count of nums[j]==x.
+        #       4. Then for d in 1..M: for m = d, 2d, ..., M: cnt[d] += freq[m].
+        #       5. Now for a given v, we want the number of nums[j] that share a prime factor with v. Let prime factors of v be p1, p2, ..., pk.
+        #          total[v] = number of nums[j] divisible by at least one pi = sum_{non-empty S ⊆ {1..k}} (-1)^{|S|+1} * cnt[prod_{i in S} pi]
+        #       6. We can precompute the prime factors for all numbers up to M using sieve.
+        #       7. Then for each v from 1 to M, compute total[v] by inclusion-exclusion over its distinct prime factors.
+        #          Note: if v==1, total[1]=0.
+        #       8. Complexity: for each v, number of subsets = 2^k -1, k <= about 6, so total operations ~ M * 64 = 6.4e6, acceptable.
+
+        #   Then for each candidate v that is allowed (v <= maxVal or v in nums), compute min_mod[v] as:
+        #       if v <= maxVal:
+        #           # we can change selected index to v
+        #           if v in nums: delta_min = -1  (because we can pick i with nums[i]=v, change it to v (cost 0), and since gcd(v,v)=v>1 for v>1, but for v=1, gcd(1,1)=1, so delta might be 0? Let's recompute delta for v<=maxVal with the possibility of changing selected index.)
+        #           Actually, for v<=maxVal, we allow changing selected index to v. So for any i, we can set nums[i]=v (cost 1 if nums[i]!=v). The delta formula: cost(i,v) = total[v] + (nums[i]!=v) - (gcd(v, nums[i])!=1)
+        #           And we minimize over i. We can compute delta_min[v] as described earlier, but with the caveat that for v=1, gcd(1,1)=1 so (gcd!=1)=0.
+        #           So use:
+        #               if v == 1:
+        #                   delta_min = 0 if 1 in nums else 1
+        #               else: # v>1
+        #                   if v in nums: delta_min = -1
+        #                   else if total[v] > 0: delta_min = 0
+        #                   else: delta_min = 1
+        #           Then min_mod[v] = total[v] + delta_min
+        #       else: # v > maxVal, so v must be in nums, and we cannot change selected index to v (must pick i with nums[i]=v and not change it)
+        #           # Then for a candidate i with nums[i]=v, cost = 0 + (total[v] - 1) because i itself is counted in total[v] (since gcd(v,v)=v>1), so we subtract 1 for i.
+        #           # But we must ensure that we pick such an i. If v in nums, then total[v] includes at least that i.
+        #           # So min_mod[v] = total[v] - 1   (since we don't pay to change i, and we don't need to change i as other)
+        #           # However, what if there are multiple indices with nums[i]=v? We pick one, and the others that are also v and non-coprime with v (which they are) will be counted in total[v] and must be changed if they are not the selected one. But total[v] counts all indices with gcd(v,nums[j])!=1, which includes all indices with nums[j]=v (since gcd(v,v)=v>1). So if there are multiple v's, and we select one as the selected index, the other v's must be changed (cost 1 each). So yes, min_mod[v] = total[v] - 1.
+        #           # But is it possible that for v>maxVal, we might want to change the selected index? No, because changing to v>maxVal is not allowed. So we must not change the selected index; it must remain v (original). So we must pick an index i with nums[i]=v and leave it unchanged.
+        #           # Therefore, min_mod[v] = total[v] - 1, provided v in nums.
+        #           # However, if v in nums but total[v] = 0? That can't happen because gcd(v,v)=v>1, so total[v] >= count of v's >=1.
+        #   Then score[v] = v - min_mod[v] for allowed v.
+        #   Take max score.
+
+        #   Let's test with example 3: nums=[2,2], maxVal=1, M = max(nums)=2.
+        #       freq[2]=2, freq[1]=0.
+        #       cnt[d]: for d=1: cnt[1]=freq[1]+freq[2]=2; d=2: cnt[2]=freq[2]=2.
+        #       Compute total[v]:
+        #           v=1: prime factors none -> total[1]=0
+        #           v=2: prime factors [2], total[2] = cnt[2] = 2
+        #       Allowed v: v<=maxVal (1) or v in nums -> v=1 and v=2.
+        #       v=1: v<=maxVal, v not in nums? 1 not in nums, total[1]=0, so for v=1>1? v=1 special: delta_min=1 (since 1 not in nums), min_mod=0+1=1, score=1-1=0.
+        #       v=2: v>maxVal (since maxVal=1), and v in nums, so min_mod = total[2]-1 = 2-1=1, score=2-1=1.
+        #       max score=1 -> matches.
+
+        #   Example 1 and 2 still work as before.
+
+        #   Example 2 with v=4 (v<=maxVal=4) and v=4 in nums? yes, 4 in nums, so delta_min=-1, min_mod=1-1=0, score=4-0=4? but total[4]=2, delta_min=-1 -> min_mod=1, score=3. Let's recompute example 2 with M=3 (max(nums)=3), but maxVal=4, so M = max(3,4)=4.
+        #       freq: 1:1,2:1,3:1
+        #       cnt[1]=3, cnt[2]=freq[2]+freq[4]? freq[4]=0 -> cnt[2]=1, cnt[3]=1, cnt[4]=0? wait, for d=4, multiples:4, but freq[4]=0 -> cnt[4]=0.
+        #       Actually, do properly:
+        #           cnt[d] = sum_{m multiple of d} freq[m]
+        #           freq[1]=1, freq[2]=1, freq[3]=1, freq[4]=0
+        #           cnt[1]=1+1+1=3
+        #           cnt[2]=freq[2]+freq[4]=1+0=1
+        #           cnt[3]=freq[3]=1
+        #           cnt[4]=freq[4]=0
+        #       total[1]=0
+        #       total[2]: prime factors [2], total[2]=cnt[2]=1
+        #       total[3]: prime factors [3], total[3]=cnt[3]=1
+        #       total[4]: prime factors [2], total[4]=cnt[2]=1 (since multiples of 2 include 2 and 4, but freq[4]=0, so cnt[2]=1)
+        #       Allowed v: 1,2,3,4 (all <=maxVal or in nums)
+        #       v=1: not in nums, delta_min=1, min_mod=0+1=1, score=0
+        #       v=2: in nums, delta_min=-1, min_mod=1-1=0, score=2
+        #       v=3: in nums, delta_min=-1, min_mod=1-1=0, score=3
+        #       v=4: not in nums but <=maxVal, total[4]=1>0 -> delta_min=0, min_mod=1+0=1, score=4-1=3
+        #       max=3 -> correct.
+
+        #   Example 1: M=6 (max(nums)=6), maxVal=5
+        #       freq[3]=1,freq[4]=1,freq[6]=1
+        #       cnt[1]=3, cnt[2]=freq[2]+freq[4]+freq[6]=0+1+1=2, cnt[3]=freq[3]+freq[6]=1+1=2, cnt[4]=freq[4]=1, cnt[5]=0, cnt[6]=freq[6]=1
+        #       total[1]=0
+        #       total[2]: primes [2] -> cnt[2]=2
+        #       total[3]: primes [3] -> cnt[3]=2
+        #       total[4]: primes [2] -> cnt[2]=2
+        #       total[5]: primes [5] -> cnt[5]=0
+        #       total[6]: primes [2,3] -> inclusion-exclusion: cnt[2]+cnt[3]-cnt[6]=2+2-1=3
+        #       Allowed v: all v<=5 or v in nums (1..6), but v=6>maxVal and in nums, so include v=6.
+        #       v=1: not in nums, delta_min=1, min_mod=0+1=1, score=0
+        #       v=2: in nums, delta_min=-1, min_mod=2-1=1, score=1
+        #       v=3: in nums, delta_min=-1, min_mod=2-1=1, score=2
+        #       v=4: in nums, delta_min=-1, min_mod=2-1=1, score=3
+        #       v=5: not in nums but <=maxVal, total[5]=0 -> delta_min=1, min_mod=0+1=1, score=4
+        #       v=6: >maxVal, in nums, min_mod=total[6]-1=3-1=2, score=6-2=4
+        #       max score = max(0,1,2,3,4,4)=4 -> correct.
+
+        #   So the method works.
+
+        # Implementation steps:
+        #   1. Read nums, maxVal.
+        #   2. Let M = max(maxVal, max(nums))  (since we need up to max(nums) and up to maxVal)
+        #   3. Compute freq array of size M+1 (index 0 unused), freq[i] = count of nums[j]==i.
+        #   4. Compute cnt array of size M+1: for d in 1..M: cnt[d] = 0; then for d in 1..M: for m = d, 2d, ..., M: cnt[d] += freq[m]. (standard sieve)
+        #   5. Precompute prime factors for all numbers up to M using smallest prime factor (spf) sieve.
+        #   6. For each v from 1 to M:
+        #          if v == 1: total[v] = 0
+        #          else:
+        #             get distinct prime factors of v (using spf).
+        #             total[v] = 0
+        #             iterate over all non-empty subsets of prime factors, compute product, add or subtract cnt[product]
+        #             We'll do recursion or bitmask.
+        #   7. Create a set present = set(nums)
+        #   8. Initialize best_score = 0
+        #   9. For v in 1..M:
+        #          if v <= maxVal or v in present:
+        #             if v <= maxVal:
+        #                 if v == 1:
+        #                     delta_min = 0 if 1 in present else 1
+        #                 else: # v>1
+        #                     if v in present:
+        #                         delta_min = -1
+        #                     else:
+        #                         if total[v] > 0:
+        #                             delta_min = 0
+        #                         else:
+        #                             delta_min = 1
+        #                 min_mod = total[v] + delta_min
+        #             else: # v > maxVal
+        #                 # then v must be in present (already checked), and min_mod = total[v] - 1
+        #                 min_mod = total[v] - 1
+        #             score = v - min_mod
+        #             best_score = max(best_score, score)
+        #   10. Return best_score
+
+        #   Note: For v <= maxVal and v in present, we used delta_min=-1. But what if v=1 and 1 in present? Then delta_min=0, which is correct (since gcd(1,1)=1).
+        #   Edge: if v <= maxVal and v in present and v>1, delta_min=-1 is correct because we can pick an index i with nums[i]=v, set it to v (cost 0), and since gcd(v,v)=v>1, we subtract 1 from total[v] for i.
+
+        #   However, for v <= maxVal and v in present, could there be a case where picking a different i with nums[i]!=v gives lower cost? For example, if total[v] is small, maybe changing a non-v index to v might cost 1 but avoid subtracting 1? But delta_min=-1 is achievable by picking a v-index, and delta_min=-1 is the minimum possible (since delta can be -1,0,1). So it's safe.
+
+        #   For v <= maxVal and v not in present, if total[v]==0, then delta_min=1, min_mod = total[v]+1 =1, score = v-1. Is that always achievable? If total[v]==0, all nums[j] are coprime with v, so we must change the selected index from its original to v (cost 1), and no other changes. So cost=1, score=v-1. Correct.
+        #   If total[v]>0, we can pick an i with gcd(v,nums[i])!=1 and nums[i]!=v (since v not present), then delta=0, cost = total[v], score = v - total[v]. But could we get lower cost by picking an i with gcd(v,nums[i])==1 and nums[i]!=v? That would give delta=1, cost=total[v]+1, worse. So delta_min=0 is correct.
+
+        #   For v > maxVal and in present, min_mod = total[v]-1. Example: nums=[6], maxVal=5, v=6>5, present={6}, total[6]=1 (only itself), min_mod=0, score=6. But can we achieve? Change no element? Select index0=6, and no other elements, so score=6-0=6. Correct.
+
+        #   Let's test with nums=[2], maxVal=1: M=2, freq[2]=1, cnt[1]=1, cnt[2]=1, total[1]=0, total[2]=1. Allowed v: 1 (<=maxVal) and 2 (>maxVal and present). v=1: not present, total[1]=0 -> delta_min=1, min_mod=1, score=0. v=2: >maxVal, min_mod=1-1=0, score=2. best=2. But is it valid? Change nothing, select 2, gcd with no other = vacuously true, score=2-0=2. However, maxVal=1, but we are not required to change anything. So answer should be 2? But the problem might require that we change some elements? No, we may change any element, but not required. So 2 is valid. However, is there any constraint that the final array must have all elements <=maxVal? No, only changes are <=maxVal. So keeping 2>1 is fine. So score=2 is correct.
+
+        #   But the problem statement says: "change any element in nums to any positive integer less than or equal to maxVal". It doesn't say we must change any element. So yes.
+
+        #   However, in example 3, we changed one element to 1 (<=maxVal) and kept the other 2 (>maxVal), and got score 1. That's consistent.
+
+        #   Therefore, the algorithm should work.
+
+        #   Implementation details:
+        #       - M = max(maxVal, max(nums))  (since nums might be empty? no, n>=1)
+        #       - freq size M+1
+        #       - spf sieve up to M
+        #       - total array size M+1
+        #       - Compute total[v] by inclusion-exclusion: for v>1, get distinct primes, iterate subsets.
+
+        #   Complexity: O(M log M + M * 2^omega) ~ 1e5 * (log + 64) ~ acceptable.
+
+        #   Let's code accordingly.
+
+        #   Note: When computing total[v] by inclusion-exclusion, we must use cnt[product] where product may exceed M? No, product of distinct primes of v is at most v <= M, so within range.
+
+        #   Steps in code:
+
+        #       M = max(maxVal, max(nums)) if nums else maxVal  # but n>=1
+        #       freq = [0]*(M+1)
+        #       for x in nums: freq[x] += 1
+        #       cnt = [0]*(M+1)
+        #       for d in range(1, M+1):
+        #           for m in range(d, M+1, d):
+        #               cnt[d] += freq[m]
+        #       # spf sieve
+        #       spf = list(range(M+1))
+        #       for i in range(2, int(M**0.5)+1):
+        #           if spf[i] == i:
+        #               for j in range(i*i, M+1, i):
+        #                   if spf[j] == j:
+        #                       spf[j] = i
+        #       total = [0]*(M+1)
+        #       total[1] = 0
+        #       for v in range(2, M+1):
+        #           # get distinct prime factors
+        #           primes = []
+        #           x = v
+        #           while x > 1:
+        #               p = spf[x]
+        #               primes.append(p)
+        #               while x % p == 0:
+        #                   x //= p
+        #           primes = sorted(set(primes))
+        #           k = len(primes)
+        #           tot = 0
+        #           # iterate non-empty subsets
+        #           for mask in range(1, 1<<k):
+        #               prod = 1
+        #               bits = 0
+        #               for i in range(k):
+        #                   if mask>>i & 1:
+        #                       prod *= primes[i]
+        #                       bits += 1
+        #               if bits % 2 == 1:
+        #                   tot += cnt[prod]
+        #               else:
+        #                   tot -= cnt[prod]
+        #           total[v] = tot
+        #       present = set(nums)
+        #       best = 0
+        #       for v in range(1, M+1):
+        #           if v <= maxVal or v in present:
+        #               if v <= maxVal:
+        #                   if v == 1:
+        #                       delta_min = 0 if 1 in present else 1
+        #                   else: # v>1
+        #                       if v in present:
+        #                           delta_min = -1
+        #                       else:
+        #                           if total[v] > 0:
+        #                               delta_min = 0
+        #                           else:
+        #                               delta_min = 1
+        #                   min_mod = total[v] + delta_min
+        #               else: # v > maxVal
+        #                   # v must be in present (checked)
+        #                   min_mod = total[v] - 1
+        #               score = v - min_mod
+        #               if score > best:
+        #                   best = score
+        #       return best
+
+        #   However, note: for v > maxVal, we require v in present, which is already checked by "v in present" in the if condition. So safe.
+
+        #   Let's test with small cases mentally.
+
+        #   Potential issue: when v > maxVal and present contains v, but total[v] might be computed including all indices, and min_mod = total[v]-1 might be negative? total[v] >=1 because v itself is present and gcd(v,v)!=1 for v>1, and for v=1 and v>maxVal? v>maxVal and v=1 would imply maxVal<1, impossible since maxVal>=1. So v>1 when >maxVal? maxVal could be 1 and v=1 is not >maxVal. So v>maxVal implies v>=2, so total[v]>=1. So min_mod >=0.
+
+        #   Edge: if M is large (1e5), the double loop for cnt might be about M * (M/d) ~ M log M ~ 1e5 * 12 = 1.2e6, fine.
+
+        #   Let's code accordingly.
+
+        #   However, note: the inclusion-exclusion for total[v] counts the number of nums[j] that are divisible by at least one prime factor of v. But is that equal to the number with gcd(v, nums[j]) != 1? Yes, because gcd(v, nums[j]) != 1 iff they share a prime factor.
+
+        #   But caution: if nums[j] = 0? No, nums[i] >=1.
+
+        #   So we'll implement.
+
+        #   Let's write the code.
+
+        #   Note: We must use Python and be efficient.
+
+        #   We'll use list comprehensions and loops carefully.
+
+        #   One optimization: for cnt computation, we can do:
+        #       cnt = [0]*(M+1)
+        #       for i in range(1, M+1):
+        #           if freq[i] > 0:
+        #               for j in range(i, M+1, i):
+        #                   cnt[j] += freq[i]   # wait, no: we want cnt[d] = sum_{m multiple of d} freq[m]. So for each d, iterate multiples.
+        #       Actually, the standard way: for d in 1..M: for m in d,2d,...: cnt[d] += freq[m].
+        #       We'll do:
+        #           cnt = [0]*(M+1)
+        #           for i in range(1, M+1):
+        #               if freq[i]:
+        #                   for j in range(i, M+1, i):
+        #                       cnt[j] += freq[i]   # this would be cnt[j] += freq[i] for j multiple of i? No: we want cnt[d] = sum_{m multiple of d} freq[m]. So if we iterate i (value), then for each divisor d of i, we add freq[i] to cnt[d]. That might be faster: for each i with freq[i]>0, for each divisor d of i, cnt[d] += freq[i].
+        #       Which is better? Number of divisors is about O(sqrt(i)), total O(n * sqrt(M)) might be up to 1e5 * 316 = 3e7, while sieve method is O(M log M) ~ 1e6. So sieve method (iterating d and multiples) is better.
+        #       We'll do:
+        #           cnt = [0]*(M+1)
+        #           for d in range(1, M+1):
+        #               for m in range(d, M+1, d):
+        #                   cnt[d] += freq[m]
+        #       This is O(M log M).
+
+        #   Let's implement.
+
+        #   We'll also handle M possibly up to 100000.
+
+        #   Let's code.
+
+        #   Note: We must not exceed time. The inclusion-exclusion per v might be heavy if we do for all v from 2 to M. But worst-case each v has up to 6 primes, so 63 subsets per v, total ~6e6 iterations, fine.
+
+        #   We'll precompute distinct prime factors for all v? We can compute on the fly using spf.
+
+        #   Implementation:
+
+        #       def maxScore(self, nums: list[int], maxVal: int) -> int:
+        #           if not nums: return 0
+        #           max_num = max(nums)
+        #           M = max(max_num, maxVal)
+        #           freq = [0] * (M+1)
+        #           for x in nums:
+        #               if x <= M:  # always true
+        #                   freq[x] += 1
+        #           cnt = [0] * (M+1)
+        #           for d in range(1, M+1):
+        #               for m in range(d, M+1, d):
+        #                   cnt[d] += freq[m]
+        #           # spf
+        #           spf = list(range(M+1))
+        #           for i in range(2, int(M**0.5)+1):
+        #               if spf[i] == i:
+        #                   for j in range(i*i, M+1, i):
+        #                       if spf[j] == j:
+        #                           spf[j] = i
+        #           total = [0] * (M+1)
+        #           total[1] = 0
+        #           for v in range(2, M+1):
+        #               x = v
+        #               primes = []
+        #               while x > 1:
+        #                   p = spf[x]
+        #                   primes.append(p)
+        #                   while x % p == 0:
+        #                       x //= p
+        #               primes = sorted(set(primes))
+        #               k = len(primes)
+        #               tot = 0
+        #               # iterate non-empty subsets
+        #               for mask in range(1, 1<<k):
+        #                   prod = 1
+        #                   bits = 0
+        #                   for i in range(k):
+        #                       if mask >> i & 1:
+        #                           prod *= primes[i]
+        #                           bits += 1
+        #                   if bits % 2 == 1:
+        #                       tot += cnt[prod]
+        #                   else:
+        #                       tot -= cnt[prod]
+        #               total[v] = tot
+        #           present = set(nums)
+        #           best = 0
+        #           for v in range(1, M+1):
+        #               if v <= maxVal or v in present:
+        #                   if v <= maxVal:
+        #                       if v == 1:
+        #                           delta_min = 0 if 1 in present else 1
+        #                       else:  # v > 1
+        #                           if v in present:
+        #                               delta_min = -1
+        #                           else:
+        #                               if total[v] > 0:
+        #                                   delta_min = 0
+        #                               else:
+        #                                   delta_min = 1
+        #                       min_mod = total[v] + delta_min
+        #                   else:  # v > maxVal
+        #                       # v in present already from if condition
+        #                       min_mod = total[v] - 1
+        #                   score = v - min_mod
+        #                   if score > best:
+        #                       best = score
+        #           return best
+
+        #   Let's test with the examples quickly in mind, already did.
+
+        #   Potential bug: When computing total[v] for v>1, we used cnt[prod] where prod might be > M? No, prod <= v <= M.
+
+        #   Also, note: cnt[d] includes freq[d] and all multiples. So for v, the inclusion-exclusion over prime factors gives the count of numbers divisible by at least one prime factor, which is exactly the count of numbers that share a prime factor with v, i.e., gcd(v, nums[j]) != 1. Correct.
+
+        #   However, what about the number 1? gcd(1, x)=1 always, so total[1]=0, and our loop starts from 2, so total[1]=0 set manually.
+
+        #   One more test: nums=[1], maxVal=1. M=1. freq[1]=1. cnt[1]=1. spf[1]=1. total[1]=0. present={1}. Loop v=1: v<=maxVal, v==1, 1 in present -> delta_min=0, min_mod=0+0=0, score=1-0=1. Return 1. Correct.
+
+        #   nums=[1], maxVal=2. M=2. freq[1]=1, freq[2]=0. cnt[1]=1, cnt[2]=0. total[1]=0, total[2]: primes [2], cnt[2]=0 -> total[2]=0. present={1}. Allowed v: 1,2 (v<=2 or in present). v=1: delta_min=0 (1 in present), min_mod=0, score=1. v=2: <=maxVal, not in present, total[2]=0 -> delta_min=1, min_mod=1, score=1. best=1. But can we get score 2? Choose v=2 as selected, change the 1 to something? We would change nums[0] from 1 to 2? But 1<=maxVal=2, we can change 1 to 2 (cost1), then selectedValue=2, gcd(2,2)=? only one element, vacuously true, score=2-1=1. Or keep 1 as selected, score=1-0=1. So max=1. Correct.
+
+        #   nums=[2], maxVal=2. M=2. freq[2]=1. cnt[1]=1, cnt[2]=1. total[2]=cnt[2]=1. present={2}. v=1: <=maxVal, not present, total[1]=0 -> delta_min=1, min_mod=1, score=0. v=2: <=maxVal, present, delta_min=-1, min_mod=1-1=0, score=2. best=2. Correct.
+
+        #   So seems good.
+
+        #   Let's consider performance: M up to 100000, the cnt double loop is about sum_{d=1}^{M} M/d ≈ M * H_M ≈ 1e5 * 12 = 1.2e6, fine. spf sieve O(M log log M). Inclusion-exclusion O(M * 2^omega) ≈ 6e6. Should run under 2s in Py.
+
+        #   We'll implement accordingly.
+
+        #   Note: We must use the exact method signature.
+
+        #   Let's write the final code.
+
+        #   One more check: when v <= maxVal and v in present, we set delta_min=-1 for v>1. But what if v=1 and 1 in present? Then we set delta_min=0, which is correct.
+
+        #   Edge: v=1 and maxVal=0? but maxVal>=1.
+
+        #   We'll output the code.
+
+        #   However, note: the set "present" might include numbers > maxVal, but that's fine.
+
+        #   Let's code.
+```python
+import math
+from typing import List
+
+class Solution:
+    def maxScore(self, nums: List[int], maxVal: int) -> int:
+        if not nums:
+            return 0
+        
+        max_num = max(nums)
+        M = max(max_num, maxVal)
+        
+        # frequency of each value in nums
+        freq = [0] * (M + 1)
+        for x in nums:
+            freq[x] += 1
+        
+        # cnt[d] = number of elements in nums divisible by d
+        cnt = [0] * (M + 1)
+        for d in range(1, M + 1):
+            for m in range(d, M + 1, d):
+                cnt[d] += freq[m]
+        
+        # smallest prime factor sieve
+        spf = list(range(M + 1))
+        for i in range(2, int(M ** 0.5) + 1):
+            if spf[i] == i:
+                for j in range(i * i, M + 1, i):
+                    if spf[j] == j:
+                        spf[j] = i
+        
+        # total[v] = number of indices j with gcd(v, nums[j]) != 1
+        total = [0] * (M + 1)
+        total[1] = 0
+        for v in range(2, M + 1):
+            # distinct prime factors of v
+            x = v
+            primes = []
+            while x > 1:
+                p = spf[x]
+                primes.append(p)
+                while x % p == 0:
+                    x //= p
+            primes = sorted(set(primes))
+            k = len(primes)
+            tot = 0
+            # inclusion-exclusion over non-empty subsets of prime factors
+            for mask in range(1, 1 << k):
+                prod = 1
+                bits = 0
+                for i in range(k):
+                    if (mask >> i) & 1:
+                        prod *= primes[i]
+                        bits += 1
+                if bits % 2 == 1:
+                    tot += cnt[prod]
+                else:
+                    tot -= cnt[prod]
+            total[v] = tot
+        
+        present = set(nums)
+        best = 0
+        
+        for v in range(1, M + 1):
+            # candidate v is allowed if it can be the selected value
+            if v <= maxVal or v in present:
+                if v <= maxVal:
+                    if v == 1:
+                        delta_min = 0 if 1 in present else 1
+                    else:  # v > 1
+                        if v in present:
+                            delta_min = -1
+                        else:
+                            if total[v] > 0:
+                                delta_min = 0
+                            else:
+                                delta_min = 1
+                    min_mod = total[v] + delta_min
+                else:  # v > maxVal  -> must pick an index where nums[i] = v (and not change it)
+                    # v in present guaranteed by the outer if
+                    min_mod = total[v] - 1
+                
+                score = v - min_mod
+                if score > best:
+                    best = score
+        
+        return best
+```
+[finish_reason: stop | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 724, 'completion_tokens': 17037, 'total_tokens': 17761, 'cost': 0.00262395, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 80, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00262395, 'upstream_inference_prompt_cost': 6.84e-05, 'upstream_inference_completions_cost': 0.00255555}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

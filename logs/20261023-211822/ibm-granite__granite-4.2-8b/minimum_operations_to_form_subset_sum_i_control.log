@@ -1,0 +1,482 @@
+
+Assistant: ```python
+class Solution:
+    def minOperations(self, nums: list[int], sum: int) -> int:
+        from collections import deque
+
+        # Helper: for each starting value v, explore all possible (value, ops) after applying multiplications and divisions in order.
+        # We'll compute all reachable values from v with the constraint that all multiplies come before any division.
+        # We'll do BFS per element because ops count matters.
+        # Since numbers are up to 500 and operations limited (max ~12? see below), BFS is fine.
+        # Actually we need to generate all (value, cost) pairs for each element.
+
+        # We'll store all possible (value, cost) pairs for each element.
+        # But note: we can choose not to apply any operations, so include (v,0) as well.
+        all_pairs = []
+        for v in nums:
+            pairs = set()
+            # BFS over state (cur_val, ops_used, can_multiply_flag?) Actually we must do all multiplies first, then divisions.
+            # Equivalent: we can decide a non-negative integer k >= 0 of multiplications first, then we may do divisions (any number, but each division reduces floor(x/2)).
+            # However, after we start dividing, we cannot go back to multiplying.
+            # So we can simulate: first multiply 0..M times (where M is max such that 2^M * v <= some upper bound? But division can follow)
+            # Actually after multiplications, we can do any number of divisions (including zero). So we need to consider all sequences where we multiply some times, then divide some times.
+            # Since divisions floor, the value decreases, so the state space is limited.
+            # Let's do BFS with state (cur, can_mult) where can_mult is True if we haven't started dividing yet.
+            # But we can also do zero multiplications and zero divisions.
+            # We'll use a dict best[(cur, can_mult)] = min ops? Actually we want all possibilities with cost.
+            # Since ops count matters and we want minimum total ops overall across subset, we should keep all pairs (value, cost) that are not dominated? But some higher cost with same value is dominated by lower cost with same value.
+            # However, for subset sum we might need a higher cost value? No, if same value we always prefer lower cost. So we can keep for each value the minimum cost achieving it.
+            # But note: after we finish dividing, we cannot multiply again, so once we do a division, we are done with that element (we can't multiply later). So BFS must allow only one transition from multiply-phase to divide-phase.
+            # Let's do: start with (v, 0, True) where True means we are still in multiply phase (i.e., haven't performed any division yet). From a state in multiply phase, we can either multiply (2*cur) or divide (floor(cur/2)) if we choose to start division? Actually division can be performed at any time after zero multiplications? The rule: all multiplication operations performed on it must occur before any division operations. So we can do zero or more multiplications first, then zero or more divisions. So we can switch from multiply phase to divide phase exactly once (by doing a division after at least zero multiplications). After we do a division, we must only divide.
+            # So state includes a flag 'phase': 0 = multiply phase (haven't done any division yet), 1 = divide phase (already did at least one division). Actually we could do zero divisions as well; that's just staying in multiply phase and doing zero divisions.
+            # From phase 0, we can multiply (stay in phase 0) or divide (move to phase 1). From phase 1, only divide.
+            # We'll BFS with cost, but limit depth? The numbers are small.
+            # Upper bound on value: if we multiply many times, value could become large. But sum <= 5000, and we only care about values that could contribute to sum. Values > sum might still be used if we don't include them? Actually if a value > sum and we include it in subset, it would exceed sum unless we have negative? No, subset sum exactly sum, so any element > sum cannot be part of a subset that sums to sum (unless we have other negative, but no). So we can cap values at sum (if > sum, we can ignore that branch because including it would exceed sum; but we might choose not to include it in the subset. However, for the subset we pick, we only care about values <= sum. So for each element, we only need to consider reachable values <= sum. Values > sum are useless for the subset sum (they will never be included). However, they could be included in the array but not in the subset? The subset is chosen from the resulting array, so we can always choose not to include an element that is > sum. So for subset sum, we only need values <= sum. So we can discard branches where value > sum (unless we might use it with negative? no). So we can prune.
+            # Similarly, we can bound the number of multiplications: since v <= 500, multiplying until > sum might be limited. max multiplications: while 2^k * v <= sum, k up to log2(sum/v) <= log2(5000/1) ~ 13. So at most ~13 multiplications.
+            # BFS per element with pruning value > sum is safe.
+            # We'll collect all (value, cost) with value <= sum.
+            # Use a dict best: value -> min cost.
+
+            best = {}  # value -> min cost
+            # Start state: (v, cost=0, phase=0)
+            # We'll use a queue (cur, cost, phase)
+            queue = deque()
+            queue.append((v, 0, 0))
+            while queue:
+                cur, cost, phase = queue.popleft()
+                # Record if cur <= sum and better
+                if cur <= sum:
+                    if cur not in best or cost < best[cur]:
+                        best[cur] = cost
+                # If cur already > sum, we don't need to explore further because multiplying will only increase, dividing will decrease (but dividing might bring it back <= sum). So we still need to consider division even if cur > sum? Example: v=1000, sum=10, we could divide many times to get <=10. So we cannot prune cur > sum entirely; only for recording we skip. But we still need to explore divisions to reduce.
+                # So we continue BFS regardless of cur > sum for exploration.
+                # Multiplication only allowed in phase 0.
+                if phase == 0:
+                    # multiply
+                    nxt = 2 * cur
+                    if nxt <= sum or nxt > sum:  # we still need to explore even if > sum because division later might bring down? But multiplication only increases, so if nxt > sum, multiplying further only gets larger, but we might later divide. However, dividing after multiplication could bring back down to <= sum. Example: v=10, sum=5, multiply once: 20 >5, then divide: 10>5, divide again:5 <=5. So we need to keep nxt even if >sum.
+                    # So no prune for nxt.
+                    # But we should avoid infinite loops? BFS with pruning by cost? However, multiplying repeatedly without division could lead to huge numbers, but we can bound because after some multiplications, dividing back might not be beneficial? But we must consider all possibilities within reasonable bounds. Since sum <=5000, the maximum useful value after multiplications that we might later divide down to <=sum is bounded by something like 2*sum? Not necessarily: consider v=1, multiply 20 times to 2^20=1e6, then divide 19 times to get 2, which is <=sum. That would be 39 operations, which is huge but possible? However, the problem asks for minimum operations, so such a long chain is unlikely to be optimal because you could have achieved the same final value with fewer ops by not multiplying so much. So for minimal ops, we don't need to consider very deep multiplication chains because they add unnecessary ops. But to be safe, we can limit the number of multiplications by noticing that if we multiply k times and then divide d times, the net effect is (2^k) * v / (2^d) approximately. The minimal ops to achieve a value <= sum might not require k >> d much. However, to avoid infinite BFS, we can impose a reasonable bound: since sum <=5000, the maximum value we ever need to consider after multiplications before division is at most something like 2*sum? Let's think: if we multiply first and then divide, the final value after all divisions is floor( (2^k * v) / (2^d) ) with k>=0, d>=0, and k divisions? Actually the division operations are performed after all multiplications, and they are floor divisions step by step. The final value will be floor( floor( ... floor(2^k * v / 2) / 2 ... ) which equals floor(2^k * v / 2^d) because floor division in sequence is equivalent to floor(2^k * v / 2^d) for integers? Not exactly, but for non-negative integers, repeated floor division by 2 after multiplying by powers of 2 is equal to floor(2^k * v / 2^d). Yes, because floor(floor(x/2)/2) = floor(x/4) for integer x? For integer x, floor(floor(x/2)/2) = floor(x/4). So after d divisions following k multiplications, the value becomes floor(2^k * v / 2^d) = floor(v * 2^(k-d)) if k>=d, or floor(v / 2^(d-k)) if d>k. So the sequence of operations is essentially: choose integers k>=0, d>=0, then apply k multiplications and then d divisions. The total ops = k+d. The resulting value = floor(v * 2^k / 2^d) = floor(v * 2^(k-d)). So it's equivalent to choosing a net exponent e = k-d (could be negative), and the value = floor(v * 2^e) where e is integer (could be negative, meaning division). But careful: floor(v * 2^e) when e negative is floor(v / 2^{|e|}). However, the order (all multiplies then all divisions) ensures that we cannot interleave, but the final value is exactly floor(v * 2^e) where e = k-d, and the operations are k+d. Is that always true? Let's test: v=5, k=2, d=1: multiply: 5->10->20, then divide: 20->10. floor(5*2^(1))=10. Yes. v=5, k=0,d=2: divide twice: 5->2->1. floor(5/4)=1. Yes. v=3, k=1,d=2: multiply:6, divide:3, divide:1 -> floor(3*2/4)=1.5? floor(1.5)=1? Actually 3*2=6, /4=1.5 floor=1, matches. So indeed, any sequence of all multiplies then all divisions results in value = floor(v * 2^e) where e = k-d (integer, possibly negative). And total ops = k+d. Given e, we want to minimize k+d such that k-d = e, k>=0, d>=0. That's a small optimization: for a given e, the minimal ops achieving that e is |e| if e>=0? Let's solve: k-d = e, k+d = k+e (since d = k-e for e>=0). To minimize k+d = k+e with k>=e (since d>=0 => k>=e). So minimal k = e, d=0 gives ops = e. But that's only if we don't need to divide. Wait, if e>=0, we can achieve e with k=e, d=0, ops=e. That's just multiplying e times. But if we want to divide, e negative, then we need d = -e, k=0 gives ops = -e. So for any integer e, the minimal ops to achieve floor(v*2^e) is |e|, by doing only multiplications if e>0 or only divisions if e<0. However, is floor(v*2^e) always achievable with exactly |e| ops? For e>0: multiply e times -> v*2^e exactly (no floor), so value = v*2^e. For e<0: divide |e| times -> floor(v / 2^{|e|}), yes. So indeed, any sequence that does all multiplications first then all divisions can be reduced to just |e| ops if we don't mix extra redundant multiplies and divides? But sometimes doing both multiplies and divides could yield a value that cannot be achieved by only multiplies or only divisions? Example: v=5, want value 2. With only divisions: 5->2 (one division) gives 2. That's e = -1 (d=1,k=0) ops=1. With multiplies then divide: k=1,d=1: 5->10->5, value 5? No, 5->10->5? Actually 5 multiply->10, divide->5, not 2. So to get 2, you need at least one division after no multiplication? That's just e=-1. So minimal ops is 1. So indeed, the optimal for a given target value from a single element is to use only divisions if the target is less than v, or only multiplications if greater. But sometimes you might need both? Consider v=3, want value 2. Only divisions: 3->1 (one division) gives 1, not 2. Only multiplications: 3->6, no. So you need both? Let's see: multiply then divide: 3->6->3 (back to 3), or 3->6->3? No 6->3 is division, value 3. Multiply twice then divide: 3->6->12->6 gives 6. Not 2. How to get 2 from 3? 3->1 (division) then multiply? Not allowed because multiplication must come before division. So you cannot multiply after division. So from 3, with all multiplies first then divisions, possible values are floor(3*2^e) for integer e (could be negative). floor(3*2^{-1}) = floor(1.5)=1, floor(3*2^0)=3, floor(3*2^1)=6, etc. So 2 is not achievable from 3 under the operation constraints. That matches example 3: [6,3] sum=8 impossible because 3 cannot become 2? Indeed.
+            # Therefore, for each element, the set of reachable values is exactly { floor(v * 2^e) | e integer, with the constraint that we can achieve it with ops = |e|? But note: you could do extra multiplications and then extra divisions that cancel? Example: v=5, e=0 (k=1,d=1) gives floor(5*2/2)=5, ops=2, which is worse than 0 ops. So minimal ops for a given value is the minimal |e| such that floor(v*2^e) = value. So for each element, we only need to consider values of the form floor(v * 2^e) for e in some range, and take minimal ops = minimal |e| achieving that value.
+            # This simplifies greatly!
+            # Let's formalize:
+            # For each starting value v, define for integer e (could be negative) the value w(e) = floor(v * 2^e). Let ops(e) = |e| (since we can take k=e if e>=0, or k=0,d=-e if e<0). However, is it always possible to achieve w(e) with exactly |e| ops? Yes: if e>=0, multiply e times; if e<0, divide -e times. That yields w(e) exactly as described.
+            # But could there be other sequences with same value but fewer ops? Suppose we do k>e and d>0 such that k-d = e but k+d < |e|? That's impossible because k-d = e, k+d >= |k-d| = |e| by triangle inequality (since k,d >=0). Indeed, k+d >= |k-d|. So minimal ops for achieving a net exponent e is |e|.
+            # Therefore, for each element, the only relevant operations are choosing an integer e (could be negative, zero) and paying |e| ops to get value w(e) = floor(v * 2^e).
+            # However, note that e can be positive (multiplications) or negative (divisions). The value w(e) must be integer and non-negative (v>=1).
+            # So we can enumerate all possible e such that w(e) <= sum (since values > sum are useless for inclusion). Also w(e) could be zero? floor(v/2^{|e|}) could become 0 if v < 2^{|e|}. But 0 can be included in subset? Sum >=1, so 0 doesn't help, but including 0 doesn't hurt; however, we can always not include it. So we can include 0, but it doesn't affect sum. However, operations to get 0 might be >0? For v>=1, floor(v/2^{d}) becomes 0 when d large enough. That would require d >= ceil(log2(v)). That could be up to about 9 (since v<=500). So we might consider e negative enough to get 0. But 0 is useless for sum>0, so we can ignore value 0 because including it doesn't help reach sum (it adds 0). However, we might need to use 0? No, subset sum exactly sum, adding 0 doesn't change sum, so we can always omit it. So we can ignore value 0. So we only consider w(e) >=1 and <= sum.
+            # Thus, for each element, we can generate all e such that 1 <= floor(v*2^e) <= sum.
+            # e can be negative: for e = -d, w = floor(v / 2^d). As d increases, w decreases. We need to consider all d where w >=1.
+            # e can be positive: w = v * 2^e, but must be <= sum. So e max such that v*2^e <= sum.
+            # Since sum <=5000, v<=500, e_max <= floor(log2(5000/1)) ~ 12. e_min such that floor(v/2^{|e|}) >=1 => 2^{|e|} <= v => |e| <= floor(log2(v)) <= 9.
+            # So total per element at most about 22 values, trivial.
+            # For each such e, record (w, ops = |e|). However, note that different e might yield same w. For example, v=5, e=0 ->5, e=1 ->10, e=-1 ->2, etc. But could two different e give same w? Possibly if floor(v*2^e) collides. Example: v=3, e=0->3, e=-1->1, e=-2->0 (ignore). No collision among positive w? v=2, e=0->2, e=1->4, e=-1->1. No collision. But maybe v=1, e=-1->0, ignore. Generally, floor(v*2^e) for distinct e are distinct? Not necessarily: floor(3/2)=1, floor(1*4)=4? No. Could floor(v*2^e) = floor(v*2^{e'}) for e>e'? Suppose v=2, e=1 gives 4, e=0 gives2, no. v=5, e=0->5, e=-1->2, no. I think they are distinct because multiplying by 2 or dividing by 2 (floor) usually changes value unless v has fractional part? But v integer, so v*2^e is integer for e>=0, and for e<0 it's floor(v/2^{|e|}), which is strictly decreasing as |e| increases until 0. So they are distinct for different e with same sign. Between positive and negative e, could w(e) for e>0 equal w(-d) for some d? Example: v=2, e=1 gives 4, e=-1 gives1, no. v=1, e=1->2, e=-1->0, no. So likely distinct. But to be safe, we keep minimal ops for each w.
+
+            # So algorithm:
+            # 1. For each v in nums, compute all possible (value w, ops) with w in [1, sum] and ops = |e| for integer e such that w = floor(v * 2^e). We'll enumerate e from e_min to e_max.
+            #    e_min = smallest integer such that floor(v / 2^{|e|}) >=1 => |e| <= floor(log2(v)) so e_min = -floor(log2(v)).
+            #    e_max = largest integer such that v * 2^e <= sum.
+            #    But careful: for e negative, w = floor(v / 2^{-e}) could be less than 1 for large |e|, so stop when w <1.
+            #    For each e in range(e_min, e_max+1), compute w = floor(v * 2^e) if e>=0? Actually for e negative, v * 2^e = v / 2^{|e|}, not integer, so floor. So compute as integer division: if e>=0: w = v << e (v * 2^e). if e<0: w = v >> |e| (integer floor division by 2^{|e|}). Because v // (2^{|e|}) is floor(v / 2^{|e|}).
+            #    Then if 1 <= w <= sum, record ops = abs(e). Keep min ops per w.
+            #    Also include e=0 (no ops) always.
+            # 2. Now we have for each element a list of (w, ops). We need to choose for each element a value w_i (possibly not using the element in the subset) and pay ops_i if we use that value (but if we don't use the element in the subset, we could choose to leave it as original? Wait: we must apply operations to the array? The operations are performed on elements, and then we select a subset of the resulting array. So every element gets some operations applied (possibly zero), and then we pick a subset of the resulting numbers that sums to sum. We cannot leave an element un-operated and also not include it? Actually we must apply operations to each element? The problem says: "In one operation, choose an element with current value x and replace it with either 2*x or floor(x/2)." We perform operations until we have a resulting array. We are free to choose any sequence of operations on any elements, and we want minimum total operations across all elements (not per element independent). But the operations on each element are independent (since operations on one element don't affect others). And the constraint that for each element, all multiplications must occur before any divisions applies per element. So indeed, for each element we decide a net exponent e (which determines the final value and ops = |e|), and we pay |e| ops for that element. However, note: we might choose to not include an element in the subset, but we still have to apply some operations to it? Yes, because we perform operations on the array; we cannot leave an element unchanged if we apply operations? Actually we can choose zero operations (e=0), which leaves it as v. That's allowed. So for each element, we must pick an e (possibly 0) and pay |e| ops, resulting in value w = floor(v*2^e). Then we select a subset of these w_i that sums to sum. The total ops is sum of |e_i| over all elements? Or only over elements we perform operations on? The operations are performed on elements; if we pick e=0 for some element, that means we do zero operations on it, so no cost. So total ops = sum_i |e_i|.
+
+            # But is it required that we perform operations on all elements? The problem says "choose an element" each operation, so we can choose any element any number of times. We are minimizing total operations across all elements. We are free to leave some elements unchanged (zero ops). So yes, for each element we choose an e (which could be 0) and pay |e|.
+
+            # However, there is a nuance: the operations on an element must be done in order (all multiplies first then divisions). Our representation with net exponent e and ops=|e| assumes we either only multiply or only divide, never both. But is it ever beneficial to do both multiply and divide on the same element? That would mean k>0 and d>0 with k-d = e, ops = k+d > |e|. Since we can achieve the same final value w = floor(v*2^e) with only |e| ops (by doing only multiplications if e>=0 or only divisions if e<0), doing both would only increase ops. Therefore, for minimum total ops, we would never do both multiply and divide on the same element because it only adds extra ops with no benefit in terms of value (the final value is the same). However, could doing both lead to a different value that is not representable as floor(v*2^e) for integer e? No, any sequence of all multiplies then all divisions results in floor(v*2^e) for e=k-d. So the set of achievable final values is exactly {floor(v*2^e)}. And among all sequences that achieve a given e, the minimal ops is |e|. So optimal solution will never use extra multiply-divide pairs on a single element because that would increase ops without changing final value. Therefore, we can restrict to choosing for each element a net exponent e (integer) and paying |e| ops, resulting in value w = floor(v*2^e).
+
+            # Thus, the problem reduces to: for each element i, we have a set of options: (w, cost = |e|) where w = floor(v_i * 2^e), 1<=w<=sum, and also we have the option to not use the element in the subset? But we must assign a value to every element (since we operate on all elements), but we can choose not to include it in the subset. However, the cost for an element is incurred regardless of inclusion. So for each element, we must pick exactly one option (including possibly the original v with cost 0), and then we select a subset of the chosen values that sums to sum. The total cost is sum of costs of all elements (since operations are performed on all elements). Wait, is it necessary to perform operations on every element? Yes, because the array consists of all elements; we must replace each element with some value via operations? The problem doesn't say we must change every element; we can choose to do zero operations on some. So every element gets some final value (possibly original), and we pay ops for each element that we modify. So indeed, we must assign a final value to every element, and pay its cost. Then we pick a subset of those final values that sum to sum.
+
+            # However, could we choose not to operate on an element and also not include it? That's the same as assigning its original value with cost 0, and not including it in the subset. That's allowed.
+
+            # Therefore, we have a kind of "assignment + subset sum" problem: choose for each element a final value w_i (from its options) and a cost c_i = |e|, and then choose a subset S of indices such that sum_{i in S} w_i = sum. Total cost = sum_{i} c_i. We want to minimize total cost.
+
+            # Note: The cost is incurred for all elements, even those not selected in the subset. So we cannot avoid paying cost for an element even if we don't use it in the subset. That makes sense because operations are performed on the array; we have to perform them regardless of whether we use the element in the subset.
+
+            # So we need to minimize total ops = sum c_i over all elements, subject to existence of a subset of chosen w_i summing to sum.
+
+            # This is a classic DP over sum with state including total cost? Since nums length <=100, sum <=5000, costs are small (max about 12). We can do DP that tracks minimum total cost to achieve a subset sum using processed elements, but we also need to account that every element contributes cost regardless of being used or not. So for each element, we must pay its cost c_i no matter what. Therefore, total cost = sum of c_i of all elements. But we can choose c_i (by choosing e) per element. So the problem becomes: choose for each element a pair (w_i, c_i) from its options, and then check if there is a subset of the w_i that sums to sum. Minimize total c_i = sum c_i.
+
+            # Since the subset selection is independent of costs (except that costs are additive over all elements), we can think: for a given choice of options (w_i, c_i), if there exists a subset of w_i summing to sum, then total cost is sum c_i. We need the minimum over all such choices.
+
+            # We can attempt DP over sum that also keeps track of total cost? But total cost is sum of c_i for all elements, not just selected ones. That means for each element, we must add its c_i regardless. So if we decide options for all elements, we pay all c_i. So we can decide options and then check subset sum feasibility. However, we can incorporate the decision of which elements to include in the subset into the DP that minimizes total cost.
+
+            # Let's define for each element i, we have a set of possible (w, c). We need to pick exactly one (w_i, c_i) for each i, and then pick a subset S such that sum_{i in S} w_i = sum. Total cost = sum_{i=1..n} c_i.
+
+            # Equivalent: minimize sum c_i subject to existence of subset S with sum_{i in S} w_i = sum.
+
+            # We can think of DP over sum that stores the minimum total cost of all elements processed so far, given that we have achieved a certain subset sum? But the cost includes costs of all elements, including those not selected. So when processing element i, if we choose option (w, c), then we must add c to total cost regardless. Additionally, we may include this element in the subset or not. So the DP state should be: after processing first i elements, for each possible subset sum s (0..sum), store the minimum total cost incurred for those i elements (i.e., sum of c_j for j<=i) such that there exists a subset of the chosen w_j's among these i that sums to s. Then when we process next element with option (w,c), we update: for each existing sum s, we can either not include the new element in the subset, resulting in new sum s and cost increased by c; or include it, resulting in new sum s+w (if <=sum) and cost increased by c. We take minimum cost for each sum.
+
+            # At the end, we look at DP[sum] (after all elements) and that gives the minimum total cost achievable (since we must include all elements' costs). This DP works because we are forced to pick one option per element and pay its cost always.
+
+            # However, note: the option (w,c) includes the possibility of w=0? We ignore w=0 because including 0 doesn't help and we can always not include it; but picking w=0 might be beneficial if its cost c is low? For example, if we have an element that can become 0 with some cost, and we don't include it in subset, we still pay cost. So we would never choose an option that results in w=0 unless its cost is lower than other options? But cost to get 0 is at least floor(log2(v)) divisions, which might be >0. Choosing original v (cost 0) might be better. So we can safely ignore w=0 options because they are dominated: any w=0 option has cost >=0, and including 0 in subset doesn't help sum, so we would always prefer to not include it and pay cost. But could choosing w=0 allow us to reduce cost of other elements? No. So we can discard w<1.
+
+            # Also, we must consider that for each element, we have the option to not change it (e=0, w=v, c=0). That's always available.
+
+            # Implementation steps:
+            # - Preprocess each element's options: list of (w, c) with w in [1,sum], c = abs(e), where e integer, w = floor(v * 2^e). We'll enumerate e from e_min to e_max as described.
+            #   e_min = - while (1 << (-e_min-1)) <= v? Actually e_min such that floor(v/2^{|e|}) >=1 => 2^{|e|} <= v => |e| <= floor(log2(v)). So e_min = -floor(log2(v)). We'll compute by while loop: start e = 0, go negative while v // (1 << abs(e)) >= 1. Similarly e_max while v * (1 << e) <= sum.
+            #   But careful with large e: v up to 500, sum up to 5000, so e_max <= 12, e_min >= -9. We'll just iterate e from -10 to 12 or compute bounds.
+            # - For each e in range(-12, 13) maybe, but better compute bounds:
+            #     e_low = 0
+            #     while v // (1 << (-e_low-1)) >= 1: e_low--   # go negative
+            #     e_high = 0
+            #     while v * (1 << e_high) <= sum: e_high++   # but careful with overflow? small.
+            #   Then loop e from e_low to e_high.
+            #   Compute w = v << e if e>=0 else v >> (-e)  (using bit shifts for speed, but ensure integer division floors automatically).
+            #   If w >=1 and w <= sum, add (w, abs(e)). Keep only the minimal c for each w (since for same w, different e might give same w with larger c, we keep smallest c). However, could same w appear from different e with smaller abs(e)? Unlikely but possible? Example: v=1, e=0->1, e=1->2, e=-1->0. No collision. But let's keep min.
+            # - After getting options per element (list of unique w with min c), we have for each element a set of choices. Some elements may have only one option (the original).
+            # - DP: dp[s] = minimum total cost so far to achieve subset sum s using processed elements. Initialize dp[0] = 0, others INF.
+            #   For each element i, with options list opt = [(w1,c1), ...], we compute new_dp = [INF]*(sum+1). For each current sum s where dp[s] != INF, for each (w,c) in opt, we can:
+            #        not include: new_sum = s, new_cost = dp[s] + c
+            #        include: if s+w <= sum, new_sum = s+w, new_cost = dp[s] + c
+            #   But note: we must pick exactly one option per element. So for each element, we consider all options simultaneously. However, the DP transition must ensure we pick one option. The above loop over options within the same element would allow picking multiple options for the same element? No, because we iterate over options for the element and for each option we consider inclusion/exclusion. But if we do it naively, we might combine options from the same element? We'll handle by for each element, we compute new_dp from old dp by considering all options for that element and taking min over options for each resulting sum.
+            #   Standard way: for each element, we compute temp = [INF]*(sum+1). For each old s, for each (w,c), we update temp[s] = min(temp[s], dp[s] + c)  (not include), and if s+w <= sum: temp[s+w] = min(temp[s+w], dp[s] + c) (include). Then after processing all options for this element, set dp = temp.
+            #   This works because for each element we pick exactly one option (w,c) and then decide include or not. The cost c is added exactly once.
+            # - After processing all elements, answer = dp[sum] if finite, else -1.
+
+            # Let's test with examples.
+
+            # Example1: nums=[5,6,10], sum=4.
+            # Element1 v=5:
+            # e range: e_min: floor(log2(5))=2 (since 2^2=4<=5, 2^3=8>5) so e_min=-2? Actually floor(log2(5))=2 because 2^2=4<=5, 2^3=8>5, so max |e| for division is 2 (since 5>>2 =1). So e from -2 to ? e_max: 5*2^e <=4 => e<=0 since 5>4, so e_max=0. So e=-2,-1,0.
+            # e=-2: w=5>>2=1, c=2
+            # e=-1: w=5>>1=2, c=1
+            # e=0: w=5, c=0
+            # Options: (1,2), (2,1), (5,0)
+            # Element2 v=6:
+            # e_min: floor(log2(6))=2 (2^2=4<=6), e_max: 6<=4? no, 6>4 so e_max=0? Actually 6*1=6>4, so only e<=0? e=0 gives6>4 not allowed? w must <=4, so e=0 gives6>4, so not allowed. So e=-1: w=3, c=1; e=-2: w=1 (6>>2=1), c=2. Also e=-3? 6>>3=0 ignore. So options: (3,1), (1,2)
+            # Element3 v=10:
+            # e_max: 10>4, so only divisions. e=-1:5>4? 5>4, so not allowed? w=5>4 no; e=-2:2<=4, c=2; e=-3:1, c=3. So options: (2,2), (1,3)
+            # Now DP:
+            # init dp[0]=0.
+            # Element1: options (1,2),(2,1),(5,0) but w=5>4 ignore? Actually w must <= sum? In option generation we already filtered w<=sum, so for v=5, w=5>4? 5>4, so we should not include w=5 because it cannot be part of subset sum 4 (including 5 would exceed). However, we might still pick option w=5 with cost 0 and then not include it in subset. That is allowed because we must pick an option for the element (pay cost 0), and we can choose not to include it in subset. So we should include w=5 as an option even if > sum, because we might still pick it and not include it. But earlier we filtered w<=sum for options? That would discard w=5, which could be chosen with cost 0 and then not used. That would be beneficial if it has lower cost than alternatives? However, if we discard w=5, we force ourselves to pick only options with w<=sum. But we could pick w=5 and not include it in subset, which adds no value but cost 0. So discarding w>sum might be safe if we also allow the option to "not use" the element in subset? But we already have the option not to include via DP (we can choose not to include w_i even if w_i>sum). However, if we discard w>sum options, we might miss the possibility of picking that option with low cost (like cost 0) and then not including it. But we can always pick the original v (which might be >sum) with cost 0. So to correctly model, we must include all options with w (could be >sum) because we might choose that and not include it in subset. However, including w>sum in the subset would never lead to exact sum (since sum <=5000, w>sum would exceed if included), so in DP when considering inclusion, we must not allow including w if w > sum - current sum. But for the option list, we should include all w (including >sum) because we might choose not to include it. So we should not filter w<=sum during option generation. Instead, during DP inclusion, we only consider including if s+w <= sum.
+
+            # Therefore, when generating options, we should include all w = floor(v*2^e) for e in range where w >=0 (or >=1). But w could be 0 (ignore), and w could be >sum. Include them with cost c. However, to reduce state, we can still include w>sum options but in DP inclusion we skip if s+w > sum. That's fine.
+
+            # But e range should be limited to avoid huge w. Since w = v*2^e for e positive could become huge if e large. However, if w > sum, including it in subset is useless, but we might still pick it with cost c. But picking a huge w with low cost (e small) might be beneficial if its cost is low? Example: v=1, sum=4, we could choose e=3 -> w=8 with cost 3, but cost 3 >0? Actually e=3 gives cost 3, worse than e=0 cost 0. So picking a huge w with positive cost is unlikely to beat other options because cost grows with e. But could there be a case where picking a large w with cost less than some alternative division option? No, because to get a large w you need at least e positive operations, which cost e. The original v (cost 0) might already be <=sum or >sum. If v>sum, original v has cost 0 and w=v>sum. That's fine: we can pick it with cost 0 and not include it. So we must include original option even if v>sum.
+
+            # So option generation should include all e such that w >=1 (since w=0 useless), without bounding by sum. But e range must be limited to avoid infinite. How large e can be? Since we only care about minimal total cost, picking very large e (many multiplications) will have high cost |e|, and is unlikely to be optimal because you could just take original v with cost 0 and not include it if v>sum. So we can bound e such that |e| <= max_ops_needed. What is maximum beneficial |e|? Consider v<=500, sum<=5000. The maximum possible benefit of multiplying is to reach a value that fits into sum when combined with others. The worst case you might want to multiply to get exactly some value that helps reach sum. The maximum e needed could be when v is small and you need to reach up to sum, e_max such that v*2^e <= sum + something? But you could also divide other elements. However, multiplying too much might overshoot and never be included, so not beneficial. So we can set a reasonable bound: e_max where v*2^e <= 2*sum? Not necessarily; you might multiply beyond sum to later divide? But our representation uses net exponent e, so if you multiply then divide later, net exponent could be zero or negative. So positive e only used when final value <= sum or possibly >sum but not included. However, if final value > sum and you don't include it, why pay positive ops? Only if the cost of divisions for other elements is high and you might want to use this element in subset? But if w>sum, you cannot include it in subset (since sum is exact and positive), so you would never want to pay positive ops to get w>sum and then not include it, because you could instead take original v (cost 0) and not include it, which is cheaper. Therefore, for positive e, we only need to consider e where w <= sum or where w > sum but maybe w > sum and we include it? Including w>sum would make subset sum exceed sum, so never include. So picking a w>sum with positive cost is strictly worse than picking original v with cost 0 (since original v may also be >sum). Thus, we can restrict positive e to those with w <= sum. Similarly, for negative e, w is always <= v, so if v <= sum, negative e can produce w <= sum; if v > sum, negative e can produce w <= sum (by dividing down). So we only need to consider e where w <= sum for positive e, and for negative e we consider all down to 1.
+
+            # Therefore, we can filter options to only those with w <= sum for positive e? But what about original v > sum? That's e=0, w=v>sum. That option should be included because cost 0 and we may not include it. So e=0 always included even if v>sum. For e>0, if w>sum, we can discard because it's dominated by e=0 (cost 0) with w=v (maybe also >sum). However, could there be a case where v>sum and e>0 gives w>sum but cost>0, while e<0 gives w<=sum with cost>0? We would always prefer e=0 (cost 0) over e>0 (cost>0) if both w>sum (since we won't include). So yes, discard e>0 with w>sum.
+
+            # For negative e, w is <= v, so if v>sum, negative e could bring w <= sum, so we need those.
+
+            # Thus, option generation:
+            #   Include e=0 always (w=v, c=0).
+            #   For e>0: while v * (1<<e) <= sum: include.
+            #   For e<0: while (v >> (-e)) >= 1: include. (i.e., while w>=1)
+            # This ensures w<=sum for positive e, and w>=1 for negative e.
+
+            # Let's test with examples.
+
+            # Example1:
+            # v=5: e=0 always (5>4? sum=4, 5>4, but include e=0 anyway). e>0: 5*2=10>4 no; e<0: e=-1->2<=4 include, e=-2->1<=4 include; e=-3->0 stop.
+            # Options: (5,0), (2,1), (1,2)
+            # v=6: e=0 (6>4), e>0:12>4 no; e<0: e=-1->3<=4, e=-2->1<=4.
+            # Options: (6,0), (3,1), (1,2)
+            # v=10: e=0 (10>4), e>0:20>4 no; e<0: e=-1->5>4? 5>4, but we said for negative e we include all w>=1, even if >sum? 5>4, but w=5>sum, including it with cost 1 might be considered? However, if we include w=5 (cost1) and not include it in subset, we pay 1 which is worse than e=0 cost0. So we can discard w>sum even for negative e? But careful: for negative e, w = floor(v/2^d). If v=10, d=1 gives 5 >4, but 5>sum. Would we ever want to pick e=-1 (w=5, cost1) over e=0 (w=10, cost0)? No, because cost1 >0 and w=5>sum cannot be included (since including 5 would exceed sum? 5>4, cannot include alone; but could include with other numbers? 5+? would exceed 4 since all positive, so cannot include 5 in subset summing to 4). So picking w=5 and not including it costs 1, while picking w=10 and not including costs 0 is better. So we can discard negative e options where w > sum as well, because they would never be included in subset (since all numbers positive, any single element > sum cannot be part of a subset summing to sum). However, could a combination of two elements both > sum? No, because if one > sum, including it would make sum > sum. So indeed, any element with final value > sum must NOT be included in the subset. Therefore, we only need to consider options where w <= sum for inclusion possibility. But we might still pick an option with w > sum and not include it, but that would incur cost possibly >0, which is dominated by picking the original (or some other option with w <= sum and possibly cost 0) that also not included? However, if the original v > sum and we pick it with cost 0, that's optimal for that element if we don't include it. So for each element, the option with minimal cost among those with w > sum is always the original (e=0, cost 0) if v > sum. So we can safely discard all options with w > sum except possibly e=0 when v > sum? But e=0 always has w=v, which may be >sum. So we must keep e=0 even if v>sum.
+
+            # Therefore, when generating options, we keep:
+            #   - e=0 always (w=v, c=0)
+            #   - for e>0: only if v*2^e <= sum
+            #   - for e<0: only if floor(v/2^{|e|}) <= sum   (i.e., w <= sum)
+            # Because if w > sum for e<0, then including it is impossible, and picking it would cost >0 while e=0 costs 0 and also w>sum, so dominated.
+
+            # Let's test with example2: nums=[10,2], sum=13.
+            # v=10: e=0 (10<=13? 10<=13 yes), e>0: 10*2=20>13 no; e<0: floor(10/2)=5<=13, floor(10/4)=2<=13, floor(10/8)=1<=13, floor(10/16)=0 stop. So options: (10,0), (5,1), (2,2), (1,3) but wait e=-2 gives w=2? 10>>2=2, yes; e=-3 gives1.
+            # v=2: e=0 (2<=13), e>0: 2*2=4<=13, 2*4=8<=13, 2*8=16>13 so e=1 (4), e=2 (8); e<0: 2>>1=1<=13, 2>>2=0 stop. Options: (2,0), (4,1), (8,2), (1,1) for e=-1? e=-1 gives1, c=1.
+            # Now DP should find min total cost 3: for v=10 pick e=-1 ->5 cost1, for v=2 pick e=2 ->8 cost2, total cost3, subset {5,8}=13.
+            # Works.
+
+            # Example3: nums=[6,3], sum=8.
+            # v=6: options e=0 (6<=8), e>0:12>8 no; e<0: 3<=8,1<=8 -> options (6,0),(3,1),(1,2)
+            # v=3: options e=0 (3<=8), e>0:6<=8,12>8 -> (3,0),(6,1); e<0:1<=8 -> (1,1) (since 3>>1=1)
+            # Check if subset sum 8 achievable: possible combos? from first:1,3,6; second:1,3,6. We need sum 8. Can we get 8? 6+1+1=8 but that uses both 1s and 6? But we must pick one option per element. Let's see if any choice yields subset {6,2}? no 2 not available. {3,5}? no. {1,7}? no. {3,3,2}? no. DP should find none -> -1.
+
+            # So algorithm seems correct.
+
+            # Edge Cases: multiple options with same w and different c; keep minimal c.
+
+            # Implementation details:
+            # - Compute options for each v:
+            #     opts = dict()  # w -> min c
+            #     Add (v,0)
+            #     e = 1
+            #     while True:
+            #         w = v << e   # v * 2^e
+            #         if w > sum: break
+            #         c = e
+            #         if w not in opts or c < opts[w]: opts[w]=c
+            #         e += 1
+            #     e = -1
+            #     while True:
+            #         w = v >> e  # since e negative, say d = -e, w = v // (1 << d)
+            #         if w == 0: break
+            #         if w > sum:  # if w > sum, break? but w decreases as d increases, so once w <= sum, all further divisions will be <= sum, but could w > sum at first division? Example v=10, sum=4, first division w=5>4, we would discard, but then further divisions give 2,1 <=4. However, if we break when w > sum, we would miss w=2,1 because after first division w=5>4, we break? No, we should continue because later divisions may bring w down to <=sum. So we cannot break on w > sum for negative e. Instead, we continue while w >=1, and add if w <= sum. Because if w > sum, it's dominated by e=0 (cost0), so we skip adding it. But we must continue to smaller d because they may become <=sum.
+            #         So: while d >=0 and w = v >> d >=1:
+            #             if w <= sum: add with c=d
+            #         d from 1 upward.
+            #     So better: for d = 1 to while v >> d >=1:
+            #         w = v >> d
+            #         if w <= sum: add (w, d)
+            #     Similarly for positive e: for e=1 while v << e <= sum: add (v<<e, e)
+
+            # - Then convert opts dict to list of (w, c).
+
+            # - DP: dp = [inf]*(sum+1); dp[0]=0
+            #   for each element's option list opt:
+            #       new_dp = [inf]*(sum+1)
+            #       for s in 0..sum where dp[s] < inf:
+            #           for (w,c) in opt:
+            #               # not include
+            #               if dp[s] + c < new_dp[s]:
+            #                   new_dp[s] = dp[s] + c
+            #               # include if s+w <= sum
+            #               if s+w <= sum and dp[s] + c < new_dp[s+w]:
+            #                   new_dp[s+w] = dp[s] + c
+            #       dp = new_dp
+            #   After loop, if dp[sum] < inf: return dp[sum] else -1
+
+            # However, note: for each element we must pick exactly one option. The above transition considers picking one option and then deciding include/exclude. That's correct.
+
+            # But we must ensure that when we iterate over options inside the inner loop for the same element, we don't double-count the cost? We are doing for each s and each option, we update new_dp based on dp[s] + c. This assumes that for each element we pick one option and then decide include/exclude. However, if we update new_dp[s] for multiple options, we take the minimum over options for not including. Similarly for include. This works because we consider all options independently.
+
+            # Complexity: n <=100, sum<=5000, options per element <= about 30. DP O(n * sum * options) ~ 100*5000*30 = 15e6, acceptable in 3s in Python if optimized (maybe borderline but fine). We'll implement efficiently using lists and loops.
+
+            # Let's test mentally with examples.
+
+            # Example1:
+            # dp0=[0,inf,...]
+            # Element1 opts: (5,0),(2,1),(1,2)
+            # Process:
+            # for s=0, dp[0]=0:
+            #   opt (5,0): not include -> new[0]=0; include if 5<=4? no.
+            #   opt (2,1): not include -> new[0]=min(inf,1)=1? but we already have new[0]=0 from previous, so min(0,1)=0; include -> new[2]=1
+            #   opt (1,2): not include -> new[0]=min(0,2)=0; include -> new[1]=2
+            # So after element1, dp[0]=0, dp[1]=2, dp[2]=1, others inf.
+            # Element2 opts: (6,0),(3,1),(1,2)
+            # Process dp:
+            # new_dp inf
+            # for s=0 dp=0:
+            #   (6,0): not include -> new[0]=0; include (6>4) no
+            #   (3,1): not include -> new[0]=min(0,1)=0; include -> new[3]=1
+            #   (1,2): not include -> new[0]=0; include -> new[1]=2
+            # for s=1 dp=2:
+            #   (6,0): not include -> new[1]=min(inf,2)=2; include (7>4) no
+            #   (3,1): not include -> new[1]=min(2,3)=2; include -> new[4]=3 (since 1+3=4)
+            #   (1,2): not include -> new[1]=min(2,4)=2; include -> new[2]=4
+            # for s=2 dp=1:
+            #   (6,0): not include -> new[2]=min(inf,1)=1; include no
+            #   (3,1): not include -> new[2]=min(1,2)=1; include -> new[5]=2>4 no? 2+3=5>4 no
+            #   (1,2): not include -> new[2]=min(1,3)=1; include -> new[3]=3
+            # After element2, dp[0]=0, dp[1]=2, dp[2]=1, dp[3]=1 (from s=2 +1? Let's compute properly: from s=2 dp=1 and opt (1,2) include -> new[3]=3? Wait: s=2 + w=1 =3, cost 1+2=3, but we also have from s=0 and opt (3,1) include -> new[3]=1. So new[3] should be min(1,3)=1. dp[4]=3 from s=1 +3? yes.
+            # Let's compute systematically later. Anyway, after element2 we should have possibilities.
+            # Element3 opts: (10,0),(2,2),(1,3)
+            # Process DP for sum=4, should get dp[4]=3.
+
+            # Let's quickly simulate with code mentally? Might be okay.
+
+            # We'll implement and trust.
+
+            # Edge: if sum=0? But constraints sum>=1, so ignore.
+
+            # Return -1 if dp[sum] is INF.
+
+            # Let's write the code accordingly.
+
+            # One more nuance: when generating options for negative e (divisions), we set c = d (where d = -e). But is it always minimal? Could there be a sequence with both multiplies and divisions that gives same w with smaller total ops than |e|? No, as argued minimal ops for net exponent e is |e|. So c = |e| is correct.
+
+            # However, what about the possibility of doing zero operations (e=0) which we always include.
+
+            # Implementation:
+
+            # We'll use large INF = 10**9.
+
+            # Steps in code:
+
+            # def minOperations(self, nums, sum):
+            #     INF = 10**9
+            #     n = len(nums)
+            #     # Preprocess options per element
+            #     options_list = []
+            #     for v in nums:
+            #         opts = {v: 0}  # w -> min cost
+            #         # positive e
+            #         e = 1
+            #         cur = v
+            #         while True:
+            #             cur = v << e  # v * 2^e
+            #             if cur > sum:
+            #                 break
+            #             c = e
+            #             w = cur
+            #             if w not in opts or c < opts[w]:
+            #                 opts[w] = c
+            #             e += 1
+            #         # negative e (divisions)
+            #         d = 1
+            #         while True:
+            #             w = v >> d  # floor(v / 2^d)
+            #             if w == 0:
+            #                 break
+            #             if w <= sum:  # only consider if w <= sum (since w>sum dominated)
+            #                 c = d
+            #                 if w not in opts or c < opts[w]:
+            #                     opts[w] = c
+            #             d += 1
+            #         # convert opts to list
+            #         # note: opts may contain original v with cost 0 even if v>sum (which is fine)
+            #         opt = [(w, opts[w]) for w in opts]
+            #         options_list.append(opt)
+            #     # DP
+            #     dp = [INF] * (sum + 1)
+            #     dp[0] = 0
+            #     for opt in options_list:
+            #         new_dp = [INF] * (sum + 1)
+            #         for s in range(sum + 1):
+            #             if dp[s] == INF:
+            #                 continue
+            #             for w, c in opt:
+            #                 # not include
+            #                 if dp[s] + c < new_dp[s]:
+            #                     new_dp[s] = dp[s] + c
+            #                 # include if within sum
+            #                 if s + w <= sum and dp[s] + c < new_dp[s + w]:
+            #                     new_dp[s + w] = dp[s] + c
+            #         dp = new_dp
+            #     ans = dp[sum] if dp[sum] < INF else -1
+            #     return ans
+
+            # Let's test with examples quickly by reasoning.
+
+            # Example1: as above should work.
+
+            # Example2: should work.
+
+            # Example3: should return -1.
+
+            # Potential pitfalls:
+            # - In positive e loop, we used cur = v << e. But v << e for e up to maybe 13 is fine.
+            # - In negative e loop, we used v >> d. For d up to about 9, fine.
+            # - We must ensure that when v >> d becomes 0, we break.
+            # - We only add w <= sum for divisions. But what about w=0? we break when w==0, so no w=0 added.
+            # - The original v may be > sum and we include it with cost 0. That's correct.
+            # - However, for divisions, if w <= sum is false (i.e., w > sum), we skip adding. That's correct as argued.
+            # - But consider v=10, sum=4, d=1 gives w=5>4, skip; d=2 gives w=2<=4 add. Good.
+            # - What about v=1, sum=1: divisions: d=1 gives w=0 skip; positive e: e=1 gives2>1 skip. opts only {1:0}. Good.
+            # - What about v=2, sum=1: original v=2>1, cost0; divisions: d=1 gives1<=1 add cost1. So options (2,0) and (1,1). Then DP might choose (1,1) and include it to get sum1, total cost1. But could we do better? No, need at least 1 operation. That seems correct.
+
+            # Check example3: v=6, sum=8:
+            # positive e: e=1 gives12>8 skip; negative: d=1->3<=8 add1, d=2->1<=8 add2. opts {6:0,3:1,1:2}
+            # v=3, sum=8:
+            # positive: e=1->6<=8 add1, e=2->12>8 stop; negative: d=1->1<=8 add1. opts {3:0,6:1,1:1}
+            # DP should find no subset sum 8 with total cost min. Let's simulate quickly:
+            # After first element (6): dp[0]=0, dp[1]=2? Wait options (6,0),(3,1),(1,2). dp[0]=0 from not include 6? Actually process:
+            # start dp[0]=0.
+            # element1:
+            # new[0]=min(0+0,1+0?,2+0?) -> from (6,0) not include -> new[0]=0; from (3,1) not include -> new[0]=min(0,1)=0; from (1,2) not include -> new[0]=min(0,2)=0 -> dp[0]=0.
+            # include: from (6,0) include -> new[6]=0; from (3,1) include -> new[3]=1; from (1,2) include -> new[1]=2.
+            # So dp after elem1: dp[0]=0, dp[1]=2, dp[3]=1, dp[6]=0.
+            # element2 options (3,0),(6,1),(1,1)
+            # Process:
+            # For s=0 dp=0: not include -> new[0]=0; include (3,0)->new[3]=0; (6,1)->new[6]=1; (1,1)->new[1]=1.
+            # s=1 dp=2: not include -> new[1]=min(inf,2)=2; include (3,0)->new[4]=2; (6,1)->new[7]=3; (1,1)->new[2]=3
+            # s=3 dp=1: not include -> new[3]=min(0? from s=0 include gave 0, so new[3] currently 0), so new[3]=min(0,1)=0; include (3,0)->new[6]=min(1,1? s=3+3=6 cost1) -> new[6]=min(1,1)=1; (6,1)->new[9]>8 ignore; (1,1)->new[4]=min(inf,2)=2
+            # s=6 dp=0: not include -> new[6]=min(1,0)=0; include (3,0)->new[9] ignore; (6,1)->new[12] ignore; (1,1)->new[7]=1
+            # After processing, dp[8]? We have no sum 8. So dp[8]=INF -> -1. Good.
+
+            # So algorithm seems correct.
+
+            # Let's also consider if there is any case where doing both multiplies and divisions (i.e., net exponent e with k>0 and d>0) could yield a value that is not equal to floor(v*2^e) with e = k-d? Yes it is exactly that. And minimal ops for that value is |e|, achieved by only doing the net direction. So no benefit.
+
+            # Thus, we can implement.
+
+            # We'll now write the final code.
+
+            # Note: Use integer arithmetic carefully.
+
+            # We'll define INF = 10**9.
+
+            # Edge: sum might be up to 5000, DP array size 5001.
+
+            # Let's code.
+
+            # But wait: In positive e loop, we used cur = v << e. However, v << e might become very large for e up to say 13 (since v<=500, 500<<12 = 500*4096=2,048,000 which may be >5000, but loop stops when cur > sum, so at most e where cur <= sum. So safe.
+
+            # In negative e loop, we compute w = v >> d. For d up to while w>=1, safe.
+
+            # We'll implement loops as while True with break conditions.
+
+            # Let's write the method.
+
+            # We'll also consider that for v=0? Not possible since nums[i] >=1.
+
+            # Return answer.
+
+            # Let's test with provided examples by mental or quick run? We'll trust.
+
+            # I'll now produce the final answer.
+```python
+class Solution:
+    def minOperations(self, nums: list[int], sum: int) -> int:
+        INF = 10**9
+        n = len(nums)
+        
+        # Preprocess options for each element
+        options_list = []
+        for v in nums:
+            # dict: value -> minimal cost
+            opts = {v: 0}   # original with cost 0
+            
+            # positive e (multiplications only)
+            e = 1
+            cur = v
+            while True:
+                cur = v << e          # v * 2^e
+                if cur > sum:
+                    break
+                c = e
+                if cur not in opts or c < opts[cur]:
+                    opts[cur] = c
+                e += 1
+            
+            # negative e (divisions only), only keep if w <= sum (since w>sum would be dominated by original cost 0)
+            d = 1
+            while True:
+                w = v >> d            # floor(v / 2^d)
+                if w == 0:
+                    break
+                if w <= sum:
+                    c = d
+                    if w not in opts or c < opts[w]:
+                        opts[w] = c
+                d += 1
+            
+            # convert to list of (w, c)
+            opt = [(w, opts[w]) for w in opts]
+            options_list.append(opt)
+        
+        # DP over subset sum
+        dp = [INF] * (sum + 1)
+        dp[0] = 0
+        
+        for opt in options_list:
+            new_dp = [INF] * (sum + 1)
+            for s in range(sum + 1):
+                if dp[s] == INF:
+                    continue
+                for w, c in opt:
+                    # not include this element in the subset
+                    if dp[s] + c < new_dp[s]:
+                        new_dp[s] = dp[s] + c
+                    # include if within sum
+                    if s + w <= sum and dp[s] + c < new_dp[s + w]:
+                        new_dp[s + w] = dp[s] + c
+            dp = new_dp
+        
+        ans = dp[sum] if dp[sum] < INF else -1
+        return ans
+```
+[finish_reason: stop | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 649, 'completion_tokens': 16627, 'total_tokens': 17276, 'cost': 0.00255495, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 80, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00255495, 'upstream_inference_prompt_cost': 6.09e-05, 'upstream_inference_completions_cost': 0.00249405}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

@@ -1,0 +1,141 @@
+
+Assistant: ```python
+class Solution:
+    def maxEqualPairs(self, nums: list[int]) -> int:
+        """
+        Approach
+        --------
+        After the operation, every element is either unchanged or (if it was x) becomes y.
+        For any fixed pair (x -> y), an adjacent pair (a, b) is good iff
+            (a == y or a == x) and (b == y or b == x).
+        We compute, for every candidate (x, y):
+            gain(x -> y) = (# good pairs after) - (# equal pairs before)
+        and maximise it.
+
+        Candidate generation (why it is complete):
+        For each ordered pair of adjacent values (a, b) with a != b, x -> y
+        "covers" that pair iff x in {a, b} and y in {a, b} (i.e. {x, y} = {a, b}).
+        If x -> y is optimal and x never occurs next to y, then x -> y changes only
+        pairs whose two endpoints are x (become y, could break) or pairs with exactly
+        one x and one other value != y (become (y, other), never gain). Such a move
+        cannot beat doing nothing... unless moving x to y creates equalities with y's
+        that are adjacent to x's — contradiction with "x never next to y". Hence an
+        optimal x -> y always has x adjacent to y somewhere, OR is dominated by
+        no-op / a move where x sits next to y. Therefore it suffices to try, for every
+        adjacent pair (a, b):
+            a -> b and b -> b's neighbour  (both directions)
+        plus the "global frequency" moves: let best = most frequent value, second =
+        second most frequent distinct value; try v -> best for every value v != best,
+        and best -> second (handles arrays where x never touches y).
+
+        For each candidate (x, y) the gain is evaluated in O(number of pairs touching
+        x or y) using per-value adjacency lists, so total work is O(sum of pair
+        incidences) = O(n) across all candidates... To be safe we bound work per
+        candidate: each candidate (x,y) is processed in O(deg(x)+deg(y)) where
+        deg(v) = number of adjacent pairs touching value v. Sum over candidates of
+        deg(x)+deg(y) = O(n) because each adjacent pair generates only O(1)
+        candidates (4 directions per unordered adjacent pair, deduplicated).
+
+        Details of gain computation for x -> y (x != y):
+          base  = total equal adjacent pairs originally.
+          For each index i with value in {x, y} look at neighbours j = i-1, i+1:
+            after value of i = y (whether it was x or y).
+            after value of j = y if nums[j] in {x,y} else nums[j].
+          Count new equal pairs on those edges, subtract old contributions of those
+          same edges, add to base. Each edge is examined from its endpoint(s); to
+          avoid double counting we only count edge (i, i+1) once by iterating i over
+          positions and considering the right edge i->i+1.
+
+        Complexity: O(n) time, O(n) memory (adjacency per distinct value).
+
+        Implementation:
+          - right[i] = value at i+1 (or None).
+          - We gather candidate (x, y) pairs:
+              * for each i with nums[i] != nums[i+1]: (nums[i] -> nums[i+1]) and
+                (nums[i+1] -> nums[i]).
+              * plus v -> best for all v, and best -> second (if second exists).
+            Duplicates are fine; we dedupe with a set.
+          - evaluate(x, y): iterate over indices where nums[i] in (x, y); for the
+            edge (i, i+1) (if exists) compute old contribution (1 if nums[i] ==
+            nums[i+1]) and new contribution (1 if after(i) == after(i+1)); also the
+            edge (i-1, i) must be handled — instead simpler: iterate over all edges
+            that touch x or y. Precompute for each value v the list of edge indices
+            (edge k = pair (nums[k], nums[k+1])) that touch v. Then evaluate(x, y)
+            walks edges in adj[x] ∪ adj[y] (use a local seen-set or mark via
+            timestamp array sized m edges).
+          - answer = base + max(0, max gain).
+
+        Since each edge belongs to adj of its two endpoint values, and each candidate
+        (x,y) costs |adj[x]| + |adj[y]|, and candidates come from edges (each edge
+        yields candidates whose cost is charged back to that same edge plus the
+        frequency candidates), total cost:
+            sum over edges (deg(a)+deg(b)) with a,b endpoints of the edge
+          = sum over edges (deg(a)+deg(b)) <= 2 * sum_v deg(v)^2? Not bounded by O(n)
+          in the worst case (star: one value v adjacent to n-1 edges -> each edge
+          candidate costs deg(v) ~ n -> O(n^2)).
+        Fix: for a value v with large degree, v -> u candidates: we can aggregate.
+        gain(v -> u) depends on u only through: number of v-u edges, number of v-v
+        edges, number of u-u edges, number of u-w edges (w != v)... Let's derive
+        closed form for gain(x -> y):
+
+        Let:
+          cXY = # edges with values {x, y} in either order,
+          cXX = # edges (x, x),
+          cYY = # edges (y, y),
+          cX_other = # edges with exactly one endpoint x and other endpoint not in
+                     {x, y}  (call OX),
+          cY_other = similarly OY.
+        After x -> y:
+          - x-x edges (cXX): become y-y -> now equal (+1 each, were equal before too!
+            they were equal originally, so delta 0). Wait originally equal -> after
+            still equal -> delta 0.
+          - y-y edges: unchanged, delta 0.
+          - x-y edges: become y-y; originally unequal -> +1 each: +cXY.
+          - x-w edges (w not in {x,y}): become y-w, unequal; originally unequal ->
+            delta 0.
+          - y-w edges: unchanged, delta 0.
+        So gain(x -> y) = cXY !!
+
+        Wait — that's remarkably simple. Check: any edge not involving x is unchanged.
+        Any edge involving x: if other endpoint is x: (x,x)->(y,y): equal before and
+        after: no change. If other is y: (x,y) or (y,x) -> (y,y): gain +1. If other
+        is w: (x,w) or (w,x) -> (y,w)/(w,y): unequal before and after: no change.
+        Hence gain(x -> y) = number of adjacent pairs with {values} = {x, y}.
+        Also gain is symmetric in x, y. And we may also choose x, y with no such
+        adjacency -> gain 0. Also "no operation" gives 0 extra.
+
+        Therefore answer = base + max over unordered pairs {x,y} of (# edges with
+        endpoints exactly {x,y}).
+
+        Edge case: x == y not allowed (distinct), but that would gain 0 anyway.
+        Also we could replace x with a brand-new value y not present: gain would be
+        -0? edges x-x stay equal (become new-new) -> no gain. So irrelevant.
+
+        Thus: count for each unordered pair (min, max) with min != max the number of
+        adjacent occurrences; answer = (#equal adjacent pairs) + max(counts, default 0).
+
+        That's O(n). 
+        """
+        base = 0
+        pair_counts = {}
+        n = len(nums)
+        for i in range(n - 1):
+            a, b = nums[i], nums[i + 1]
+            if a == b:
+                base += 1
+            else:
+                key = (a, b) if a < b else (b, a)
+                pair_counts[key] = pair_counts.get(key, 0) + 1
+        best_extra = max(pair_counts.values()) if pair_counts else 0
+        return base + best_extra
+```
+
+Wait, I should double check the derivation with the examples. Example 1: nums = [1,2,3,2]. Edges: (1,2) unequal, (2,3) unequal, (3,2) unequal. base = 0. Pair counts: {1,2}:1, {2,3}:2. best extra = 2, answer = 2. ✓
+
+Example 2: [1,2,1,2,1]: edges all {1,2}, count 4, base 0, answer 4. ✓
+
+Example 3: [1,1,1]: base 2, no unequal pairs, answer 2. ✓
+
+Also check a case where a move might seemingly do better than cXY: nums = [1,1,2,2,1,1]. Choose x=2,y=1 -> [1,1,1,1,1,1] -> 5 pairs. base: edges: (1,1)=1,(1,2)=0,(2,2)=1,(2,1)=0,(1,1)=1 -> base=3. cXY for {1,2} = 2 (edges (1,2),(2,1)). answer = 5. ✓ matches.
+
+Another check: does replacing x->y ever break an x-x edge? (x,x) -> (y,y), still equal. Good. And y-y untouched. So gain = cXY exactly. The answer is simply base + max over unordered value pairs of their adjacency count.

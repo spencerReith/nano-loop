@@ -1,0 +1,768 @@
+
+Assistant: # Solution: Maximum Valid Split Positions II
+
+## Problem Restatement
+We can remove **at most one** element from `nums`. Let `arr` be the result (length `m`). A split `i` is valid if `gcd(arr[0..i]) == gcd(arr[i+1..m-1])`. Maximize the number of valid splits.
+
+## Key Insights
+
+1. **Without removal**: Use prefix GCD and suffix GCD arrays. Split `i` is valid iff `pre[i] == suf[i+1]`.
+
+2. **Removing element at index `k`**: For each split position `i`:
+   - If `i < k`: left GCD is `pre[i]`, right GCD is `gcd(suf[i+1] without nums[k])` = `gcd(gcd(pre[k-1], suf[k+1]), gcd of [i+1..k-1])`
+   - If `i >= k`: the split is at position `i-1` in the new array... 
+
+   Actually, cleaner approach: compute prefix GCD `pre[i]` and suffix GCD `suf[i]` where `pre[i] = gcd(nums[0..i])` and `suf[i] = gcd(nums[i..n-1])`.
+
+   - For split `i` without removal: valid iff `pre[i] == suf[i+1]`.
+   - For split `i` after removing index `k` where `i < k`: valid iff `pre[i] == gcd(pre_suffix_combined)`.
+   - This gets complex. A simpler unified approach:
+
+## Efficient Approach
+
+For each possible split position `i` in the **original** array (there are `n-1` possible splits), determine if it's valid either without removal or with removing some element.
+
+Actually, let me think differently. There are two cases:
+
+**Case A: No removal.** Split `i` valid iff `pre[i] == suf[i+1]`.
+
+**Case B: Remove element at index `k`.** The remaining array has `n-1` elements with `n-2` split positions. A split at original position `i` (meaning between original `i` and `i+1`, skipping `k`):
+- If `i < k`: left = `pre[i]`, right = `gcd(gcd of [i+1..k-1], gcd of [k+1..n-1])` = `gcd(pre_range_gcd(i+1, k-1), suf[k+1])`
+- If `i > k`: left = `gcd(pre[k-1], gcd of [k+1..i])`, right = `suf[i+1]`
+- If `i == k`: split doesn't exist as such (the elements adjacent to removed element now become adjacent)
+
+This is getting complicated. Let me think of a cleaner formulation.
+
+**Simpler observation**: For split `i` (between positions `i` and `i+1`) to be valid after removing element `k` (where `k <= i` or `k > i`):
+- If `k <= i`: left part is `gcd(pre[k-1], gcd(nums[k+1..i]))`, right part is `suf[i+1]`
+- If `k > i`: left part is `pre[i]`, right part is `gcd(gcd(nums[i+1..k-1]), suf[k+1])`
+
+Both cases need range GCD queries. We can use sparse table or segment tree for O(1)/O(log n) range GCD. But actually, we can be smarter.
+
+**Key insight**: After removing element `k`:
+- For splits `i < k`: valid iff `pre[i] == gcd(range_gcd(i+1, k-1), suf[k+1])`
+- For splits `i >= k`: valid iff `gcd(pre[k-1], range_gcd(k+1, i)) == suf[i+1]` (where the split is between `i` and `i+1` in original indexing, `i >= k`)
+
+Hmm, this is getting messy. Let me simplify: when we remove `k`, the array becomes `nums[0..k-1] + nums[k+1..n-1]`. Splits are between positions `j-1` and `j` in the new array for `j = 1..n-2`. 
+
+In terms of original indices, split `j` in new array corresponds to:
+- Between original `j-1` and `j` if `j < k` 
+- Between original `j` and `j+1` if `j >= k`
+
+So for removal at `k`, splits at original positions `i = 0..k-1` (left part unchanged) and `i = k..n-2` (right part unchanged).
+
+Let me define: for split at original position `i`:
+- If `i < k`: left = `pre[i]`, right = `gcd(range_gcd(i+1, k-1), suf[k+1])` — but range_gcd(i+1,k-1) is not `pre` or `suf` directly.
+
+Actually, I realize: `gcd(range_gcd(i+1, k-1), suf[k+1])` — the right side after removing `k` is `gcd(nums[i+1..k-1], nums[k+1..n-1])`. This is NOT simply expressible via pre/suf arrays.
+
+**But there's a trick**: We can compute suffix GCDs and use them. `gcd(nums[i+1..k-1], nums[k+1..n-1])` — we need range GCD.
+
+**Alternative clean approach**: Iterate over which element to remove (or no removal). For each removal index `k`, compute prefix GCDs `L[]` over the array without `k` and suffix GCDs `R[]` over the array without `k`. But that's O(n) per removal → O(n²) total.
+
+**Better**: Use the pre/suf arrays with sparse table for range GCD. For each candidate removal `k`, we need to check `n-2` splits, each in O(1) with range GCD queries. That's O(n²) total. Too slow for n = 10⁵.
+
+Wait, we need something smarter.
+
+**Rethinking**: We don't need to try every removal. Let's think about when removing an element helps.
+
+For split `i`, it's valid without removal iff `pre[i] == suf[i+1]`. Call such splits "naturally valid".
+
+When can an invalid split become valid by removing some element? 
+
+For split `i` (with `pre[i] ≠ suf[i+1]`), we need to remove exactly one element `k` such that the new left GCD equals new right GCD.
+
+If `k <= i`: new left = `gcd(pre[k-1], range_gcd(k+1, i))`, new right = `suf[i+1]`. 
+If `k > i`: new left = `pre[i]`, new right = `gcd(range_gcd(i+1, k-1), suf[k+1])`.
+
+Key observation: `gcd(gcd values)` — the GCD of a subarray divides both `pre[i]` and `suf[i+1]`. For the two sides to become equal, they must both equal some common value `g` where `g` divides `gcd(pre[i], suf[i+1])`... wait no. Left GCD divides... hmm, actually GCD of a subarray of left divides... no, GCD of a subarray is a DIVISOR of the GCD of the whole array? No! GCD of fewer elements is >= GCD of more elements, and it DIVIDES... no wait. `gcd(a,b)` divides both a and b. `gcd(a)` = a. So `gcd(subarray)` is a multiple of `gcd(array)`. Since adding more elements can only decrease or keep the GCD (in the divisibility sense: `gcd(a,b)` divides `gcd(a)` when... no that's wrong too.
+
+Actually: `gcd(a, b, c)` divides `gcd(a, b)` which divides `a`. So more elements → smaller or equal GCD (in divisibility lattice). So removing an element from left can only INCREASE the left GCD (or keep same), and similarly for right.
+
+For the equality to hold after removal, we need `new_left_gcd == new_right_gcd`. 
+
+Let me think of this problem differently. Let's say `g_i = gcd(pre[i], suf[i+1])` — actually let me think about what values the GCDs can take.
+
+**Approach with sparse table for range GCD + smart enumeration:**
+
+For each split position `i` (0 to n-2), it can be valid:
+1. Without removal: `pre[i] == suf[i+1]`
+2. By removing some `k <= i`: need `gcd(pre[k-1], range_gcd(k+1, i)) == suf[i+1]`
+3. By removing some `k > i`: need `pre[i] == gcd(range_gcd(i+1, k-1), suf[k+1])`
+
+For case 2: we're looking for `k ∈ [0, i]` such that `gcd(pre[k-1], range_gcd(k+1,i)) == suf[i+1]`. As `k` decreases from `i` to `0`, `gcd(pre[k-1], range_gcd(k+1,i))` changes monotonically (can only decrease as we include more elements). The number of DISTINCT values of this GCD is O(log(max_val)) since each time it changes, it must decrease by at least a factor of 2 (in terms of divisibility, it must be a proper divisor). Actually, if the GCD changes, it goes from `g` to `g'` where `g'` divides `g` and `g' < g`, so `g' <= g/2`. So there are at most O(log(10⁹)) ≈ 30 distinct GCD values.
+
+Similarly for case 3.
+
+**Efficient algorithm:**
+
+For each split `i`:
+- Check if `pre[i] == suf[i+1]` → naturally valid (no removal needed)
+- Otherwise, check if there's a valid removal that makes split `i` valid. But we need to ensure ONE removal works for MANY splits simultaneously.
+
+This per-split analysis doesn't directly work because we need a SINGLE removal (or none) that maximizes total valid splits.
+
+**Alternative approach**: Iterate over the removal index `k` (n+1 choices: remove nothing, or remove index 0..n-1). For each `k`, count valid splits efficiently in O(log V) time using the pre/suf arrays.
+
+For a fixed `k` (the removed element):
+- Splits `i = 0..k-1`: left = `pre[i]`, right = `gcd(range_gcd(i+1, k-1), suf[k+1])`. Hmm, but range_gcd(i+1, k-1) is not pre/suf directly...
+
+Wait! I can define things differently. When `k` is removed, the right part for split `i < k` is `gcd(nums[i+1..k-1], nums[k+1..n-1])`. Let's call `suf2[i+1] = gcd(nums[i+1..n-1])` — that's the standard suffix. But we're removing `k`, so it's `gcd(gcd(nums[i+1..k-1]), suf[k+1])`.
+
+Hmm, let me define prefix and suffix GCD arrays that "skip" index `k`. That's O(n) per `k`.
+
+**Better idea**: For each `k`, compute:
+- Left prefix GCDs: these are just `pre[0], pre[1], ..., pre[k-1]` (unchanged)
+- Right suffix GCDs: these are `suf[k+1], suf[k+2], ..., suf[n-1]` (unchanged)
+- But splits to the LEFT of `k` have their RIGHT side modified (because `k` is removed from the right side)
+- And splits to the RIGHT of `k` have their LEFT side modified
+
+For split `i < k` (with element `k` removed):
+- Left = `pre[i]` (elements 0..i, none removed)
+- Right = elements i+1..n-1 except k = `gcd(range_gcd(i+1, k-1), suf[k+1])`
+
+For split `i >= k` (originally between i and i+1, with element k removed):
+- Left = elements 0..i except k = `gcd(pre[k-1], range_gcd(k+1, i))`
+- Right = `suf[i+1]`
+
+So for fixed `k`, as `i` varies, we need range GCD queries. With a sparse table, each query is O(1) after O(n log n) preprocessing. For each `k`, we check O(n) splits. Total: O(n²). Too slow for n = 10⁵.
+
+**Need to be smarter.**
+
+Let me think about what happens for splits far from `k`.
+
+For split `i << k`: right side ≈ `gcd(range_gcd(i+1,k-1), suf[k+1])`. As `i` decreases, this is a suffix GCD of the array excluding `k`. 
+
+**Alternative formulation**: Instead of iterating over `k` and then over `i`, let's think about which splits are affected by removing `k`.
+
+Actually, let me look at this from a different angle. Let's compute, for each split position `i`, whether it's valid without removal. Then, for removing element `k`, the splits to the left of `k` have potentially different right-GCDs, and splits to the right have potentially different left-GCDs.
+
+Key insight: removing `k` only affects splits where `k` was "contributing" to the GCD difference. 
+
+Let me think about when removing `k` can make an invalid split `i` valid:
+- If `i < k`: right GCD changes from `suf[i+1]` to `gcd(range_gcd(i+1,k-1), suf[k+1])`. This changes only if `nums[k]` was "essential" in the GCD — i.e., removing it increases the GCD.
+- If `i >= k`: left GCD changes from `pre[i]` to `gcd(pre[k-1], range_gcd(k+1,i))`. Again, changes only if `nums[k]` was essential.
+
+**An O(n log V) approach:**
+
+For each split `i`, we want to know: does there exist a `k` such that removing `k` makes split `i` valid AND maximizes the total? But we need to pick ONE `k` for ALL splits.
+
+Let me try yet another approach. Let me iterate over `k` (n+1 options) and for each, compute the score efficiently.
+
+For fixed `k`:
+- Splits `i < k`: valid iff `pre[i] == gcd(range_gcd(i+1,k-1), suf[k+1])`
+- Splits `i >= k`: valid iff `gcd(pre[k-1], range_gcd(k+1,i)) == suf[i+1]`
+
+Define `A[i] = pre[i]` and `B[i] = suf[i+1]` for `i = 0..n-2`. Without removal, split `i` is valid iff `A[i] == B[i]`.
+
+With removal at `k`:
+- For `i < k`: right side becomes `gcd(gcd of [i+1..k-1], suf[k+1])`. Let me define `C_k[i] = gcd of [i+1..k-1]` for `i < k`. Then right = `gcd(C_k[i], suf[k+1])`.
+- For `i >= k`: left side becomes `gcd(pre[k-1], gcd of [k+1..i])`. Define `D_k[i] = gcd of [k+1..i]` for `i >= k`. Then left = `gcd(pre[k-1], D_k[i])`.
+
+Note: `C_k[i]` as `i` decreases from `k-1` to `0` is a "reverse prefix GCD" starting from `k-1` going left. Similarly `D_k[i]` as `i` increases from `k` to `n-2` is a prefix GCD starting from `k+1` going right.
+
+Both have O(log V) distinct values. But computing them is O(n) per `k`, giving O(n²) total. 
+
+**Can we avoid iterating all pairs?**
+
+Observation: For splits far from `k`, the GCD values converge quickly. Specifically, `C_k[i]` stabilizes after O(log V) distinct values, and similarly for `D_k[i]`. But we still need to check all splits to count matches.
+
+**Alternative: think about it as matching condition.**
+
+For split `i < k` with removal at `k`: valid iff `pre[i] == gcd(range_gcd(i+1,k-1), suf[k+1])`.
+
+Hmm, let me denote `g = gcd(pre[i], suf[i+1])`... actually let me think about what the equality means.
+
+`pre[i]` divides `nums[j]` for all `j ≤ i`. `suf[k+1]` divides `nums[j]` for all `j ≥ k+1`. `range_gcd(i+1,k-1)` divides `nums[j]` for `j ∈ [i+1, k-1]`.
+
+`gcd(range_gcd(i+1,k-1), suf[k+1])` = `gcd of all elements in [i+1, n-1] except k`.
+
+For `pre[i] == gcd of [i+1..n-1] \ {k}`:
+Both sides must be equal. Note `pre[i]` divides all elements in `[0, i]`, and the right side divides all elements in `[i+1, n-1] \ {k}`. So the common value divides all elements except possibly `nums[k]`. So the common value divides `gcd of entire array except k`.
+
+**New approach**: For each `k` (including "no removal"), define `G_k = gcd of array without element k`. Then every valid split must have both sides equal to a multiple of... no, equal to exactly `G_k`? No — both sides equal some value `v`, and `v` divides `G_k`. But also `v` must be achievable as both the left and right GCD.
+
+Hmm wait, actually for a valid split, left GCD = right GCD = v, and v divides both sides. But the left GCD is a gcd of some prefix (minus possibly k), and similarly for right. The key constraint is just that they're equal, not that they equal any particular value.
+
+**Let me try to think of this as a 2-pointer / sliding window type problem.**
+
+Actually, let me reconsider. Let me try a different decomposition:
+
+For each split position `i`, define:
+- `L[i] = pre[i]` (left GCD without removal)
+- `R[i] = suf[i+1]` (right GCD without removal)
+
+Without removal, split `i` valid iff `L[i] == R[i]`.
+
+With removal at `k`:
+- If `k <= i`: new left GCD is `gcd(pre[k-1], range_gcd(k+1, i))` — this is `pre[i]` but skipping `k`.
+  - If `k = 0`: `gcd(range_gcd(1, i))` 
+  - Note: this equals `gcd(pre[k-1], range_gcd(k+1, i))`.
+- If `k > i`: new right GCD is `gcd(range_gcd(i+1, k-1), suf[k+1])`.
+
+Now here's a crucial observation: `gcd(pre[k-1], range_gcd(k+1, i))` divides... hmm, actually since GCD over fewer elements ≥ GCD over more elements (in the divisibility sense: the GCD of a subset is a multiple of the GCD of the full set... no!). 
+
+Wait: `gcd(a, b, c)` divides `gcd(a, b)`. So `gcd of subset` is a MULTIPLE of `gcd of superset`. Removing an element can only make the GCD larger (or keep same).
+
+So new left GCD ≥ old left GCD (in divisibility: old divides new). Similarly new right GCD ≥ old right GCD.
+
+For split `i < k` with removal at `k`: left stays `pre[i]`, right changes from `suf[i+1]` to something that's a multiple of `suf[i+1]`. For validity, we need `pre[i] == new_right ≥ suf[i+1]`. Since originally `pre[i] ≠ suf[i+1]` (else already valid), we need... this gets complicated.
+
+**Let me try a completely different approach: binary search on answer? Or think about structure?**
+
+Actually, let me reconsider the problem scale. n = 10⁵, values up to 10⁹. Time limit 9s. So O(n log² n) or O(n log n) should work.
+
+**Approach: For each `k`, compute score in O(log V) time.**
+
+For fixed `k`, the splits are:
+- Left part: splits `i = 0, ..., k-1` — but these have modified right sides
+- Right part: splits `i = k, ..., n-2` — these have modified left sides
+
+Hmm wait. Let me re-examine. When we remove element `k`, the remaining array is `nums[0..k-1] ++ nums[k+1..n-1]`. The splits in this array are between consecutive elements. In terms of original indices:
+- Between `i` and `i+1` for `i = 0..k-2` (both parts entirely in left segment)
+- Between `k-1` and `k+1` (the "bridge" split, originally this is where `k` was)
+- Between `i` and `i+1` for `i = k+1..n-2` (both parts entirely in right segment)
+
+So there are `n-2` splits. Let me categorize:
+1. `i ∈ [0, k-2]`: left = `pre[i]`, right = `gcd(range_gcd(i+1, k-1), suf[k+1])`
+2. Bridge: left = `pre[k-1]`, right = `suf[k+1]` — valid iff `pre[k-1] == suf[k+1]`
+3. `i ∈ [k+1, n-2]`: left = `gcd(pre[k-1], range_gcd(k+1, i))`, right = `suf[i+1]`
+
+For category 1: as `i` goes from `k-2` down to `0`, `gcd(range_gcd(i+1, k-1), suf[k+1])` = `gcd(suf2[i+1] excluding k)`. Let me define `rs_k[i] = gcd of [i..n-1] \ {k}` for `i ≤ k`. Then `rs_k[k-1] = gcd(nums[k-1], suf[k+1])`, `rs_k[k-2] = gcd(nums[k-2], rs_k[k-1])`, etc. This is a suffix GCD array computed from right, skipping `k`. Computing it takes O(n) per `k`, so O(n²) total. Too slow.
+
+BUT: the number of DISTINCT values in `rs_k` is O(log V). Similarly for the left side. So for each `k`, we can identify O(log V) "segments" where the right GCD is constant, and within each segment, count how many `i` have `pre[i]` equal to that constant value. If we preprocess `pre[i]` into a structure that lets us count occurrences of value `v` in range `[l, r]` quickly...
+
+Actually, `pre[i]` is also non-increasing (in divisibility). So equal values form contiguous ranges! We can binary search.
+
+**Detailed plan:**
+
+Precompute:
+- `pre[0..n-1]`: prefix GCDs
+- `suf[0..n-1]`: suffix GCDs
+
+For each `k` from `-1` (no removal) to `n-1`:
+- If `k == -1`: count `i` in `[0, n-2]` with `pre[i] == suf[i+1]`.
+- Else:
+  - Compute score for this `k`.
+
+For fixed `k`, score = (splits in [0, k-2] valid) + (bridge valid?) + (splits in [k+1, n-2] valid).
+
+**Bridge**: valid iff `pre[k-1] == suf[k+1]`. O(1).
+
+**Right segment** `i ∈ [k+1, n-2]`: left = `gcd(pre[k-1], range_gcd(k+1, i))`, right = `suf[i+1]`.
+Define `f(i) = gcd(pre[k-1], range_gcd(k+1, i))` for `i ≥ k+1`. Note `f` is non-increasing (as `i` increases, we add more elements). `f(k+1) = gcd(pre[k-1], nums[k+1])`, `f(k+2) = gcd(f(k+1), nums[k+2])`, etc.
+
+We need `f(i) == suf[i+1]`. Both `f` and `suf` are non-increasing in the divisibility sense. But `suf[i+1]` as `i` increases... `suf[i+1] = gcd(nums[i+1..n-1])`, which is non-DECREASING as `i` increases (fewer elements). So `f` is non-increasing, `suf[i+1]` is non-decreasing (as `i` goes from `k+1` to `n-2`). So they can intersect at most... well, they could cross multiple times but since one is non-increasing and other non-decreasing, equality can happen over a contiguous range. We can binary search for the range where `f(i) == suf[i+1]`.
+
+Wait, but "non-increasing" in divisibility sense isn't a total order. E.g., 6 and 4 — neither divides the other. So `f` could go 6 → 4 (not comparable in divisibility but 6 > 4 numerically). Hmm, actually gcd values: `f(i+1) = gcd(f(i), nums[i+2])` divides `f(i)`. So numerically `f(i+1) ≤ f(i)`. Similarly `suf[i+1]` vs `suf[i+2]`: `suf[i+1] = gcd(nums[i+1], suf[i+2])` divides... no, `suf[i+1]` includes more elements, so `suf[i+1]` divides `suf[i+2]`, meaning `suf[i+1] ≤ suf[i+2]`. So as `i` increases, `f(i)` decreases (numerically) and `suf[i+1]` increases (numerically). So `f(i) - suf[i+1]` is monotonically decreasing. There's at most one "crossing point" where they're equal, and equality holds over a contiguous range (possibly empty).
+
+So we can binary search for the first `i` where `f(i) <= suf[i+1]` and the last `i` where `f(i) >= suf[i+1]`, and the answer is the overlap. But we need `f` computable in O(1) or O(log n) for binary search. `f(i) = gcd(pre[k-1], range_gcd(k+1, i))` needs range GCD, which we can do with sparse table in O(1) after O(n log n) preprocessing.
+
+So for each `k`, the right segment contributes O(log n) time (binary search). Similarly for the left segment. Total: O(n log n) per... wait, for each of n values of `k`, we do O(log n) work. Total O(n log n). 
+
+**Left segment** `i ∈ [0, k-2]`: left = `pre[i]`, right = `gcd(range_gcd(i+1, k-1), suf[k+1])`.
+Define `g(i) = gcd(range_gcd(i+1, k-1), suf[k+1])` for `i ≤ k-2`. As `i` decreases, `g(i)` can only decrease (more elements). As `i` increases (toward `k-2`), `g(i)` can only increase. And `pre[i]` decreases as `i` increases. So again, `pre[i]` decreasing and `g(i)` increasing as `i` increases → at most one crossing region.
+
+Wait let me double check: `g(i) = gcd(range_gcd(i+1, k-1), suf[k+1])`. As `i` increases by 1, we remove `nums[i+1]` from the range, so the range shrinks → `g(i+1) ≥ g(i)` (divides relationship reversed). Yes, `g(i+1)` is a multiple of `g(i)`, so `g(i+1) ≥ g(i)` numerically. And `pre[i+1] ≤ pre[i]`. So we need `pre[i] == g(i)` where `pre` decreasing and `g` increasing → crossing point, contiguous equality range.
+
+So for each `k`:
+- Left segment: binary search in `[0, k-2]` for range where `pre[i] == g(i)`, using sparse table for range GCD. O(log n).
+- Bridge: O(1).
+- Right segment: binary search in `[k+1, n-2]` for range where `f(i) == suf[i+1]`, using sparse table. O(log n).
+
+Total: O(n log n) time, O(n log n) space for sparse table.
+
+Wait, but we need to be careful: `g(i)` and `f(i)` depend on `k`, so each binary search step needs a range GCD query. With sparse table, each query is O(1). Binary search is O(log n) queries. So O(log n) per segment per `k`. Total O(n log n).
+
+Hmm, but binary search for "equality" needs TWO binary searches (find leftmost where pre ≤ g, find leftmost where pre < g or something). Let me think more carefully.
+
+We want to find all `i` in `[lo, hi]` where `pre[i] == g(i)`. We know `pre` is non-increasing and `g` is non-decreasing. Define `h(i) = pre[i] - g(i)` (numerically). `h` is non-increasing. We want `h(i) == 0`. Find the range where `h == 0`: find first `i` where `h(i) <= 0`, find last `i` where `h(i) >= 0`. The intersection is the answer range.
+
+- First `i` where `pre[i] <= g(i)`: binary search. In the monotone sequence, `pre - g` decreasing, so `pre ≤ g` is true for a suffix of the range.
+- Last `i` where `pre[i] >= g(i)`: similarly, true for a prefix.
+
+Then answer is `[first_i_where_le, last_i_where_ge]`, count = `max(0, last_ge - first_le + 1)`.
+
+Let me formalize. Let `a = lo, b = hi`.
+- Find smallest `i₁ ∈ [a, b]` such that `pre[i₁] <= g(i₁)`. If none, no valid splits.
+- Find largest `i₂ ∈ [a, b]` such that `pre[i₂] >= g(i₂)`. If none, no valid splits.
+- Valid splits: `i ∈ [i₁, i₂]`, count = `max(0, i₂ - i₁ + 1)`.
+
+This works because for `i < i₁`: `pre > g`, for `i > i₂`: `pre < g`, and in between `pre == g` (since `pre - g` goes from positive to 0 to negative monotonically).
+
+Wait, is that right? If `pre - g` is non-increasing, then for `i < i₁`, `pre[i] > g(i)`. For `i ∈ [i₁, i₂]`, `pre[i] >= g(i)` (since `i ≤ i₂`) and `pre[i] <= g(i)` (since `i ≥ i₁`), so `pre[i] == g(i)`. For `i > i₂`, `pre[i] < g(i)`. Yes!
+
+Similarly for the right segment with `f(i)` vs `suf[i+1]`: `f` non-increasing, `suf[i+1]` non-decreasing as `i` increases. So `f - suf` non-increasing. Same approach.
+
+**Implementation:**
+
+1. Sparse table for range GCD queries. O(n log n) build, O(1) query.
+2. Prefix GCD array `pre`, suffix GCD array `suf`.
+3. For `k = -1` (no removal): count `pre[i] == suf[i+1]` for `i ∈ [0, n-2]`.
+4. For each `k ∈ [0, n-1]`:
+   - Left segment `[0, k-2]`: binary search with `g(i) = gcd(range_gcd(i+1, k-1), suf[k+1])`. Special case: if `k = 0` or `k = 1`, no left segment. If `i+1 > k-1` (i.e., `i = k-1`), but `i ≤ k-2` so `i+1 ≤ k-1`, range is valid. Actually when `i = k-2`, range is `[k-1, k-1]`, just `nums[k-1]`. Fine.
+     - Edge: `suf[k+1]` when `k = n-1` — then no elements after `k`, so `g(i) = range_gcd(i+1, n-2)`. Need to handle.
+   - Bridge: `pre[k-1] == suf[k+1]`. Edge: `k = 0` → left is empty, no bridge from left... Actually if `k = 0`, the bridge doesn't exist (there's no element before index 0). Let me reconsider.
+
+Hmm, let me redo the categorization. Array after removing `k`: `nums[0..k-1] ++ nums[k+1..n-1]`, length `n-1`, splits at positions `0..n-3` (there are `n-2` splits).
+
+Split at position `j` in the new array means between new-array elements `j` and `j+1`.
+- If `j < k`: new-array `j` = original `j`, new-array `j+1` = original `j+1`. Left = original `[0..j]`, right = original `[j+1..n-1] \ {k}`.
+- If `j >= k`: new-array `j` = original `j+1`, new-array `j+1` = original `j+2`. Left = original `[0..j+1] \ {k}`, right = original `[j+2..n-1]`.
+
+So in terms of original index `i` (split between original `i` and `i+1`):
+- For `j < k`: `i = j`, ranges `[0..i]` and `[i+1..n-1] \ {k}`, where `i ≤ k-1`.
+  - When `i = k-1`: left = `[0..k-1]`, right = `[k+1..n-1]` (the bridge split).
+- For `j >= k`: `i = j+1`, ranges `[0..i] \ {k}` and `[i+1..n-1]`, where `i ≥ k+1`.
+
+So the splits in original-index terms: `i ∈ [0, k-1] ∪ [k+1, n-2]`. Total: `k + (n-2-k-1+1) = k + n - k - 2 = n - 2`. ✓.
+
+Categories:
+1. `i ∈ [0, k-2]`: left = `pre[i]`, right = `gcd(range_gcd(i+1, k-1), suf[k+1])`
+2. `i = k-1` (bridge): left = `pre[k-1]`, right = `suf[k+1]`
+3. `i ∈ [k+1, n-2]`: left = `gcd(pre[k-1], range_gcd(k+1, i))`, right = `suf[i+1]`
+
+Same as before. Edge cases:
+- `k = 0`: no category 1, no category 2 (no `pre[-1]`). Only category 3 with `i ∈ [1, n-2]`, left = `range_gcd(1, i)` (no `pre[-1]` to gcd with), right = `suf[i+1]`.
+  - Actually `f(i) = gcd(pre[-1], range_gcd(1, i))` — treat `pre[-1]` as "identity" (0 for gcd, since gcd(0, x) = x). So `f(i) = range_gcd(1, i)`. Good, `gcd(0, x) = x` convention works.
+- `k = n-1`: no category 3. Categories 1 and 2 with `suf[n]` treated as 0 (identity).
+  - Category 1: right = `gcd(range_gcd(i+1, n-2), suf[n])` = `range_gcd(i+1, n-2)`. Good with `suf[n] = 0`.
+  - Bridge: `pre[n-2] == suf[n]` → `pre[n-2] == 0`? That's wrong! Bridge for `k = n-1`: left = `pre[n-2]`, right = empty (no elements after). But right can't be empty!
+
+Wait, if `k = n-1`, the remaining array is `nums[0..n-2]`, length `n-1`, splits at `0..n-3` (i.e., `n-2` splits). In original indices, split `i` for `i ∈ [0, n-3]`. Let me recheck my formula: `i ∈ [0, k-1] ∪ [k+1, n-2]` with `k = n-1` gives `i ∈ [0, n-2] ∪ [n, n-2]` = `[0, n-2]`. But that's `n-1` splits, should be `n-2`. 
+
+I think the issue is the bridge. For `k = n-1`, the bridge `i = k-1 = n-2` would be split between original `n-2` and `n-1`, but `n-1` is removed, so this split doesn't exist. Let me redo.
+
+New array indices: `0..n-2` (length `n-1`). Splits at new-array positions `j = 0..n-3`.
+- If `j < k`: `i = j`.
+- If `j >= k`: `i = j + 1`.
+
+For `k = n-1`: `j ∈ [0, n-3]`, all `j < k`, so `i = j ∈ [0, n-3]`. That's `n-2` splits. ✓.
+
+For `k = 0`: `j ∈ [0, n-3]`, all `j >= k`, so `i = j+1 ∈ [1, n-2]`. That's `n-2` splits. ✓.
+
+For general `k`: `j ∈ [0, n-3]`. `j < k` gives `i ∈ [0, min(k-1, n-3)]`. `j >= k` gives `i ∈ [k+1, n-2]`. For `k ≤ n-3`: `[0, k-1] ∪ [k+1, n-2]`, total `k + n-2-k = n-2`. ✓. For `k = n-2`: `[0, n-3]`, that's it (since `j ≥ k = n-2` means `j = n-3` only if `n-3 >= n-2`, false). So `i ∈ [0, n-3]`, `n-2` splits. ✓. For `k = n-1`: `i ∈ [0, n-3]`, `n-2` splits. ✓.
+
+So general: splits at original `i` where `i ∈ [0, min(k-1, n-3)] ∪ [k+1, n-2]`.
+
+Categories:
+1. `i ∈ [0, min(k-2, n-3)]`: left = `pre[i]`, right = `gcd of [i+1..n-1] \ {k}`. Since `i ≤ k-2`, `k ≥ i+2 > i+1`, so right = `gcd(range_gcd(i+1, k-1), suf[k+1])` (with `suf[n] = 0`).
+2. `i = k-1` (only if `k-1 ≤ n-3`, i.e., `k ≤ n-2`): bridge, left = `pre[k-1]`, right = `suf[k+1]`.
+3. `i ∈ [k+1, n-2]`: left = `gcd(pre[k-1], range_gcd(k+1, i))` (with `pre[-1] = 0`), right = `suf[i+1]`.
+
+OK so with the convention `pre[-1] = suf[n] = 0` and `gcd(0, x) = x`:
+
+For each `k ∈ [0, n-1]`:
+- **Category 1** `i ∈ [0, k-2]` (but capped at `n-3`): count `pre[i] == gcd(range_gcd(i+1, k-1), suf[k+1])`.
+  - Binary search on monotone functions.
+- **Category 2** (if `k ≤ n-2`): `pre[k-1] == suf[k+1]` (with `pre[-1] = 0` — but `k=0` has no bridge since `i = -1` isn't valid. Let me check: `k = 0` → bridge at `i = -1`? No. For `k=0`, splits are `i ∈ [1, n-2]`, all category 3. So bridge exists only for `k ∈ [1, n-2]`.)
+- **Category 3** `i ∈ [k+1, n-2]`: count `gcd(pre[k-1], range_gcd(k+1, i)) == suf[i+1]`.
+  - Binary search.
+
+For category 1, define `g_k(i) = gcd(range_gcd(i+1, k-1), suf[k+1])`. As `i` increases (toward `k`), the range `[i+1, k-1]` shrinks, so `g_k(i)` is non-decreasing. `pre[i]` is non-increasing. So binary search works.
+
+For category 3, define `f_k(i) = gcd(pre[k-1], range_gcd(k+1, i))`. As `i` increases, range grows, `f_k(i)` non-increasing. `suf[i+1]` non-decreasing as `i` increases. Binary search works.
+
+**Sparse table for range GCD**: O(n log n) build, O(1) query. Standard.
+
+Actually, wait. Since we're doing n binary searches each with O(log n) GCD queries, and each query is O(1) with sparse table, total is O(n log n). 
+
+Let me now code this up.
+
+```python
+import math
+from math import gcd
+
+class SparseTable:
+    def __init__(self, arr):
+        n = len(arr)
+        self.log = [0] * (n + 1)
+        for i in range(2, n + 1):
+            self.log[i] = self.log[i // 2] + 1
+        K = self.log[n] + 1
+        self.st = [[0] * n for _ in range(K)]
+        self.st[0] = arr[:]
+        j = 1
+        while (1 << j) <= n:
+            i = 0
+            while i + (1 << j) <= n:
+                self.st[j][i] = gcd(self.st[j-1][i], self.st[j-1][i + (1 << (j-1))])
+                i += 1
+            j += 1
+    
+    def query(self, l, r):  # gcd of arr[l..r] inclusive
+        if l > r:
+            return 0
+        j = self.log[r - l + 1]
+        return gcd(self.st[j][l], self.st[j][r - (1 << j) + 1])
+
+class Solution:
+    def maxValidSplits(self, nums):
+        n = len(nums)
+        pre = [0] * n
+        suf = [0] * (n + 1)
+        pre[0] = nums[0]
+        for i in range(1, n):
+            pre[i] = gcd(pre[i-1], nums[i])
+        suf[n-1] = nums[n-1]
+        for i in range(n-2, -1, -1):
+            suf[i] = gcd(suf[i+1], nums[i])
+        suf[n] = 0  # identity
+        
+        st = SparseTable(nums)
+        
+        def range_gcd(l, r):
+            if l > r:
+                return 0
+            return st.query(l, r)
+        
+        ans = 0
+        
+        # Case: no removal
+        count = 0
+        for i in range(n - 1):
+            if pre[i] == suf[i+1]:
+                count += 1
+        ans = max(ans, count)
+        
+        # Case: remove element k
+        for k in range(n):
+            score = 0
+            pk_1 = pre[k-1] if k > 0 else 0  # pre[k-1]
+            sk_1 = suf[k+1] if k < n - 1 else 0  # suf[k+1], suf[n]=0
+            
+            # Category 2: bridge (k-1 split), exists iff 1 <= k <= n-2
+            if 1 <= k <= n - 2:
+                if pre[k-1] == suf[k+1]:
+                    score += 1
+            
+            # Category 1: i in [0, k-2], also i <= n-3 (auto since k-2 <= n-3 when k <= n-1)
+            lo, hi = 0, k - 2
+            if lo <= hi:
+                # g(i) = gcd(range_gcd(i+1, k-1), suf[k+1])
+                def g(i):
+                    return gcd(range_gcd(i+1, k-1), sk_1)
+                # Find smallest i1 in [lo,hi] with pre[i1] <= g(i1)
+                # Find largest i2 in [lo,hi] with pre[i2] >= g(i2)
+                # pre non-increasing, g non-decreasing
+                # Binary search for i1: first index where pre[i] <= g(i)
+                i1 = self.bs_first_le(pre, g, lo, hi)
+                i2 = self.bs_last_ge(pre, g, lo, hi)
+                if i1 is not None and i2 is not None and i1 <= i2:
+                    score += i2 - i1 + 1
+            
+            # Category 3: i in [k+1, n-2]
+            lo, hi = k + 1, n - 2
+            if lo <= hi:
+                # f(i) = gcd(pre[k-1], range_gcd(k+1, i))
+                def f(i):
+                    return gcd(pk_1, range_gcd(k+1, i))
+                # f non-increasing, suf[i+1] non-decreasing
+                # Find smallest i1 with f(i1) <= suf[i1+1]
+                # Find largest i2 with f(i2) >= suf[i2+1]
+                i1 = self.bs_first_le2(f, suf, lo, hi)
+                i2 = self.bs_last_ge2(f, suf, lo, hi)
+                if i1 is not None and i2 is not None and i1 <= i2:
+                    score += i2 - i1 + 1
+            
+            ans = max(ans, score)
+        
+        return ans
+```
+
+Hmm, this is getting complicated with the binary searches. Let me write helper functions carefully.
+
+For category 1: `pre[i]` non-increasing in `i`, `g(i)` non-decreasing in `i`. Want `pre[i] == g(i)`.
+- `pre[i] - g(i)` non-increasing.
+- Find smallest `i` where `pre[i] <= g(i)` (i.e., `pre - g ≤ 0`): this is a "find first true in monotone predicate" — predicate `P(i): pre[i] <= g(i)` is monotone (once true, stays true as `pre` decreases and `g` increases).
+- Find largest `i` where `pre[i] >= g(i)`: predicate `Q(i): pre[i] >= g(i)` is monotone (once false, stays false).
+- Valid: `[first_P, last_Q]` if they overlap.
+
+For category 3: `f(i)` non-increasing, `suf[i+1]` non-decreasing in `i`. Want `f(i) == suf[i+1]`.
+- Find smallest `i` where `f(i) <= suf[i+1]`.
+- Find largest `i` where `f(i) >= suf[i+1]`.
+- Valid: overlap range.
+
+Binary search implementations:
+
+```python
+def bs_first(P, lo, hi):
+    # Find smallest i in [lo, hi] where P(i) is True. P is monotone (False...False True...True).
+    # Returns None if no such i.
+    if not P(hi):
+        return None
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if P(mid):
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo
+
+def bs_last(Q, lo, hi):
+    # Find largest i in [lo, hi] where Q(i) is True. Q is monotone (True...True False...False).
+    # Returns None if no such i.
+    if not Q(lo):
+        return None
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if Q(mid):
+            lo = mid
+        else:
+            hi = mid - 1
+    return lo
+```
+
+For category 1:
+- `i1 = bs_first(lambda i: pre[i] <= g(i), lo, hi)`
+- `i2 = bs_last(lambda i: pre[i] >= g(i), lo, hi)`
+- If both exist and `i1 <= i2`: count `i2 - i1 + 1`.
+
+For category 3:
+- `i1 = bs_first(lambda i: f(i) <= suf[i+1], lo, hi)`
+- `i2 = bs_last(lambda i: f(i) >= suf[i+1], lo, hi)`
+- If both exist and `i1 <= i2`: count `i2 - i1 + 1`.
+
+Wait, I need to double-check monotonicity of `g` for category 1.
+
+`g(i) = gcd(range_gcd(i+1, k-1), suf[k+1])`. As `i` increases to `i+1`: range becomes `[i+2, k-1]`, which is smaller. GCD over smaller range is a multiple of GCD over larger range. So `g(i+1) ≥ g(i)` numerically. ✓ Non-decreasing.
+
+`pre[i]` non-increasing. ✓
+
+For category 3:
+`f(i) = gcd(pre[k-1], range_gcd(k+1, i))`. As `i` increases, range grows, so `f(i+1)` divides `f(i)`, `f(i+1) ≤ f(i)`. ✓ Non-increasing.
+`suf[i+1]`: as `i` increases, `i+1` increases, suffix starts later, fewer elements, GCD non-decreasing. ✓
+
+Great.
+
+Now let me also double check the "no removal" case and handle `n = 2` (then there are no valid splits possible if we remove one element, since array of length 1 has no splits; and without removal, split at `i=0` only).
+
+Let me also verify with the examples.
+
+**Example 1**: `nums = [10, 30, 15, 10]`, n=4.
+`pre = [10, 10, 5, 5]`, `suf = [5, 5, 5, 10]`.
+
+No removal: splits `i = 0, 1, 2`:
+- `i=0`: `pre[0]=10`, `suf[1]=5`. Not equal.
+- `i=1`: `pre[1]=10`, `suf[2]=5`. Not equal.
+- `i=2`: `pre[2]=5`, `suf[3]=10`. Not equal.
+Score = 0.
+
+Remove `k=2` (element 15): `arr = [10, 30, 10]`.
+Expected splits: `i=0`: left=10, right=gcd(30,10)=10 ✓. `i=1`: left=gcd(10,30)=10, right=10 ✓. Score=2.
+
+Using my formulas with `k=2`:
+- Category 1: `i ∈ [0, 0]`, `g(0) = gcd(range_gcd(1, 1), suf[3]) = gcd(30, 10) = 10`. `pre[0] = 10`. Equal! Count = 1.
+- Category 2 (bridge): `k=2 ∈ [1, 2]`, `pre[1] = 10`, `suf[3] = 10`. Equal! +1.
+- Category 3: `i ∈ [3, 2]` — empty.
+Total = 2. ✓
+
+**Example 2**: `nums = [2, 10, 14]`, n=3.
+`pre = [2, 2, 2]`, `suf = [2, 2, 14]`.
+
+No removal: splits `i = 0, 1`:
+- `i=0`: `pre[0]=2`, `suf[1]=2`. ✓
+- `i=1`: `pre[1]=2`, `suf[2]=14`. ✗
+Score = 1.
+
+Remove k=0: arr=[10,14]. Split i=0... in original indices, splits are `i ∈ [1, 1]`. Category 3 with `i=1`: left = `gcd(pre[-1], range_gcd(1,1)) = gcd(0, 10) = 10`, right = `suf[2] = 14`. Not equal. Score = 0.
+
+Remove k=1: arr=[2,14]. Splits: bridge only (`i=0`): `pre[0]=2`, `suf[2]=14`. Not equal. Score=0.
+
+Remove k=2: arr=[2,10]. Category 1: `i ∈ [0, 0]`, `g(0) = gcd(range_gcd(1,1), suf[3]) = gcd(10, 0) = 10`. `pre[0] = 2`. Not equal. Bridge: `k=2 ∉ [1, 1]`. Score = 0.
+
+Max = 1. ✓
+
+**Example 3**: `nums = [2, 4]`, n=2.
+`pre = [2, 2]`, `suf = [2, 4]`.
+
+No removal: split `i=0`: `pre[0]=2`, `suf[1]=4`. ✗. Score=0.
+
+Remove k=0: arr=[4], no splits. Score=0.
+Remove k=1: arr=[2], no splits. Score=0.
+
+Max = 0. ✓
+
+Now let me also check some edge cases:
+- When removing `k` leaves array of length 1 (`n=2`, any `k`): no splits. My formula: `k=0`: category 3 `i ∈ [1, 0]` empty. Category 2: `k=0 ∉ [1, 0]`. Category 1 empty. Score=0. ✓. `k=1`: category 1 `i ∈ [0, -1]` empty. Bridge: `k=1 ∉ [1, 0]` empty. Category 3 `i ∈ [2, 0]` empty. Score=0. ✓.
+
+Wait, for `k=1` and `n=2`: bridge condition `1 <= k <= n-2` → `1 <= 1 <= 0` false. Good.
+
+Now, one concern: the binary search functions capture `k` via closure, and Python closures in loops... I define `g` and `f` inside the loop, so they capture the current `k`. That's fine.
+
+Let me also think about performance. For each `k` (n values), we do up to 2 binary searches, each O(log n) with O(1) GCD queries. So O(n log n) total ≈ 10⁵ × 17 ≈ 1.7M operations, each involving a couple of gcd computations. Should be well within 9s.
+
+But building the sparse table is O(n log n) memory = 10⁵ × 17 integers ≈ 1.7M integers. Fine.
+
+Actually, can I avoid the sparse table? Since `g(i)` for category 1 is `gcd(range_gcd(i+1, k-1), suf[k+1])` and in the binary search I always query ranges ending at `k-1`... Actually, for category 1 with fixed `k`, the range is `[i+1, k-1]` — always ending at `k-1`. I could precompute suffix GCDs ending at `k-1`, but that's O(n) per `k`. Sparse table is the way.
+
+Alternatively, I could use the "two pointers / binary lifting on GCD" trick, but sparse table is simpler.
+
+Let me now write clean code.
+
+```python
+from math import gcd
+
+class Solution:
+    def maxValidSplits(self, nums: list[int]) -> int:
+        n = len(nums)
+        
+        # Sparse table for range GCD
+        log = [0] * (n + 1)
+        for i in range(2, n + 1):
+            log[i] = log[i >> 1] + 1
+        K = log[n] + 1
+        st = [nums[:]]
+        j = 1
+        while (1 << j) <= n:
+            prev = st[-1]
+            cur = [0] * (n - (1 << j) + 1)
+            half = 1 << (j - 1)
+            for i in range(len(cur)):
+                cur[i] = gcd(prev[i], prev[i + half])
+            st.append(cur)
+            j += 1
+        
+        def range_gcd(l, r):
+            # gcd of nums[l..r] inclusive; returns 0 if l > r
+            if l > r:
+                return 0
+            j = log[r - l + 1]
+            row = st[j]
+            return gcd(row[l], row[r - (1 << j) + 1])
+        
+        pre = [0] * n
+        suf = [0] * (n + 1)  # suf[n] = 0
+        pre[0] = nums[0]
+        for i in range(1, n):
+            pre[i] = gcd(pre[i-1], nums[i])
+        suf[n-1] = nums[n-1]
+        for i in range(n-2, -1, -1):
+            suf[i] = gcd(suf[i+1], nums[i])
+        
+        def bs_first(P, lo, hi):
+            # smallest i in [lo,hi] with P(i) True; P monotone False->True
+            if lo > hi or not P(hi):
+                return None
+            while lo < hi:
+                mid = (lo + hi) >> 1
+                if P(mid):
+                    hi = mid
+                else:
+                    lo = mid + 1
+            return lo
+        
+        def bs_last(Q, lo, hi):
+            # largest i in [lo,hi] with Q(i) True; Q monotone True->False
+            if lo > hi or not Q(lo):
+                return None
+            while lo < hi:
+                mid = (lo + hi + 1) >> 1
+                if Q(mid):
+                    lo = mid
+                else:
+                    hi = mid - 1
+            return lo
+        
+        ans = 0
+        
+        # No removal
+        cnt = 0
+        for i in range(n - 1):
+            if pre[i] == suf[i+1]:
+                cnt += 1
+        ans = cnt
+        
+        for k in range(n):
+            score = 0
+            pk1 = pre[k-1] if k > 0 else 0      # pre[k-1], 0 if k==0
+            sk1 = suf[k+1] if k + 1 <= n else 0  # suf[k+1], suf[n]=0 when k=n-1
+            # Actually suf has size n+1, suf[n]=0, so suf[k+1] works for k=n-1
+            sk1 = suf[k+1]
+            
+            # Bridge: exists iff 1 <= k <= n-2
+            if 1 <= k <= n - 2:
+                if pre[k-1] == suf[k+1]:
+                    score += 1
+            
+            # Category 1: i in [0, k-2]
+            lo, hi = 0, k - 2
+            if lo <= hi:
+                def g(i, k=k, sk1=sk1):
+                    return gcd(range_gcd(i + 1, k - 1), sk1)
+                i1 = bs_first(lambda i: pre[i] <= g(i), lo, hi)
+                i2 = bs_last(lambda i: pre[i] >= g(i), lo, hi)
+                if i1 is not None and i2 is not None and i1 <= i2:
+                    score += i2 - i1 + 1
+            
+            # Category 3: i in [k+1, n-2]
+            lo, hi = k + 1, n - 2
+            if lo <= hi:
+                def f(i, k=k, pk1=pk1):
+                    return gcd(pk1, range_gcd(k + 1, i))
+                i1 = bs_first(lambda i: f(i) <= suf[i+1], lo, hi)
+                i2 = bs_last(lambda i: f(i) >= suf[i+1], lo, hi)
+                if i1 is not None and i2 is not None and i1 <= i2:
+                    score += i2 - i1 + 1
+            
+            if score > ans:
+                ans = score
+        
+        return ans
+```
+
+Wait, there's an issue with the binary search: the lambda calls `g(i)` which does a range GCD query. That's fine.
+
+But one subtlety: in `bs_first` for category 1, I claim `P(i): pre[i] <= g(i)` is monotone (False→True). `pre` non-increasing, `g` non-decreasing → `pre[i] - g(i)` non-increasing → once `pre ≤ g`, stays `pre ≤ g`. ✓.
+
+And `Q(i): pre[i] >= g(i)` is monotone True→False. ✓.
+
+For category 3: `f` non-increasing, `suf[i+1]` non-decreasing → `f - suf` non-increasing. Same logic. ✓.
+
+Now, is there an issue with `k = n-1` and `sk1 = suf[n] = 0`? `g(i) = gcd(range_gcd(i+1, n-2), 0) = range_gcd(i+1, n-2)`. Correct — right side is just the elements from `i+1` to `n-2` (since `n-1` removed and nothing after).
+
+For `k = 0`: category 3 `f(i) = gcd(0, range_gcd(1, i)) = range_gcd(1, i)`. Correct.
+
+Let me also double check `hi = k - 2` for category 1 when `k = n-1`: `hi = n-3`. And splits go up to `n-3`. ✓. But wait, for `k = n-1`, is the bridge included? Bridge condition `k ≤ n-2` → `n-1 ≤ n-2` false. ✓.
+
+For `k = n-2`: bridge at `i = n-3`: `pre[n-3] == suf[n-1]`. And category 1: `i ∈ [0, n-4]`. Category 3: `i ∈ [n-1, n-2]` empty. Total splits: `n-3 + 1 = n-2`. ✓.
+
+Let me trace through a slightly bigger example to make sure.
+
+`nums = [6, 10, 15]`, n=3. All pairwise gcds differ.
+`pre = [6, 2, 1]`, `suf = [1, 5, 15]`.
+
+No removal: `i=0`: 6 vs 5 ✗. `i=1`: 2 vs 15 ✗. Score 0.
+
+k=0: arr=[10,15]. Category 3, i∈[1,1]: f(1)=gcd(0, range_gcd(1,1))=10, suf[2]=15. ✗. Score 0.
+k=1: bridge: pre[0]=6, suf[2]=15 ✗. Score 0.
+k=2: category 1, i∈[0,0]: g(0)=gcd(range_gcd(1,1), suf[3]=0)=10. pre[0]=6 ✗. Score 0.
+
+Max=0. Correct? Removing nothing: gcd(6)=6 vs gcd(10,15)=5; gcd(6,10)=2 vs 15. No valid splits. Removing one element leaves 2 elements, one split: [10,15]: 10≠15; [6,15]: 6≠15; [6,10]: 6≠10. So 0. ✓.
+
+Another: `nums = [4, 8, 4]`, n=3.
+pre=[4,4,4], suf=[4,4,4].
+No removal: i=0: 4==4 ✓. i=1: 4==4 ✓. Score 2. Answer should be 2.
+
+Let me check k=1 (remove 8): arr=[4,4]. Bridge: pre[0]=4, suf[2]=4 ✓. Score 1. Max is still 2 from no-removal. ✓.
+
+Now let me think about whether my category 1 and 3 binary searches might double-count or miss the bridge. For `k ∈ [1, n-2]`, splits are `[0, k-2]` (cat 1), `k-1` (bridge), `[k+1, n-2]` (cat 3). These are disjoint and cover `[0, n-2] \ {k}`. The full split set should be `[0, k-1] ∪ [k+1, n-2]` = `[0, n-2] \ {k}`. And cat1 ∪ bridge ∪ cat3 = `[0,k-2] ∪ {k-1} ∪ [k+1,n-2]` = `[0, n-2] \ {k}`. ✓.
+
+Now let me code it up and test.
+
+Actually, I realize I should double-check the sparse table construction for correctness and also make sure I handle `n=2` (where `st` construction with `(1 << j) <= n` works).
+
+For n=2: log = [0,0,1]. st[0] = nums. j=1: (1<<1)=2 ≤ 2, so build st[1] with length 2-2+1=1: st[1][0] = gcd(st[0][0], st[0][1]). j=2: (1<<2)=4 > 2, stop. Query(0,1): j=log[2]=1, gcd(st[1][0], st[1][1-2+1=0]) = st[1][0]. ✓. Query(0,0): j=log[1]=0, gcd(st[0][0], st[0][0]) = nums[0]. ✓.
+
+Let me write the test file with the three examples.
+
+Let me now also think: are there any cases where my monotonicity assumption fails due to numerical vs divisibility ordering? I argued `pre[i+1] = gcd(pre[i], nums[i+1])` divides `pre[i]`, so `pre[i+1] ≤ pre[i]` numerically. ✓. Similarly for others. And the binary search predicates use numerical `≤`/`≥`, consistent with the monotonicity. ✓.
+
+One more potential issue: when `i1` and `i2` both exist but `i1 > i2`, that means... let's see: `i1` is first where `pre ≤ g`, `i2` is last where `pre ≥ g`. If `i1 > i2`, then at `i2`: `pre ≥ g` but `i2 < i1` means `pre > g` (strict, since `i1` is the FIRST where `≤`). So `pre > g` at `i2`, and at `i1 > i2`: `pre ≤ g`. Since `pre - g` is non-increasing, if `pre(i2) > g(i2)` and `pre(i1) ≤ g(i1)` with `i1 > i2`, that's consistent. And there's no `i` with `pre == g` — the function jumps from positive to negative without hitting zero. Count = 0. My code: `if i1 <= i2: score += ...` — handles this. ✓.
+
+Let me write and test the code now.
+
+Also, let me think about whether to use `list[int]` type hint — the problem uses it, fine for Python 3.9+.
+
+Let me write solution.py and test.py.
+[finish_reason: stop | provider: Morph | reasoning chars: 0 | usage: {'prompt_tokens': 1132, 'completion_tokens': 15637, 'total_tokens': 16769, 'cost': 0.234424412, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.234424412, 'upstream_inference_prompt_cost': 0.001433112, 'upstream_inference_completions_cost': 0.2329913}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

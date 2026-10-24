@@ -1,0 +1,68 @@
+
+Assistant: # Solution: Rolling Hash (Rabin-Karp) approach
+
+The idea:
+- For each possible length `l` from 1 to n, check whether there is any subarray of length `l` that appears exactly once.
+- Use a rolling hash (Rabin-Karp) to hash all subarrays of length `l` in O(n).
+- Binary search the answer since if a unique subarray exists at length `l`, one also exists at length `l+1`? Wait — actually that monotonicity doesn't strictly hold... Actually it does: if subarray `s` of length `l` is unique, then the subarray of length `l+1` containing `s`... hmm, not necessarily. Consider extending: if `nums[i..i+l-1]` is unique, then any superstring `nums[i..i+l]` (if it exists) is also unique because if `nums[j..j+l] == nums[i..i+l]` then `nums[j..j+l-1] == nums[i..i+l-1]`, contradiction. But near array end, `nums[i..i+l]` might not exist. However the full array of length n is always unique, and binary search over "exists unique subarray of length ≤ l"? Let me think.
+
+Claim: if there's a unique subarray of length `l`, there's one of length `l+1` (provided l < n). If unique subarray `nums[i..i+l-1]` exists and `i+l < n`, then `nums[i..i+l]` is unique. If `i+l == n` (it ends at the end), consider extending to the left: `nums[i-1..i+l-1]` — is that unique? If `nums[j..j+l] == nums[i-1..n-1]`, then `nums[j+1..j+l] == nums[i..n-1]`, contradicting uniqueness of `nums[i..n-1]` unless `j+1 == i`... but `j+1 == i` means `j == i-1`, same subarray. So yes, extending left works too when `i > 0`. If `i == 0` and `i+l == n`, then `l == n` which means the whole array is unique at length n, and l < n isn't possible. So the predicate "exists unique subarray of length l" is monotonic in l. Binary search works, but linear scan from l=1 with early termination could be worst-case O(n²) hashes total if answer is large (n/2 lengths × O(n) each). Binary search gives O(n log n).
+
+To be safe against hash collisions, use double hashing or Python's built-in hash of tuples — but computing tuple per subarray is O(n·l). Rolling hash with two mod primes is safer. Or use one 64-bit mod (2^64 via natural overflow emulation) — collision unlikely but let's use double mod to be safe.
+
+Let me write it:
+
+```python
+class Solution:
+    def smallestUniqueSubarray(self, nums: list[int]) -> int:
+        n = len(nums)
+        MOD1 = (1 << 61) - 1
+        MOD2 = (1 << 31) - 1
+        BASE = 1000003  # must be > max(nums[i])? Not necessary but good.
+        
+        # Precompute prefix hashes
+        pre1 = [0] * (n + 1)
+        pre2 = [0] * (n + 1)
+        for i, x in enumerate(nums):
+            pre1[i+1] = (pre1[i] * BASE + x) % MOD1
+            pre2[i+1] = (pre2[i] * BASE + x) % MOD2
+        
+        pow1 = [1] * (n + 1)
+        pow2 = [1] * (n + 1)
+        for i in range(1, n + 1):
+            pow1[i] = pow1[i-1] * BASE % MOD1
+            pow2[i] = pow2[i-1] * BASE % MOD2
+        
+        def has_unique(l):
+            counts = {}
+            for i in range(n - l + 1):
+                h1 = (pre1[i+l] - pre1[i] * pow1[l]) % MOD1
+                h2 = (pre2[i+l] - pre2[i] * pow2[l]) % MOD2
+                key = (h1 << 32) | h2
+                counts[key] = counts.get(key, 0) + 1
+            return any(v == 1 for v in counts.values())
+        
+        lo, hi = 1, n
+        ans = n
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            if has_unique(mid):
+                ans = mid
+                hi = mid - 1
+            else:
+                lo = mid + 1
+        return ans
+```
+
+Performance: O(n log n) with n=1e5 → ~1.7M operations per hash pass × 17 passes ≈ manageable in 4s in Python? Each `has_unique` call is O(n) dictionary operations: 1e5 per call, 17 calls = 1.7M dict ops. That's fine.
+
+Actually, a cleaner count: store counts, and also track number of keys with count 1 incrementally. Fine.
+
+Note: with prefix hashing and early stopping optimization — we can early-exit the loop if we find a count-1 after processing all, but counts change. Just do full pass.
+
+Also base choice: BASE should ideally be larger than alphabet for clean polynomial hashing, but collisions handled by double mod anyway. Use BASE = 1000003 which is > 1e5 max value — good, keeps representation more canonical.
+
+Edge: Mersenne mod 2^61-1 multiplication: pre1[i]*BASE can be up to 2^61 * 1e6 ≈ 2^81 — Python handles big ints fine, just slower. Could use smaller mod like 10^9+7 to keep fast. Let me use MOD1 = 10^9+7, MOD2 = 10^9+9 with BASE = 1000003. Products up to 1e9*1e6 = 1e15 — fine.
+
+Let me write and test.
+[finish_reason: stop | provider: Sail Research | reasoning chars: 0 | usage: {'prompt_tokens': 987, 'completion_tokens': 1365, 'total_tokens': 2352, 'cost': 0.0086919, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0086919, 'upstream_inference_prompt_cost': 0.0011844, 'upstream_inference_completions_cost': 0.0075075}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

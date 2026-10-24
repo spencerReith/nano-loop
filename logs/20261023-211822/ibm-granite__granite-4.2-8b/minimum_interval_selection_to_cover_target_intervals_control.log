@@ -1,0 +1,478 @@
+
+Assistant: ```python
+class Solution:
+    def minSelection(self, availableIntervals: list[list[int]], targetIntervals: list[list[int]]) -> int:
+        # Merge target intervals and handle ordering
+        # Sort target intervals and merge overlapping/adjacent ones
+        if not targetIntervals:
+            return 0
+        target = sorted(targetIntervals, key=lambda x: x[0])
+        merged_target = []
+        cur_start, cur_end = target[0]
+        for s, e in target[1:]:
+            if s <= cur_end + 1:  # Closed intervals: [a,b] and [b+1,c] are adjacent but not overlapping; [b,c] overlaps
+                cur_end = max(cur_end, e)
+            else:
+                merged_target.append([cur_start, cur_end])
+                cur_start, cur_end = s, e
+        merged_target.append([cur_start, cur_end])
+        
+        # Check coverage of each merged target interval by available intervals
+        # For each merged target interval [L,R], we need at least one available interval that overlaps it.
+        # If any merged target interval cannot be intersected by any available interval, return -1.
+        # But first we need to consider that we can pick multiple available intervals to cover a merged target interval if they collectively cover it? 
+        # No: we need every real point in target intervals to be covered by at least one selected available interval.
+        # That means for each point in the union of target intervals, there must be an available interval covering it.
+        # So effectively we need to cover the entire merged_target (the union of target intervals) with selected available intervals.
+        # However, available intervals may extend beyond target, which is fine.
+        # So problem reduces to: cover the union of target intervals (a set of disjoint closed intervals) with the minimum number of intervals from availableIntervals.
+        
+        # But we must ensure that it is possible: for each merged target interval [L,R], there must be at least one available interval that overlaps it (otherwise impossible).
+        # However, even if each merged target interval has at least one overlapping available interval, we might need multiple available intervals to cover a single merged target interval if no single available interval covers the whole merged target interval and they cannot be chained because gaps?
+        # Actually, if we have a merged target interval [L,R], and we pick available intervals that intersect it, they may not cover the whole [L,R] if there are gaps between them. So we need to select a subset of available intervals whose union covers [L,R] entirely.
+        # But available intervals are arbitrary; we need to cover the whole merged target interval with selected intervals from availableIntervals. That is a set cover problem on intervals, which is NP-hard in general? However, since intervals are on the line, covering a single interval [L,R] with intervals from a set can be solved greedily: sort available intervals by left endpoint and pick the one that starts <= current point and extends furthest, then move to the furthest covered point, etc. That gives minimum number to cover a continuous interval.
+        # But we have multiple disjoint merged target intervals; they are independent because selected intervals may cover multiple merged target intervals if they span across gaps? Actually, if there is a gap between merged target intervals (i.e., they are separated by at least 1 unit with no overlap), an available interval could cover parts of two merged target intervals if it spans the gap. That would be beneficial because it could cover both with one interval. So we cannot treat merged target intervals independently; we must consider covering the entire union (which is a set of disjoint intervals) with available intervals that may bridge gaps.
+        # However, if an available interval covers a gap between two merged target intervals, that's fine because the gap is not part of the target union, so covering it doesn't hurt. So effectively we need to cover the entire set of merged target intervals (which may be disconnected) with intervals from availableIntervals. A single available interval can cover multiple merged target intervals if it spans across the gaps. So we need to solve the minimum number of intervals to cover a collection of disjoint intervals (the merged target intervals) using intervals from availableIntervals.
+        # This is equivalent to covering the union of target intervals (which is a set of disjoint intervals) with available intervals. Since the union is just the merged_target list (disjoint), we need to select intervals that together cover all these disjoint intervals.
+        # This is similar to "minimum number of intervals to cover a set of required intervals" where required intervals are disjoint. We can think of it as covering the entire required set with available intervals.
+        # One approach: sort available intervals by left endpoint. Then we can try to cover the merged_target from leftmost start to rightmost end, but because merged_target may have gaps, we can skip gaps? Actually, we must cover every point in merged_target, but we don't need to cover gaps between merged_target intervals. So if an available interval spans across a gap, it's okay but unnecessary; however, it might allow covering two merged_target intervals with one interval, reducing count.
+        # So the problem reduces to: given a collection of required intervals (merged_target), find the smallest subset of available intervals whose union contains the union of required intervals.
+        # This is a set cover problem on intervals, which is polynomial because intervals are one-dimensional. Indeed, the minimum number of intervals to cover a set of points/intervals can be solved by a greedy algorithm after sorting by left endpoint of available intervals and scanning required coverage.
+        # Standard method: sort available intervals by left endpoint. Then iterate over merged_target intervals in order. For each merged_target interval [L,R], we need to cover it with available intervals that intersect it. We can use a greedy selection that picks the available interval that starts <= current needed point (initially L) and extends furthest to the right, then move the current point to the maximum covered point (R if covered fully or to the furthest reachable). However, because available intervals may also cover subsequent merged_target intervals, we should not reset the current point to the start of the next merged_target if we have already covered beyond it.
+        # Better approach: consider all points of interest: the merged_target intervals. We need to cover them. We can treat the entire required region as a set of intervals and run a greedy covering algorithm that selects intervals that extend coverage as far as possible while covering all required intervals.
+        # Steps:
+        # 1. Sort available intervals by left endpoint.
+        # 2. Sort merged_target intervals by start.
+        # 3. For each merged_target interval, ensure it can be covered by at least one available interval (i.e., there exists an available interval overlapping it). If any merged_target interval has no overlap with any available interval, return -1.
+        # 4. Now run a greedy algorithm to cover the merged_target union:
+        #    Let current_position = merged_target[0][0] (the leftmost point of the union). But we must cover the entire union, so we can iterate through merged_target intervals in order and try to cover them with selected intervals.
+        #    However, because an available interval might cover multiple merged_target intervals, we should not reset current_position after finishing one merged_target interval if the selected interval extends beyond the end of that merged_target interval.
+        #    Standard greedy for covering a set of intervals (with gaps) with intervals from a collection: sort available by left. Then iterate over required intervals in order, maintaining the current coverage frontier.
+        #    Pseudo:
+        #        sort avail by left
+        #        sort required intervals by start
+        #        selected = 0
+        #        cur = required[0][0]  # current coverage needed start
+        #        i = 0 # index for avail
+        #        while cur < required[-1][1]: # but cur may jump over gaps? Actually we need to cover all required intervals, so we can process each required interval sequentially:
+        #    Alternative method: treat the union as a list of intervals and do interval covering greedy:
+        #        Let intervals = merged_target (disjoint, sorted).
+        #        Initialize selected = 0, idx = 0 (for avail), current_cover = -inf
+        #        While idx < len(avail):
+        #            If avail[idx] starts after the start of the current required interval that is not yet fully covered, we may need to pick.
+        #    Simpler: since we only need minimum number, we can use DP? But n up to 5e4, need O(n log n).
+        #    Known technique: "minimum number of intervals to cover a set of intervals" can be solved by greedy after sorting intervals by left endpoint and scanning required intervals.
+        #    Algorithm:
+        #        Sort avail by left.
+        #        Sort required intervals by start.
+        #        Let i = 0 (avail index), j = 0 (required index), selected = 0, current_cover = -inf.
+        #        While j < len(required):
+        #            If avail[i].left > required[j].right: # no overlap with current required interval and all later required intervals start later? But avail[i] may start after required[j] ends, then impossible? Actually we already checked overlap per merged_target, but due to gaps, an avail interval might start after required[j].end but before required[j+1].start? That's fine.
+        #            We need to cover required[j].start. Find the best avail interval that starts <= required[j].end (and overlaps required[j]) and extends furthest to the right among those that start <= required[j].end (or <= current_cover if we have already covered part).
+        #        Standard covering of a single interval [L,R] with available intervals: sort avail by left, then iterate to pick the interval that starts <= current_pos and maximizes right, then set current_pos = max(right, L), until current_pos >= R.
+        #        For multiple disjoint required intervals, we can run this greedy on each required interval separately, but allow that an interval selected for one required interval may also cover part of the next required interval if it extends far enough. So we should run the greedy continuously across required intervals: start with current_pos = required[0].start, and iterate through required intervals in order, but allow the covering to continue beyond the end of the current required interval if the selected interval reaches into the next required interval.
+        #        Procedure:
+        #            sort avail by left.
+        #            sort required intervals by start.
+        #            selected = 0
+        #            cur = required[0][0]  # current coverage needed
+        #            i = 0  # avail index
+        #            while cur < required[-1][1]:  # we need to cover up to the end of the last required interval
+        #                # among avail intervals with left <= cur (or <= required interval start if we haven't started?), we pick the one with maximum right that overlaps cur.
+        #                # But cur may be inside a gap? Actually cur should always be the leftmost uncovered point of the required union. Initially cur = required[0][0]. After selecting an interval [l,r] that covers cur (i.e., l <= cur <= r), we set cur = min(r, next uncovered point?). Standard: set cur = max(cur, l) then cur = r? Wait: standard covering of [L,R] with intervals: let cur = L, pick interval with l <= cur that maximizes r, set cur = r, increment selected. Continue until cur >= R.
+        #                # For multiple disjoint required intervals, we have gaps. If cur falls into a gap (i.e., after covering required[k], cur might be > required[k].end), then the next required interval starts at required[k+1].start which is > cur? Actually if there is a gap, required[k].end < required[k+1].start, then after covering required[k], cur will be at most required[k].end (if the selected interval ends exactly at required[k].end) or could be less? The greedy for covering required[k] will ensure cur >= required[k].end when done with required[k]. Then we move to required[k+1].start. However, if the selected interval for required[k] extended into the gap (i.e., r >= required[k+1].start), then it already covers part of required[k+1], so we should continue without resetting cur to required[k+1].start. Instead, cur should remain at the furthest covered point (which might be beyond required[k].end). Then we proceed to cover required[k+1] starting from cur if cur >= required[k+1].start? But if cur < required[k+1].start, we need to cover from required[k+1].start. So we set cur = max(cur, required[k+1].start). Actually the algorithm can be unified: while there are uncovered points in the required union, find the interval that starts <= current_needed_point (the smallest uncovered point) and extends furthest to the right. This works even with gaps because current_needed_point is the smallest required point not yet covered. Initially it's required[0].start. After picking an interval that covers up to r, the smallest uncovered point becomes the smallest required point greater than r, if exists. So we can jump to the next required interval that starts after r.
+        #                # Implementation:
+        #                    Sort avail by left.
+        #                    Sort required intervals by start.
+        #                    Merge required as disjoint intervals (already done).
+        #                    idx_avail = 0
+        #                    selected = 0
+        #                    cur = required[0][0]  # smallest uncovered required point
+        #                    i = 0  # current required interval index
+        #                    while cur < required[-1][1]:
+        #                        # Find the best avail interval that starts <= cur and maximizes right among those intervals.
+        #                        # Since avail is sorted by left, we can iterate while avail[i].left <= cur.
+        #                        best_r = cur  # or -inf
+        #                        while idx_avail < len(avail) and avail[idx_avail][0] <= cur:
+        #                            if avail[idx_avail][1] > best_r:
+        #                                best_r = avail[idx_avail][1]
+        #                            idx_avail += 1
+        #                        # But careful: we shouldn't skip intervals that start after cur but before the next required start? The standard greedy for covering a single interval [L,R] uses a pointer that moves forward and selects the interval that starts <= cur and has max right, then sets cur = that right. However, if we increment idx_avail permanently, we might skip intervals that could be useful for later required intervals that start after cur. So we should not consume avail intervals beyond the ones we select? Actually we need to consider all avail intervals that start <= cur for the current cur, but after selecting one, we can continue scanning from the beginning? That would be inefficient.
+        #                    # Better: use a pointer that goes through avail in order and selects greedily without moving backwards. Standard algorithm for covering a continuous interval [L,R] with intervals sorted by left:
+        #                        cur = L
+        #                        i = 0
+        #                        selected = 0
+        #                        while cur < R:
+        #                            max_r = cur
+        #                            while i < len(avail) and avail[i][0] <= cur:
+        #                                max_r = max(max_r, avail[i][1])
+        #                                i += 1
+        #                            if max_r <= cur: return -1  # cannot progress
+        #                            selected += 1
+        #                            cur = max_r
+        #                    # For multiple disjoint required intervals, we need to incorporate gaps. We can treat the required union as a set of points and use the same algorithm but with cur being the smallest uncovered required point. After picking an interval, cur becomes max_r. If max_r is less than the start of the next required interval, then the next uncovered required point is the start of the next required interval. So we set cur = min(max_r, next required start)? Actually if max_r < next required start, then we have no coverage for the gap, but that's fine because gap is not required. However, we still need to cover the next required interval. So we should set cur = max(max_r, next required start)? No: cur should be the smallest required point not yet covered. After covering up to max_r, if max_r < next required start, then the next uncovered required point is next required start. So we set cur = next required start. But our while condition cur < required[-1][1] would still hold if cur < required[-1][1]. We need to advance the required interval pointer when cur passes it.
+        #                    # So we maintain two pointers: avail index (i) and required interval index (j). We'll attempt to cover required[j] starting from required[j].start. While j < len(required) and required[j].end < cur: then this required interval is already covered (since cur > required[j].end), so increment j.
+        #                    # Then set needed = required[j].start. If needed < cur, then required[j] is already covered? Actually if cur > required[j].start, it might be partially covered. We need to ensure required[j].start is covered. If cur > required[j].start, then the point required[j].start is already covered if cur >= required[j].start? Not necessarily: cur is the furthest point we have covered so far (the rightmost point covered by selected intervals). If cur >= required[j].end, then the whole interval is covered. If cur is between required[j].start and required[j].end, then part is covered. But the greedy algorithm usually works by ensuring we cover from the smallest uncovered point. So we should set cur = max(cur, required[j].start) if required[j].start < cur? Actually cur is the furthest we have covered continuously from the start? In standard covering, cur is the rightmost point covered so far, and we always try to cover from cur. Initially cur = required[0].start. After picking an interval, cur becomes the rightmost point covered (max_r). Then we find the next uncovered required point: it should be the smallest required point that is > cur? But if there is a gap, the next required interval starts after cur, then the uncovered required point is that start. However, if cur is inside a required interval (i.e., cur >= required[j].start and cur < required[j].end), then the uncovered required point is required[j].start? No, it would be required[j].start if not covered? Actually if cur is inside required[j], that means we have covered up to cur within required[j], so the uncovered part of required[j] starts at cur if cur < required[j].end. But the greedy algorithm for covering a continuous interval sets cur to the rightmost covered point and then continues from that cur. That works because the interval is continuous. For disjoint required intervals, after covering required[j] up to cur (< required[j].end), we would need to continue covering required[j] until its end before moving to required[j+1]. So we should not skip covering required[j] if cur < required[j].end.
+        #                    # Therefore, the unified approach: treat the union as a continuous coverage from required[0].start to required[-1].end, but with the ability to skip gaps? No, we cannot skip covering required intervals partially; we must cover each entirely. So we need to cover required[j] completely before moving to required[j+1], unless an interval selected for required[j] extends into required[j+1], in which case we can cover part of required[j+1] and reduce the work for required[j+1].
+        #                    # Thus the standard greedy for covering a single interval can be applied sequentially to each required interval, but using the current coverage frontier.
+        #                    # Algorithm:
+        #                        Sort avail by left.
+        #                        Sort required (merged_target) by start.
+        #                        avail_index = 0
+        #                        selected = 0
+        #                        cur = required[0][0]  # current coverage frontier (rightmost point covered so far)
+        #                        j = 0  # current required interval index
+        #                        while j < len(required):
+        #                            # Move avail_index forward to consider intervals that start <= required[j].end (or <= cur if cur > required[j].start)
+        #                            # But we only need to consider intervals that start <= required[j].end (since they must overlap required[j]).
+        #                            # Actually we need to cover required[j] from required[j].start if not already covered.
+        #                            if cur < required[j][0]:  # there is a gap or cur is left of required[j].start
+        #                                # we need to cover from required[j].start
+        #                                # find the best interval that starts <= required[j].start? Actually if cur < required[j].start, we haven't covered any part of required[j], so we must pick an interval that overlaps required[j].start.
+        #                                # So set cur = required[j][0] (or keep cur as is? cur < required[j].start, so we need to cover from required[j].start)
+        #                                # We'll look for intervals with left <= required[j].start (or left <= cur? but cur < required[j].start, so left <= required[j].start is appropriate)
+        #                                needed = required[j][0]
+        #                            else:
+        #                                # cur >= required[j][0], so required[j] may already be partially covered. We need to cover up to required[j][1].
+        #                                needed = cur  # the next uncovered point within required[j] is cur if cur < required[j][1], else the interval is already covered.
+        #                            # But simpler: while j < len(required) and required[j][1] <= cur: # whole required[j] already covered, skip
+        #                                if required[j][1] <= cur:
+        #                                    j += 1
+        #                                    continue
+        #                            # Now required[j] is not fully covered. Let start_needed = max(required[j][0], cur)  # if cur < required[j][0], then start_needed = required[j][0]; if cur within [required[j][0], required[j][1]), start_needed = cur.
+        #                            start_needed = max(required[j][0], cur)
+        #                            # Find the best avail interval that starts <= start_needed (i.e., overlaps start_needed) and extends furthest right.
+        #                            # We'll scan avail from current avail_index while avail[avail_index][0] <= start_needed.
+        #                            # But we must consider intervals that may start before start_needed but we haven't seen yet because avail_index may have advanced past some intervals that start <= start_needed? Since we increment avail_index only when we consider intervals for covering, we should not skip intervals that could be used for later required intervals. Standard greedy for covering a single interval scans all intervals that start <= cur and picks the one with max right, then moves cur to that right. However, if we move avail_index forward permanently, we might skip intervals that start <= start_needed but appear after some intervals that we already passed. To avoid that, we can for each step scan from the beginning of avail? That would be O(n^2). Instead, we can sort avail and then for each covering step, we only need to consider intervals that start <= start_needed and that we haven't yet used. Since we always move forward in avail (because once we pass an interval's start, it cannot be useful for covering a later start_needed that is greater? Actually if start_needed increases, intervals with left <= start_needed that were skipped earlier because their left <= previous cur might still be usable if they have right > cur? But in the standard greedy for covering a continuous interval, we iterate through intervals in order and at each step we consider all intervals that start <= cur, and we pick the one with max right among them. Then we set cur = max_right. This works because we never need to go back to intervals that start before cur (since cur only increases). Similarly here, start_needed only increases (because cur only increases), so we can maintain a pointer avail_index that goes forward, and at each step we examine all intervals with left <= start_needed that have index >= avail_index? But if we previously examined some intervals and decided not to pick them (because they were not the best), they could still be useful later? In the continuous case, once we pass an interval's left (i.e., when cur becomes greater than its left), we still consider it if its left <= cur at the moment we scan. The typical algorithm is:
+        #                                cur = L
+        #                                i = 0
+        #                                selected = 0
+        #                                while cur < R:
+        #                                    max_r = cur
+        #                                    while i < len(avail) and avail[i][0] <= cur:
+        #                                        max_r = max(max_r, avail[i][1])
+        #                                        i += 1
+        #                                    if max_r <= cur: return -1
+        #                                    selected += 1
+        #                                    cur = max_r
+        #                            This works because i only moves forward; when we are at cur, we consider all intervals that start <= cur (including those that we haven't considered before), and we pick the one with max right among them. Since cur increases, we never need to reconsider intervals that start <= old cur but were not picked because they had smaller right; but could they be useful for later cur? If an interval starts <= old cur and had right less than max_r, it cannot extend further than max_r, so it is not better. So skipping is safe.
+        #                            # For multiple disjoint required intervals, we can adapt similarly: we maintain cur as the furthest covered point so far. We iterate required intervals in order. For each required interval that is not yet fully covered, we set cur = max(cur, required[j][0]) if cur < required[j][0] (gap). Then we run the continuous covering subroutine for required[j] from start = cur (which is at least required[j][0]) to required[j][1], but we must allow intervals that may start before required[j][0] (if cur < required[j][0], we set cur = required[j][0] first). However, the continuous subroutine requires that we consider intervals with left <= cur. Since cur might be less than required[j][0] (gap), we should set cur = required[j][0] before scanning.
+        #                            # Let's outline:
+        #                                avail_sorted = sorted(availableIntervals, key=lambda x: x[0])
+        #                                req = merged_target (disjoint sorted)
+        #                                avail_idx = 0
+        #                                selected = 0
+        #                                cur = req[0][0]
+        #                                j = 0
+        #                                while j < len(req):
+        #                                    # Skip already covered required intervals
+        #                                    if req[j][1] <= cur:
+        #                                        j += 1
+        #                                        continue
+        #                                    # Ensure cur is at least req[j][0]
+        #                                    if cur < req[j][0]:
+        #                                        cur = req[j][0]
+        #                                    # Now cover from cur to req[j][1] using avail intervals with left <= cur
+        #                                    # Use a temporary pointer local to this step? But we need to continue using avail_idx from where we left off because avail intervals are sorted and cur only increases.
+        #                                    # We'll use a while loop to select intervals for covering req[j]:
+        #                                    #   while cur < req[j][1] and avail_idx < len(avail_sorted):
+        #                                    #       if avail_sorted[avail_idx][0] <= cur:
+        #                                    #           candidate_max = max(candidate_max, avail_sorted[avail_idx][1])
+        #                                    #           avail_idx += 1
+        #                                    #       else:
+        #                                    #           break (since sorted, all subsequent have left > cur)
+        #                                    #   if candidate_max <= cur: return -1
+        #                                    #   selected += 1
+        #                                    #   cur = candidate_max
+        #                                    # However, we must not consume intervals that we might need for future required intervals? But if we consume them (i.e., increment avail_idx), we are effectively using them or considering them for the current covering. In the continuous subroutine, we increment avail_idx as we scan intervals that start <= cur, and we don't reuse them. That's correct because once we pass an interval's left (i.e., cur advances beyond its left), that interval cannot be useful for covering points beyond its right? Actually if we pick an interval, we use it. If we don't pick it, it might still be useful later if its right is greater than cur? But in the continuous algorithm, when we scan intervals with left <= cur, we pick the one with max right among them, and we ignore the others. Those ignored intervals have right <= max_r, so they cannot extend coverage further than the selected interval. Therefore, they are redundant for covering beyond cur. So it's safe to skip them (i.e., not consider them again). Thus we can increment avail_idx past them.
+        #                                    # Therefore, we can reuse the same avail_idx pointer across required intervals.
+        #                                    # Steps:
+        #                                    #   if cur < req[j][0]:
+        #                                    #       cur = req[j][0]
+        #                                    #   while cur < req[j][1] and avail_idx < len(avail_sorted):
+        #                                    #       # Among intervals with left <= cur, we need to collect all that start <= cur to find max right.
+        #                                    #       # We'll iterate while avail_idx < n and avail_sorted[avail_idx][0] <= cur:
+        #                                    #           max_r = max(max_r, avail_sorted[avail_idx][1])
+        #                                    #           avail_idx += 1
+        #                                    #       # After collecting, if max_r <= cur: impossible
+        #                                    #       # else: select one interval (the one that gave max_r), selected++, cur = max_r
+        #                                    #       # But note: we have already moved avail_idx past all intervals with left <= cur, including the one that gave max_r. That's fine because we use it now.
+        #                                    #   # Continue loop; after covering req[j], cur might be > req[j][1], so next required interval may be already covered or partially covered.
+        #                                # However, when we move to the next required interval, we may have already moved avail_idx past some intervals that could overlap the next required interval but start <= cur_new? But cur_new is the max_r we just set, which is >= req[j][1]. Since intervals are sorted by left, any interval with left <= cur_new would have been considered if its left <= cur_old? Not necessarily: if an interval has left between cur_old and cur_new, it might not have been considered because when we scanned for intervals with left <= cur_old, we only considered those with left <= cur_old. But such an interval with left in (cur_old, cur_new] could still be useful for covering req[j+1] if it starts after cur_old but before req[j+1].start. However, since cur_new >= req[j][1] and req[j+1].start > req[j][1] (gap), it's possible that an interval with left in (cur_old, cur_new] could overlap req[j+1]. But cur_new might be less than req[j+1].start if there is a gap, so such an interval's left could be > cur_old and <= cur_new? Actually if there is a gap, req[j][1] < req[j+1][0]. cur_new might be >= req[j][1]. It could be less than req[j+1][0] if the selected interval doesn't reach the next required start. In that case, intervals with left in (cur_old, req[j+1][0]) might not have been considered because we only considered left <= cur_old when covering req[j]. But they could be useful for req[j+1]. However, since left > cur_old and left <= req[j+1][0], and cur_old < req[j+1][0], these intervals would have left <= req[j+1][0] but left > cur_old, so they were not considered in the scan for req[j] because our scan condition was left <= cur_old. When we move to req[j+1], we will have a new cur (which is req[j+1][0] if not covered), and we will scan intervals with left <= cur (which includes those intervals with left in (cur_old, req[j+1][0]]). But our avail_idx pointer is already past some of those intervals? Because when covering req[j], we advanced avail_idx past all intervals with left <= cur_old. However, intervals with left in (cur_old, req[j+1][0]] have left > cur_old, so they were not advanced past during the req[j] scan because our scan only went while left <= cur_old. So avail_idx still points to the first interval with left > cur_old. That's perfect: they are still available for the next scan. So the pointer works.
+        #                                # Therefore, the algorithm should work.
+        #                    # We also need to check feasibility per merged_target interval (overlap). We'll do that first.
+        #                # Let's implement feasibility check: for each merged_target interval [L,R], check if there exists any available interval that overlaps it (i.e., not (avail_end < L or avail_start > R)). If any merged_target interval has no overlap, return -1.
+        #                # However, even if each merged_target interval has overlap, it might still be impossible if the overlaps are not sufficient to cover the whole merged_target interval (i.e., gaps within a merged_target interval cannot be covered because no single available interval covers the gap and multiple available intervals might be needed but they must overlap each other to bridge). But the feasibility check of overlap per merged_target interval is necessary but not sufficient. The greedy algorithm will detect impossibility when max_r <= cur during covering.
+        #                # So overall steps:
+        #                    1. Merge target intervals -> merged_target (disjoint closed intervals).
+        #                    2. Sort available intervals by start.
+        #                    3. For each merged_target interval, check overlap with any available interval (quick check: binary search or simple scan? Since n up to 5e4, O(m log n) or O(n+m) is fine. We'll do a binary search or linear scan after sorting available? We'll do a simple linear scan per merged_target? That could be O(m*n) worst-case. Better: sort available and for each merged_target, find an overlap using binary search: find the first available interval with start <= R and end >= L. We can sort available by start and then for each merged_target, do a binary search to find the first interval with start <= R, then check overlap among a small window? Alternatively, we can do one pass: sort both and sweep. But for simplicity and given constraints (5e4), O(m log n) per merged_target might be okay if merged_target size is also up to 5e4, leading to O(m log n) total if we do one binary search per merged_target. That's acceptable (5e4 * log(5e4) ~ 5e4*16=8e5). We'll implement a helper: for a given [L,R], find if there exists an available interval [a,b] such that not (b < L or a > R). Equivalent to a <= R and b >= L.
+        #                    # Since available is sorted by start, we can find the first interval with start <= R (i.e., the rightmost interval with start <= R) and check overlap. Actually we can binary search for the first interval with start > R, then check the previous interval. Let idx = bisect_left(available_starts, R+1) - 1? Let's do:
+        #                        import bisect
+        #                        starts = [iv[0] for iv in available]
+        #                        idx = bisect.bisect_right(starts, R) - 1  # greatest start <= R
+        #                        if idx >= 0 and available[idx][1] >= L: overlap exists.
+        #                    # But also intervals with start > R cannot overlap because start > R implies no overlap. Intervals with start <= R may overlap. So checking the last interval with start <= R is sufficient? Not necessarily: an interval with start < L might have start <= R but its end could be < L, so no overlap. However, the last interval with start <= R could be that one, but if it doesn't overlap, there might be another interval with start <= R that overlaps but with start smaller? Actually if the last interval with start <= R doesn't overlap, it means its end < L. Since intervals are sorted by start, all intervals with start less than or equal to R and start greater than or equal to that last interval's start? Wait, if the last interval with start <= R has end < L, then all intervals with start <= that interval's start also have end <= that interval's end? Not necessarily, because end is not sorted. So a previous interval could have a larger end. Example: available = [[1,2], [3,10]], merged_target = [2,5]. R=5, starts <=5: both intervals. Last start <=5 is [3,10] (start=3). Its end=10 >=2, overlap exists. But if available = [[1,2], [2,2], [3,4]] and merged_target=[2.5,3], then last start <=3 might be [3,4] with end=4>=2.5 overlap. However, consider available = [[1,2], [3,4]] and merged_target=[2.5,3.5]. Last start <=3.5 is [3,4] with end=4>=2.5 overlap exists. Actually if the last interval with start <= R does not overlap (i.e., end < L), then all intervals with start <= R have start <= last interval's start? No, there could be intervals with start less than last interval's start that have larger end. Example: available = [[1,5], [2,3], [4,6]] sorted by start: [1,5], [2,3], [4,6]. Suppose R=5.5, L=5.5? Let's pick merged_target=[5.5,6]. Then last start <=5.5 might be [4,6] (start=4) with end=6>=5.5 overlap. To get no overlap from last start <=R, we need last start <=R interval's end < L. Could there be an earlier interval with end >= L even if last start <=R interval's end < L? Suppose intervals: [1,2], [3,4], R=4, L=3.5. Starts <=4: both. Last start <=4 is [3,4] with end=4 <3.5? No, 4>=3.5. To have last start <=R interval no overlap, need end < L. Example: intervals: [1,2], [3,3.5], L=3.6, R=4. Then last start <=4 is [3,3.5] with end=3.5 <3.6, no overlap. But [1,2] also doesn't overlap because end=2<3.6. So indeed if the last interval with start <= R has end < L, then all intervals with start <= R have end <= that last interval's end? Not necessarily; an earlier interval could have larger end? But if the list is sorted by start, end can be arbitrary. It's possible that an earlier interval has a larger end than the last interval with start <= R. Example: intervals: [1,10], [2,3], [4,5] sorted by start: [1,10], [2,3], [4,5]. For R=4.5, L=9. The last start <=4.5 is [4,5] with end=5 <9. But [1,10] has start=1 <=4.5 and end=10 >=9, and it overlaps. However, [1,10] has start=1 which is <=4.5, and it appears before [4,5] in the sorted list. But our binary search for last start <= R would give index of [4,5] (if we take greatest start <= R), but [1,10] has start=1 <=4.5 and is earlier. So checking only the last start <= R may miss [1,10]. Therefore, checking only the last start <= R is insufficient.
+        #                    # Better: find the first interval with start > L? Or use two pointers. Simpler: for feasibility, we can just run the greedy covering and if it fails (i.e., at some point max_r <= cur), return -1. That automatically handles impossibility. So we can skip explicit overlap check and rely on greedy detecting failure. However, if a merged_target interval has no overlap with any available interval, the greedy will fail at the first interval because when we set cur = L and scan intervals with left <= L, if none have start <= L and end >= L, then max_r will be <= L, and we detect failure. So we can skip the separate overlap check.
+        #                # Thus algorithm:
+        #                    - Merge target intervals.
+        #                    - Sort available intervals by start.
+        #                    - Sort merged_target by start.
+        #                    - avail_idx = 0
+        #                    - selected = 0
+        #                    - cur = merged_target[0][0]  # current coverage frontier
+        #                    - j = 0  # index for merged_target
+        #                    - While j < len(merged_target) and (cur < merged_target[j][1] or not all merged_target covered):
+        #                        # Skip merged_target intervals already fully covered
+        #                        while j < len(merged_target) and merged_target[j][1] <= cur:
+        #                            j += 1
+        #                        if j >= len(merged_target): break
+        #                        # Ensure cur is at least merged_target[j][0]
+        #                        if cur < merged_target[j][0]:
+        #                            cur = merged_target[j][0]
+        #                        # Scan available intervals with left <= cur to find max right
+        #                        max_r = cur
+        #                        while avail_idx < len(available) and available[avail_idx][0] <= cur:
+        #                            max_r = max(max_r, available[avail_idx][1])
+        #                            avail_idx += 1
+        #                        # After scanning, if max_r <= cur, then no interval can extend coverage -> impossible
+        #                        if max_r <= cur:
+        #                            return -1
+        #                        # Select one interval (the one that gave max_r implicitly), increment selected, update cur = max_r
+        #                        selected += 1
+        #                        cur = max_r
+        #                    # After loop, check if all merged_target intervals are covered (i.e., j reached end)
+        #                    # Actually the while loop increments j as merged_target intervals become fully covered. After loop, if j < len(merged_target), then some merged_target interval not fully covered -> impossible? But the loop should have covered all because we only exit when j reaches end or when we fail.
+        #                    # However, the loop condition may need to continue until cur >= merged_target[-1][1] or j done.
+        #                    # We'll implement a do-while style: 
+        #                        j = 0
+        #                        avail_idx = 0
+        #                        selected = 0
+        #                        cur = merged_target[0][0]
+        #                        while j < len(merged_target):
+        #                            # skip covered
+        #                            while j < len(merged_target) and merged_target[j][1] <= cur:
+        #                                j += 1
+        #                            if j >= len(merged_target): break
+        #                            # ensure cur at least start of current merged_target[j]
+        #                            if cur < merged_target[j][0]:
+        #                                cur = merged_target[j][0]
+        #                            # scan for intervals with left <= cur
+        #                            max_r = cur
+        #                            while avail_idx < len(available) and available[avail_idx][0] <= cur:
+        #                                max_r = max(max_r, available[avail_idx][1])
+        #                                avail_idx += 1
+        #                            if max_r <= cur:
+        #                                return -1
+        #                            selected += 1
+        #                            cur = max_r
+        #                        # after loop, if j < len(merged_target), some merged_target interval not covered -> but our loop should have covered because we only skip when merged_target[j][1] <= cur, so if j < len(merged_target), it means merged_target[j][1] > cur, and we attempted to cover from cur. If we didn't fail, we selected an interval and updated cur. So eventually cur should become >= merged_target[j][1]. However, there is a possibility that after selecting an interval, cur might not cover the current merged_target[j] if max_r < merged_target[j][1] and there are no more intervals that can extend beyond cur? But then we would fail on the next iteration because max_r <= cur when trying to cover further? Actually if after selection cur = max_r < merged_target[j][1], then in the next iteration of the outer while, we will still have merged_target[j][1] > cur, so we will again scan intervals with left <= cur (but avail_idx may have advanced past some intervals that could overlap? However, those intervals would have left <= cur (which is < previous cur), but they might have been already scanned and passed because when we scanned for previous cur, we advanced avail_idx past all intervals with left <= previous cur, which may include intervals with left <= current cur? Since cur decreased? No, cur only increases (cur = max_r, and max_r >= cur from previous step). So cur is non-decreasing. Therefore, when we scan for intervals with left <= cur at the new iteration, we will scan intervals that have left <= cur and that have not been scanned yet (since avail_idx points to the first interval with left > old cur). Those intervals could have left between old cur and new cur? Possibly. For example, old cur = 5, new cur = 7 after selection. At old cur scan, we scanned intervals with left <=5. At new cur scan, we scan intervals with left <=7 that have left >5 (since avail_idx already past those with left <=5). That works. So the algorithm should cover required interval if possible.
+        #                        # However, there is a nuance: when we scan for intervals with left <= cur, we consider all such intervals and pick the max right. But we might need to use multiple intervals for a single merged_target interval if no single interval covers it entirely. The greedy algorithm selects one interval that starts <= cur and extends furthest, then sets cur to that right. Then in the next iteration (still covering the same merged_target interval if cur < merged_target[j][1]), we will again scan intervals with left <= cur (which may include intervals that start <= new cur) and select another interval, etc. This is exactly the standard covering of a single interval. Since we do not increment j between selections for the same merged_target interval (because we only skip fully covered merged_target intervals at the outer while), we will potentially select multiple intervals for one merged_target interval. That's correct.
+        #                    # Therefore, the outer while loop works.
+        #                    # Edge cases: if merged_target is empty? not possible since targetIntervals length >=1.
+        #                # Let's test with examples.
+        #                Example 1:
+        #                    available = [[1,4],[1,7],[3,9],[5,10],[10,15]]
+        #                    target = [[1,3],[2,5],[7,8],[10,13],[11,15],[12,13]]
+        #                    Merge target: sort: [1,3],[2,5] -> overlap merge to [1,5]; [7,8]; [10,13] and [11,15] and [12,13] -> merge to [10,15]. So merged_target = [[1,5],[7,8],[10,15]].
+        #                    Sort available by start: already sorted? [[1,4],[1,7],[3,9],[5,10],[10,15]].
+        #                    Run algorithm:
+        #                        j=0, cur=1, avail_idx=0.
+        #                        Scan intervals with left <=1: [1,4],[1,7] (both start<=1) maybe also [3,9]? start=3>1 no. max_r = max(4,7)=7. avail_idx advances to 2 (pointing to [3,9]? actually after scanning two intervals, avail_idx=2). selected=1, cur=7.
+        #                        Outer while: skip covered: merged_target[0]=[1,5] has end=5 <=7? 5<=7 yes, so j becomes 1. Now j=1, merged_target[1]=[7,8]. cur=7 >=7? cur=7, merged_target[1][0]=7, so cur < merged_target[1][0]? equal, fine. Scan intervals with left <= cur=7: currently avail_idx=2, intervals [3,9],[5,10] have start<=7? [3,9] start=3<=7, [5,10] start=5<=7. Scan both: max_r = max(9,10)=10. avail_idx becomes 4. selected=2, cur=10.
+        #                        Skip covered: merged_target[1]=[7,8] end=8<=10, so j becomes 2. merged_target[2]=[10,15], cur=10, skip? merged_target[2][1]=15>10, so not skipped. Scan intervals with left <=10: avail_idx=4, interval [10,15] start=10<=10, max_r=15. selected=3, cur=15. Skip merged_target[2] since end<=15? end=15<=15, j becomes 3. Done. selected=3. Correct.
+        #                Example 2:
+        #                    available = [[4,6],[1,4],[2,5]] -> sort: [[1,4],[2,5],[4,6]]
+        #                    target = [[3,4],[2,5],[6,7]] -> merge: [2,5] and [3,4] merge to [2,5]; [6,7] separate. merged_target = [[2,5],[6,7]].
+        #                    Run:
+        #                        j=0, cur=2, scan intervals left<=2: [1,4] start=1<=2, [2,5] start=2<=2 -> max_r = max(4,5)=5. avail_idx moves to 2. selected=1, cur=5.
+        #                        Skip merged_target[0]=[2,5] end=5<=5 -> j=1. merged_target[1]=[6,7], cur=5 <6, so set cur=6. Scan intervals with left<=6: avail_idx=2, interval [4,6] start=4<=6 -> max_r=6. selected=2, cur=6.
+        #                        Skip merged_target[1]: end=7>6, so not skipped. Scan intervals with left<=6: no more intervals (avail_idx=3), max_r = cur=6? Actually while loop: avail_idx=3, no intervals, so max_r=6. But max_r <= cur (6<=6) -> return -1. Indeed impossible because [6,7] cannot be covered (available intervals up to 6, but 6 is included? [4,6] covers up to 6, which includes point 6, but target [6,7] includes 6 and points >6 up to 7. [6,7] needs coverage for (6,7] or [6,7]. [4,6] covers up to 6 inclusive, so point 6 is covered, but points >6 up to 7 are not. However, no available interval covers beyond 6. So impossible. Algorithm correctly returns -1.
+        #                Example 3:
+        #                    available = [[1,2],[3,4]]
+        #                    target = [[1,4]] -> merge = [[1,4]]
+        #                    Sort avail: [[1,2],[3,4]]
+        #                    Run: j=0, cur=1, scan left<=1: [1,2] -> max_r=2. selected=1, cur=2. Skip covered? end=4>2, so j stays 0. Next iteration: cur=2 < start of merged_target[0]=1? cur=2 >=1, but merged_target[0] end=4>2, so not skipped. Scan intervals with left<=2: avail_idx currently 1 (since first interval scanned and avail_idx=1), interval [3,4] start=3>2, so no scan, max_r = cur=2. max_r <= cur -> return -1. Correct.
+        #                Additional test: available = [[1,3],[2,4]], target = [[1,4]] -> merge=[1,4]. Run: cur=1, scan left<=1: [1,3] max_r=3, selected=1, cur=3. Skip? end=4>3. Scan left<=3: interval [2,4] start=2<=3, max_r=4, selected=2, cur=4. Cover done, selected=2. But is 1 interval enough? [1,3] does not cover 3<4? Actually [1,3] covers up to 3 inclusive, does not cover >3. [2,4] covers up to 4. Neither alone covers entire [1,4] because [1,3] misses (3,4] and [2,4] misses [1,2). So minimum is 2. Correct.
+        #                Edge: available = [[1,5]], target = [[1,5]] -> merge=[1,5]. Run: cur=1, scan left<=1: [1,5] max_r=5, selected=1, cur=5, skip covered, done. Correct.
+        #                Edge: available = [[1,2],[2,3]], target = [[1,3]] -> merge=[1,3]. Run: cur=1, scan left<=1: [1,2] max_r=2, selected=1, cur=2. Skip? end=3>2. Scan left<=2: [2,3] start=2<=2, max_r=3, selected=2, cur=3. Works. But could we cover with one interval? No, because no single interval covers both 1 and 3 continuously? [1,2] and [2,3] touch at 2, but point 2 is covered by both, but point 2.5? 2.5 is in (2,3]? [2,3] covers up to 3 inclusive, so [2,3] covers 2.5, but [1,2] does not cover 2.5. So need both. However, if intervals are closed, [1,2] and [2,3] together cover [1,3] because every point in [1,3] is either ≤2 or ≥2, and 2 is covered by both. Yes, [1,2] covers up to 2, [2,3] covers from 2 onward, so union covers [1,3]. So minimum is 2. Correct.
+        #                Edge: available = [[1,2],[2.5,3]], target = [[1,3]] -> merge=[1,3]. Run: cur=1, scan left<=1: [1,2] max_r=2, selected=1, cur=2. Scan left<=2: [2.5,3] start=2.5>2, no scan, max_r=2 <=2 -> return -1. Indeed impossible because gap (2,2.5). Correct.
+        #                So algorithm seems correct.
+        #            Implementation details:
+        #                - Merge target intervals: sort by start, then merge overlapping or adjacent? The problem says "every real point contained in any interval in targetIntervals". Since intervals are closed, if we have [1,3] and [4,5], the point 3.5 is not in either, but 3 and 4 are separate. However, if target intervals are [1,3] and [4,5], there is a gap (3,4). That gap is not part of target intervals, so we don't need to cover it. But when merging target intervals, we should merge only if they overlap or touch? Because if they touch at a point, e.g., [1,3] and [3,4], the point 3 belongs to both? Actually [1,3] includes 3, [3,4] includes 3, so they overlap at point 3, so they should be merged into [1,4]. However, if they are [1,3] and [4,5], they do not overlap (since 3 < 4), and there is no point common. So we merge only when s <= cur_end + 1? Because intervals are closed, [1,3] and [3,4] share point 3, so they should be merged. The condition for merging closed intervals [a,b] and [c,d] is c <= b (if c <= b, they overlap or touch at point b if c == b). So we should merge if c <= cur_end (not cur_end+1). Example: [1,3] and [3,4] have c=3 <= b=3, so overlap at point 3, merge to [1,4]. So we should use `if s <= cur_end` (not cur_end+1). In the earlier example I used cur_end+1; that was for open intervals. Let's correct: merge if s <= cur_end. Because closed intervals [a,b] and [c,d] overlap if c <= b. So we'll use `if s <= cur_end`.
+        #                - Sorting and merging: 
+        #                    target_sorted = sorted(targetIntervals, key=lambda x: x[0])
+        #                    merged = []
+        #                    cur_s, cur_e = target_sorted[0]
+        #                    for s,e in target_sorted[1:]:
+        #                        if s <= cur_e:  # overlap or touch
+        #                            cur_e = max(cur_e, e)
+        #                        else:
+        #                            merged.append([cur_s, cur_e])
+        #                            cur_s, cur_e = s, e
+        #                    merged.append([cur_s, cur_e])
+        #                - Sort available by start: `available_sorted = sorted(availableIntervals, key=lambda x: x[0])`
+        #                - Then run greedy as described.
+        #            Complexity: O((n+m) log n) for sorting, and O(n+m) for greedy since each available interval is scanned once.
+        #            Edge: if merged_target is empty? not possible.
+        #            Let's code accordingly.
+        #        Return selected if all merged_target covered; otherwise -1 (but our algorithm returns -1 when fails). We'll implement as described.
+        #    Note: The method name is `minSelection`. We'll return an int.
+        #    Let's write the code.
+        #    We'll import bisect? Not needed now.
+        #    We'll handle case where targetIntervals is empty? Constraints say >=1, but safe to handle: if not targetIntervals: return 0.
+        #    Similarly, if not availableIntervals: if targetIntervals exist, return -1 unless target empty.
+        #    We'll implement accordingly.
+
+        # Let's code.
+
+        # One more test: available = [[1,5],[2,6]], target = [[1,6]] -> merge=[1,6]. Run: cur=1, scan left<=1: both intervals? [1,5] start=1<=1, [2,6] start=2>1? no, start=2>1, so only [1,5] scanned? Actually while loop scans while start <= cur (1). [1,5] qualifies, [2,6] start=2 >1 does not. So max_r=5. selected=1, cur=5. Skip? end=6>5. Next scan left<=5: avail_idx currently 1 (pointing to [2,6]), start=2<=5, so scan [2,6], max_r=6, selected=2, cur=6. Works. But could one interval cover? [2,6] doesn't cover 1, [1,5] doesn't cover 6, so need two. Correct.
+
+        # Another: available = [[1,3],[2,5]], target = [[1,5]] -> merge=[1,5]. Run: cur=1, scan left<=1: [1,3] only, max_r=3, selected=1, cur=3. Next scan left<=3: [2,5] start=2<=3, max_r=5, selected=2. Need 2. Could one interval cover? No single covers both ends. Correct.
+
+        # Another: available = [[1,4],[2,3]], target = [[1,4]] -> merge=[1,4]. Run: cur=1, scan left<=1: [1,4] and [2,3]? [2,3] start=2>1? no, 2>1? 2>1 true, so only [1,4] scanned, max_r=4, selected=1, cur=4. Done. Correct (covers all).
+
+        # Edge with gap in merged_target: target = [[1,2],[3,4]] -> merge = [[1,2],[3,4]] (since 3>2, no touch because 3>2? if 3==2? no). So two disjoint intervals. available = [[1,3]] can cover both because it covers [1,3] includes [1,2] and touches [3,4] at 3? [1,3] and [3,4] overlap at 3, so it covers both? [1,3] covers up to 3 inclusive, [3,4] includes 3, so point 3 is covered, but points >3 up to 4 are not covered by [1,3]. So [1,3] does not cover (3,4]. So cannot cover both with one interval. But if available = [[1,4]], then one interval covers both. Our algorithm: merged_target = [[1,2],[3,4]]. Run: cur=1, scan left<=1: [1,4] max_r=4, selected=1, cur=4. Skip merged_target[0] because end=2<=4, j=1; merged_target[1] end=4<=4, skip, j=2. Done selected=1. Works because [1,4] covers entire union.
+        #        available = [[1,2],[3,4]], target = [[1,2],[3,4]] -> merged_target same. Run: cur=1, scan left<=1: [1,2] max_r=2, selected=1, cur=2. Skip merged_target[0], j=1. cur=2 < start of merged_target[1]=3? cur=2 <3, so set cur=3. Scan left<=3: [3,4] start=3<=3, max_r=4, selected=2, cur=4. Skip merged_target[1], done. selected=2. Correct.
+        #        available = [[2,3]], target = [[1,2],[2,3]] -> merge? [1,2] and [2,3] touch at 2, so merge into [1,3] if using `s <= cur_end` with cur_end=2 and s=2 <=2 -> merge to [1,3]. Then algorithm: cur=1, scan left<=1: [2,3] start=2>1, no scan, max_r=1 -> fail? But there is overlap: [2,3] overlaps [1,3] at 2-3, but does [2,3] cover point 1? No. So to cover [1,3] we need an interval covering 1, which [2,3] does not. So impossible. Indeed, point 1 is in target [1,2] but not in available [2,3] (since 1 <2). So -1 correct.
+        #        But if target intervals are [[1,2],[3,4]] and available = [[2,3]], merge_target = [[1,2],[3,4]]. Then cur=1, scan left<=1: [2,3] start=2>1, no scan, fail -> -1. Correct because no coverage for 1.
+        #        So algorithm seems robust.
+
+        #    Let's code accordingly.
+
+        #    Implementation steps in code:
+        #        def minSelection(self, availableIntervals, targetIntervals):
+        #            if not targetIntervals: return 0
+        #            # Merge target intervals
+        #            target = sorted(targetIntervals, key=lambda x: x[0])
+        #            merged = []
+        #            cur_s, cur_e = target[0]
+        #            for s, e in target[1:]:
+        #                if s <= cur_e:  # overlap or touch
+        #                    cur_e = max(cur_e, e)
+        #                else:
+        #                    merged.append([cur_s, cur_e])
+        #                    cur_s, cur_e = s, e
+        #            merged.append([cur_s, cur_e])
+        #            # Sort available by start
+        #            avail = sorted(availableIntervals, key=lambda x: x[0])
+        #            # Greedy covering
+        #            m = len(merged)
+        #            n = len(avail)
+        #            if n == 0:
+        #                return -1  # since merged not empty
+        #            avail_idx = 0
+        #            selected = 0
+        #            cur = merged[0][0]  # smallest required point
+        #            j = 0  # index in merged
+        #            # Outer loop: while not all merged covered
+        #            while j < m:
+        #                # Skip merged intervals already fully covered
+        #                while j < m and merged[j][1] <= cur:
+        #                    j += 1
+        #                if j >= m:
+        #                    break
+        #                # Ensure cur is at least start of current merged interval
+        #                if cur < merged[j][0]:
+        #                    cur = merged[j][0]
+        #                # Scan avail intervals with start <= cur
+        #                max_r = cur
+        #                while avail_idx < n and avail[avail_idx][0] <= cur:
+        #                    max_r = max(max_r, avail[avail_idx][1])
+        #                    avail_idx += 1
+        #                if max_r <= cur:
+        #                    return -1
+        #                selected += 1
+        #                cur = max_r
+        #            # After loop, all merged should be covered because we skipped covered ones.
+        #            # However, it's possible that after finishing the while, j < m if some merged interval not covered? The loop breaks when j >= m or when fail. Since we only break when j>=m (after skipping), we should have j==m. But to be safe, we can check after loop that all merged are covered: i.e., for all intervals in merged, end <= cur? Actually after loop, cur might be less than some merged end if we exited because j>=m? Let's reason: the loop continues while j < m. Inside, we skip covered intervals (those with end <= cur). So if after a selection, cur becomes large enough to cover the current merged interval (merged[j]), then in the next iteration of outer while, the skip loop will advance j past that interval. Eventually j reaches m. So loop terminates with j>=m. So selected is valid.
+        #            return selected
+
+        #    Test with examples mentally done.
+
+        #    However, consider case where merged_target has an interval that starts after cur after some selections, and there are no available intervals with start <= cur to extend coverage (i.e., max_r <= cur). We return -1. That's correct.
+
+        #    Edge: What if avail_idx advances past some intervals that could be used for later merged intervals that start earlier than cur? But cur only increases, so later merged intervals start >= current merged[j][0] >= previous cur? Not necessarily: merged intervals are sorted by start, so merged[j][0] >= merged[j-1][0]. Since cur after covering merged[j-1] might be less than merged[j][0] if there is a gap, then cur gets set to merged[j][0] before scanning. That's fine.
+
+        #    One more test: available = [[1,2],[3,4],[5,6]], target = [[1,2],[3,4],[5,6]] -> merged same. Run:
+        #        cur=1, scan left<=1: [1,2] max_r=2, selected=1, cur=2. Skip merged[0], j=1. cur=2 < merged[1][0]=3 -> set cur=3, scan left<=3: avail_idx currently 1 (pointing to [3,4]), max_r=4, selected=2, cur=4, skip merged[1], j=2. cur=4 < merged[2][0]=5 -> cur=5, scan left<=5: [5,6] max_r=6, selected=3. Works.
+
+        #    Test: available = [[1,3],[2,4],[3,5]], target = [[1,5]] -> merged=[1,5]. Run: cur=1, scan left<=1: [1,3] max_r=3, selected=1, cur=3. Skip? end=5>3, no skip. Scan left<=3: avail_idx=1, intervals [2,4] start=2<=3, [3,5] start=3<=3, max_r=5, selected=2, cur=5. Done. Could we do with 1? [2,4] or [1,3] or [3,5] alone cannot cover 1-5 entirely because none covers both ends. So 2 is minimal? Actually [1,3] and [3,5] together cover [1,5] with two intervals. Could we pick [2,4] and something? No. So minimum is 2. But is there a possibility of picking [1,3] and [3,5] using two intervals, yes. So algorithm gives 2. Good.
+
+        #    Test: available = [[1,2],[2,3],[3,4]], target = [[1,4]] -> merged=[1,4]. Run: cur=1, scan left<=1: [1,2] max_r=2, selected=1, cur=2. Scan left<=2: [2,3] start=2<=2, max_r=3, selected=2, cur=3. Scan left<=3: [3,4] start=3<=3, max_r=4, selected=3. Minimum is actually 3 because intervals touch at points but no single interval covers all. So correct.
+
+        #    All good.
+
+        #    Let's implement.
+
+        #    Note: Use integers, all values integers, so no floating issues.
+
+        #    Return selected.
+
+        #    We'll now write the final code.
+
+        #    One more nuance: In merging target intervals, we used `if s <= cur_e`. Since intervals are closed, this merges touching intervals (e.g., [1,3] and [3,4] -> [1,4]). That is correct because point 3 belongs to both, so they together cover [1,4] continuously. However, is it necessary to merge touching intervals? Consider target intervals [1,3] and [4,5]. They do not overlap (3 < 4), so no merge. If they touch at 3 and 4? That would be [1,3] and [3,4] touch at 3, but not at 4? Actually [1,3] ends at 3, [3,4] starts at 3, they share point 3, so they overlap at that point, thus should be merged into [1,4]. Yes, because the union of [1,3] and [3,4] is [1,4] (closed). So merging with <= is correct.
+
+        #    Let's code.
+
+```python
+class Solution:
+    def minSelection(self, availableIntervals: list[list[int]], targetIntervals: list[list[int]]) -> int:
+        # If no target intervals, nothing to cover
+        if not targetIntervals:
+            return 0
+        
+        # Merge target intervals (closed intervals, merge if overlapping or touching)
+        target_sorted = sorted(targetIntervals, key=lambda x: x[0])
+        merged_target = []
+        cur_s, cur_e = target_sorted[0]
+        for s, e in target_sorted[1:]:
+            if s <= cur_e:  # overlap or touch
+                cur_e = max(cur_e, e)
+            else:
+                merged_target.append([cur_s, cur_e])
+                cur_s, cur_e = s, e
+        merged_target.append([cur_s, cur_e])
+        
+        # Sort available intervals by start
+        avail = sorted(availableIntervals, key=lambda x: x[0])
+        
+        # If no available intervals but merged_target not empty -> impossible
+        if not avail:
+            return -1
+        
+        m = len(merged_target)
+        n = len(avail)
+        avail_idx = 0
+        selected = 0
+        cur = merged_target[0][0]  # smallest required point
+        
+        j = 0  # index in merged_target
+        while j < m:
+            # Skip intervals already fully covered
+            while j < m and merged_target[j][1] <= cur:
+                j += 1
+            if j >= m:
+                break
+            
+            # Ensure cur is at least the start of the current merged interval
+            if cur < merged_target[j][0]:
+                cur = merged_target[j][0]
+            
+            # Scan all available intervals that start <= cur
+            max_r = cur
+            while avail_idx < n and avail[avail_idx][0] <= cur:
+                max_r = max(max_r, avail[avail_idx][1])
+                avail_idx += 1
+            
+            if max_r <= cur:
+                # Cannot extend coverage
+                return -1
+            
+            selected += 1
+            cur = max_r
+        
+        # All merged_target intervals should be covered now
+        return selected
+```
+[finish_reason: stop | provider: DeepInfra | reasoning chars: 0 | usage: {'prompt_tokens': 716, 'completion_tokens': 17327, 'total_tokens': 18043, 'cost': 0.00437111, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 80, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00437111, 'upstream_inference_prompt_cost': 3.936e-05, 'upstream_inference_completions_cost': 0.00433175}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

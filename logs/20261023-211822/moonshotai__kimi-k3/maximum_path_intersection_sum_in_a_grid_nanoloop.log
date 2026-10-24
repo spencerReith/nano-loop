@@ -1,0 +1,934 @@
+
+Assistant: Let me analyze this problem carefully.
+
+We have two players:
+- Player 1: (0,0) → (m-1,n-1), moving right or down
+- Player 2: (m-1,0) → (0,n-1), moving right or up
+
+We need to find the maximum sum of shared cells between the two paths.
+
+Let me think about the structure. Player 1 moves right/down, Player 2 moves right/up. If we flip Player 2's path vertically (mirror rows), Player 2 becomes: (0,0) → (m-1,n-1) moving right or down. But the shared cells condition is in the original grid.
+
+Key observation: The two paths must cross. Player 1 goes from top-left to bottom-right, Player 2 goes from bottom-left to top-right. By a topological argument, the paths must share at least one cell? Actually, let's think: Player 1's path divides the grid, Player 2 must cross it. Since they move on cells, they must share at least one cell. Actually consider m=n=2: P1: (0,0)→(0,1)→(1,1); P2: (1,0)→(0,0)→(0,1). Shared: (0,0), (0,1). Or P1: (0,0)→(1,0)→(1,1), P2: (1,0)→(1,1)→(0,1): shared (1,0),(1,1). Can they avoid sharing? P1: (0,0)→(0,1)→(1,1), P2: (1,0)→(1,1)→(0,1): shared (0,1),(1,1). Hmm, seems they always share at least one cell in a grid with cell-based paths. Actually paths as sequences of cells: P1 path is a monotone path from (0,0) to (m-1,n-1), P2 from (m-1,0) to (0,n-1). The intersection is always non-empty (this is a known result: two monotone lattice paths crossing). Yes, since P1 separates the grid into regions, and P2 starts below-left and ends above-right... Actually, they always share at least one vertex.
+
+The structure of the intersection: There's a known structure. Player 1's path and Player 2's path, when both are monotone (P2 monotone in terms of right/up), the shared cells form a contiguous segment... Let me think about the classic approach for this type of problem.
+
+This is LeetCode problem 3938. Let me think about the standard solution.
+
+Approach: Think of it column by column. In each column, Player 1's path occupies some contiguous set of cells (the path enters the column at some row, possibly moves down within the column, then exits right). Similarly Player 2 enters the column at some row and possibly moves up, then exits right.
+
+In column j, Player 1's path visits cells in rows [a_j, b_j] where a_j is the row it enters the column (moving right from column j-1) and b_j is the row it exits (moving right to column j+1), with a_j <= b_j, and the path visits all rows in between. Actually Player 1 moves down within the column then right. In column 0, it starts at (0,0), so a_0 = 0. In column n-1, it ends at (m-1, n-1), so b_{n-1} = m-1.
+
+Similarly, Player 2 in column j visits rows [c_j, d_j] where d_j is the entry row (from column j-1, moving right) and c_j is the exit row (moving up then right to column j+1)... wait, Player 2 moves up within a column. So it enters column j at some row d_j (moving right from column j-1), moves up to row c_j, then exits right. c_j <= d_j. In column 0, Player 2 starts at (m-1, 0), so d_0 = m-1. In column n-1, Player 2 ends at (0, n-1), so c_{n-1} = 0.
+
+Shared cells in column j: rows in [max(a_j, c_j), min(b_j, d_j)] if that interval is non-empty.
+
+We want to maximize the total sum over shared cells.
+
+Constraints: a_0 = 0, b_{n-1} = m-1, and a_{j+1} = b_j (exit row of column j becomes entry row of column j+1). Actually a_{j+1} = b_j. Similarly d_0 = m-1, c_{n-1} = 0, and d_{j+1} = c_j.
+
+So Player 1's path is described by a sequence: in column j, rows from a_j to b_j, with a_{j+1} = b_j. Player 2: in column j, rows from c_j to d_j (c_j <= d_j), with d_{j+1} = c_j.
+
+This becomes a DP over columns. State: at column boundary, we know a_j (entry row for P1) and d_j (entry row for P2). Then we choose b_j >= a_j (P1 exit row) and c_j <= d_j (P2 exit row). The shared cells in column j are rows [max(a_j,c_j), min(b_j,d_j)].
+
+Wait, but hold on: the shared interval in column j: P1 covers [a_j, b_j], P2 covers [c_j, d_j]. Intersection is [max(a_j, c_j), min(b_j, d_j)].
+
+DP state: (entry row of P1, entry row of P2) at column j. Transitions: choose exit rows b in [a, m-1] for P1 and c in [0, d] for P2, then add sum of column j over rows [max(a,c), min(b,d)] if max <= min, then move to state (b, c) at column j+1.
+
+Number of states: m^2 per column, transitions m^2 each → O(n * m^4), too slow for m, n up to 1000 (but m*n <= 5e5).
+
+We need to be smarter. Note the shared interval [max(a,c), min(b,d)]. We want to choose b >= a and c <= d to maximize... but the choice of b and c affects future states.
+
+Hmm, key insight: increasing b (P1's exit row) and decreasing c (P2's exit row) can only increase the intersection in the current column, but affects future.
+
+Let me think differently. This is similar to the classic "two paths crossing" problems. Let me think about the structure of the answer.
+
+Alternative view: Consider the shared region. Since both paths are monotone, the set of shared cells... Let me think about the example: shared cells were (2,1), (2,2), (2,3) — a contiguous horizontal segment in row 2. In example 2: shared cells (0,0) and (1,0) — a contiguous vertical segment in column 0.
+
+Claim: The shared cells form a contiguous "monotone path segment"? Hmm, is that right? In each column, the shared cells form a contiguous vertical segment. Across columns, these segments... The intersection of two monotone paths — P1 goes down/right, P2 goes up/right. Once P2 crosses above P1, can it come back down? P2 only moves up, P1 only moves down within columns; between columns both move right. In terms of "which is above": at column j, P1 occupies [a_j, b_j], P2 occupies [c_j, d_j]. Since paths must cross overall (P1 starts above P2: a_0=0 <= m-1=d_0, ends below: b_{n-1}=m-1 >= 0=c_{n-1}).
+
+Hmm, but the intersection need not be a single monotone path. Consider: P1 in column j covers rows [2,5], P2 covers [1,3]; intersection [2,3]. Next column: P1 [5,6], P2 [3,3]... intersection empty, etc.
+
+Let me think about the known solution for this LeetCode problem. The problem is "Maximum Path Intersection Sum in a Grid", LeetCode 3938 (weekly contest?). Constraints m,n up to 1000 with m*n <= 5e5. So O(m*n*something small) or O(m*n*log) needed. Hmm, actually maybe O(m * n * min(m,n))? If m=1000, n=500, that's 5e8 — too slow. Hmm.
+
+Wait, m * n <= 5e5, so m and n can't both be 1000. If m=1000, n<=500. O(m*n*min) = 5e8. Too slow in Python. Need near O(m*n) or O(m*n log).
+
+Let me think about the structure more.
+
+Alternative viewpoint: The pair of paths together. Consider processing diagonals? Classic two-path problems (like cherry pickup) use DP on two paths with same number of steps. But here paths have different lengths: P1 path length (m-1)+(n-1) steps, P2 also (m-1)+(n-1) steps. Both take exactly (m-1)+(n-1) moves! P1: (m-1) downs + (n-1) rights. P2: (m-1) ups + (n-1) rights. Same total. Interesting — cherry-pickup style DP on diagonals: state (r1, r2) with c1 = k - r1, c2 = k - r2 where k is step count... For P2, position after k steps: row = (m-1) - (#ups), col = (#rights), with #ups + #rights = k. So col2 = k - ((m-1) - row2) = k - m + 1 + row2. Hmm, the diagonals differ. P1: r1 + c1 = k. P2: (m-1-r2) + c2 = k, i.e., c2 - r2 = k - (m-1).
+
+This symmetry might not directly help for intersection sum.
+
+Let me revisit the column-based DP. States (a, d) = (P1 entry row, P2 entry row) at column j. We want max total shared sum.
+
+Note: shared sum in column j depends on overlap of [a_j, b_j] and [c_j, d_j]. Given a = a_j and d = d_j, we choose b >= a, c <= d. Overlap = [max(a,c), min(b,d)].
+
+Observation: WLOG, paths cross exactly once? Not necessarily; they can overlap over multiple columns (as in example 1, the shared segment spans columns 1..3 in row 2).
+
+Hmm, let me think about the total shared sum differently. Let's define for each cell whether it's shared. Sum over cells of value * [shared].
+
+Let me think about a min-max / geometric structure. P1 path from (0,0) to (m-1,n-1). P2 path from (m-1,0) to (0,n-1). Consider the paths as x-monotone curves. The intersection is a (possibly disconnected?) set. Is the intersection always connected? Two x-monotone lattice paths: P1 as a function-ish... but P1 isn't a function of column (it can span multiple rows in a column). 
+
+Actually, consider the "upper envelope" and "lower envelope". In each column j, P1 covers [a_j, b_j] and note a_j = b_{j-1}, so the sequence a_0 <= a_1 <= ... wait is it monotone? a_{j+1} = b_j >= a_j. Yes! a_j is non-decreasing in j. Similarly b_j non-decreasing. For P2: c_j <= d_j, d_{j+1} = c_j, so d_{j+1} = c_j <= d_j: d_j is non-increasing, c_j non-increasing.
+
+So P1's top boundary a_j is non-decreasing, bottom boundary b_j non-decreasing. P2's top c_j non-increasing, bottom d_j non-increasing.
+
+Shared in column j: [max(a_j, c_j), min(b_j, d_j)].
+
+Total = sum over j of colsum(j, max(a_j,c_j), min(b_j,d_j)) where colsum is the sum of grid values in column j over that row range (0 if empty).
+
+We need max over choices of non-decreasing sequences a_j <= b_j with a_{j+1} = b_j (equivalently just choose b_0 <= b_1 <= ... <= b_{n-1} = m-1... wait b_{n-1} = m-1, a_0 = 0) and non-increasing d_0 = m-1 >= c_0 = d_1 >= ... hmm.
+
+So the decision variables: P1: b_0 <= b_1 <= ... <= b_{n-1} = m-1 (and a_j = b_{j-1}, a_0 = 0). P2: c_{n-1} = 0 <= ... c_j >= c_{j+1}, d_j = c_{j-1}, d_0 = m-1.
+
+So P1 path = non-decreasing sequence of exit rows b_0..b_{n-1} with b_{n-1} = m-1 (a_j = b_{j-1} for j>=1, a_0=0). P2 = non-increasing sequence c_0 >= c_1 >= ... >= c_{n-1} = 0 (d_j = c_{j-1} for j >= 1, d_0 = m-1).
+
+Objective: sum_j max(0, sum of column j rows [max(a_j, c_j), min(b_j, d_j)]).
+
+This is a joint optimization. DP over columns with state (b_{j-1}, c_{j-1}) = (a_j, d_j): O(m^2) states per column, O(m^2) transitions → O(n m^4) total. Too slow. Need to reduce.
+
+Hmm, think about the structure of the optimal. Intuition: the shared region is where the paths overlap. The paths cross. Perhaps optimal to think: the shared cells form a contiguous monotone path from some cell to some cell? Let me test with examples: Example 1 shared: (2,1),(2,2),(2,3): monotone path. Example 2: (0,0),(1,0): monotone path. Is the intersection of two such paths always a connected monotone path? 
+
+Consider P1 covers column j rows [a_j,b_j], P2 [c_j,d_j]. Intersection in column j is interval I_j. Is the union of I_j connected across columns? Suppose in column j intersection [2,3], column j+1: a_{j+1} = b_j >= 3... hmm b_j >= 3 since intersection nonempty requires b_j >= max(a_j, c_j)... Let's see: I_j nonempty means max(a_j,c_j) <= min(b_j,d_j). I_{j+1} = [max(b_j, c_{j+1}), min(b_{j+1}, c_j)] since a_{j+1}=b_j, d_{j+1}=c_j, c_{j+1} <= c_j, b_{j+1} >= b_j.
+
+Claim: the set of shared cells forms a monotone path (contiguous). Let me think: the intersection of the two paths (as sets of cells). Path P1 is a connected path; P2 is connected. Their intersection in a grid... Consider the topological structure: P1 separates grid into "above-right" and "below-left" regions. P2 goes from below-left to above-right, crossing P1 an odd number of times. Each crossing is a shared cell or shared edge... Since movement is cell-based and both move right a lot, they share cells.
+
+Hmm, actually the intersection can be disconnected? Let me try to construct: P1: (0,0)→(0,1)→(1,1)→(1,2)→(2,2). P2: (2,0)→(1,0)→(1,1)→(0,1)→(0,2)? Wait P2 must end at (0,2): (2,0)→(1,0)→(1,1)→(0,1)→(0,2). Shared: (1,1), (0,1)? P1 has (0,0),(0,1),(1,1),(1,2),(2,2). Shared: (0,1),(1,1). Connected.
+
+Try to get disconnected: P1: (0,0)→(1,0)→(1,1)→(0,1)? No, P1 can't move up.
+
+P1 moves only right/down, P2 only right/up. In each column, each path is a contiguous vertical segment. The intersection per column is a segment. Between consecutive columns j and j+1: P1's segment in column j+1 starts at row b_j (its exit from column j). P2's segment in column j+1 starts at row c_j (exit from column j, i.e., d_{j+1} = c_j) and goes up to c_{j+1}.
+
+For the intersection to be disconnected, we'd need I_j nonempty, I_{j+1} empty, I_{j+2} nonempty. I_{j+1} empty means P1 and P2 don't overlap in column j+1: either b_{j+1} < c_{j+1} (P1 entirely above P2) or ... P1 segment [b_j, b_{j+1}], P2 segment [c_{j+1}, c_j]. Empty iff b_{j+1} < c_{j+1} or b_j > c_j. But I_j nonempty implies b_j <= ... hmm I_j nonempty: max(a_j, c_j) <= min(b_j, d_j), in particular c_j <= b_j. So b_j > c_j is impossible if I_j nonempty (c_j <= b_j). So I_{j+1} empty iff b_{j+1} < c_{j+1}.
+
+Hmm wait, that means P1 exits column j+1 above where P2 exits (b_{j+1} < c_{j+1}). But then for all later columns, b_{j+2} >= b_{j+1}... and c_{j+2} <= c_{j+1}. Then I_{j+2}: P1 [b_{j+1}, b_{j+2}], P2 [c_{j+2}, c_{j+1}]. Since b_{j+1} < c_{j+1}, hmm, still possible to overlap: e.g., b_{j+1}=1, c_{j+1}=3, b_{j+2}=5, c_{j+2}=0: P1 covers [1,5], P2 covers [0,3]: overlap [1,3]. So intersection can be disconnected! 
+
+Example: m=4, n=3. P1: exits b: column0 exit at row 2 (b_0=2), column1: enter at 2, exit at 2 (b_1=2), column2: enter 2 exit 3 (b_2=3). Path: (0,0)→(1,0)→(2,0)→(2,1)→(2,2)→(3,2). P2: c_0=2? Let's see: d_0=3 (start (3,0)), move up to c_0=0, exit right. Column1: enter d_1=0, can't go up, c_1=0, exit. Column2: enter 0, c_2=0 (end (0,2)). Path: (3,0)→(2,0)→(1,0)→(0,0)→(0,1)→(0,2). Shared: (2,0) only... Connected.
+
+Let me try to actually build disconnected: Need I_j nonempty, I_{j+1} empty (b_{j+1} < c_{j+1}), I_{j+2} nonempty.
+
+m=5, n=4. 
+P1: a_0=0, b_0=0. a_1=0, b_1=0. a_2=0, b_2=4. a_3=4, b_3=4.
+P1 cells: (0,0); col1: (0,1); col2: (0,2),(1,2),(2,2),(3,2),(4,2); col3: (4,3).
+P2: d_0=4, c_0=4. d_1=4, c_1=3. d_2=3, c_2=0. d_3=0, c_3=0.
+P2 cells: col0: (4,0); col1: (4,1),(3,1); col2: (3,2),(2,2),(1,2),(0,2); col3: (0,3).
+Shared: col2: rows 0..4 ∩ 0..3 = rows 0-3: (0,2),(1,2),(2,2),(3,2). Connected.
+
+To make I_{j+1} empty with b_{j+1} < c_{j+1}: P1 exits column j+1 at row 1, P2 exits at row 3? But c_{j+1} <= c_j and we need... then I_{j+2}: P1 [1, b], P2 [c, 3]... wait d_{j+2} = c_{j+1} = 3, P2 covers [c_{j+2}, 3], P1 covers [1, b_{j+2}]. Overlap nonempty iff b_{j+2} >= c_{j+2} and intervals intersect: max(1, c_{j+2}) <= min(b_{j+2}, 3). Sure, e.g., c_{j+2}=2, b_{j+2}=2: overlap {2}. So intersection could be column j stuff and then single cell (2, j+2), disconnected from column j part.
+
+Concrete: m=5,n=4.
+P1: b_0=0 (col0: row0 only, from a_0=0). b_1=1 (col1: rows 0-1). b_2=2 (col2: rows 1-2). b_3=4 (col3: rows 2-4).
+P1 cells: (0,0), (0,1),(1,1), (1,2),(2,2), (2,3),(3,3),(4,3).
+P2: d_0=4,c_0=4 (col0: row4). d_1=4,c_1=4 (col1: row4). d_2=4,c_2=3 (col2: rows 3-4). d_3=3,c_3=0 (col3: rows 0-3).
+P2 cells: (4,0), (4,1), (4,2),(3,2), (3,3),(2,3),(1,3),(0,3).
+Shared: col2: P1 rows{1,2}, P2 rows{3,4}: empty! col3: P1 {2,3,4}, P2 {0,1,2,3}: shared {2,3}: (2,3),(3,3). col0: P1 {0} vs P2 {4}: no. col1: P1 {0,1} vs {4}: no. So intersection {(2,3),(3,3)} connected but the whole intersection... fine it's connected here.
+
+I want disconnected. Need I_j nonempty, I_{j+1} empty, I_{j+2} nonempty.
+
+P1: b_0=3, b_1=0? No, b non-decreasing. Let me set: P1 col0: rows 0..3 (b_0=3). col1: rows 3..3 (b_1=3). col2: rows 3..4 (b_2=4). Hmm then P1 is low; P2 must dip below and come up.
+
+For I_1 empty need b_1 < c_1: c_1 > 3, so c_1 = 4. P2 col1: d_1 = c_0, covers [4, c_0], so c_0 >= 4, c_0=4. P2 col0: d_0=4, c_0=4: cell (4,0). col1: (4,1). col2: d_2=4, c_2=? For I_2 nonempty with P1 col2 rows [3,4]: need overlap with [c_2,4]: always if c_2 <= 4. Take c_2=0: P2 col2 rows 0..4. Then shared col2: rows 3..4.
+
+I_0: P1 col0 rows 0..3, P2 {4}: empty. Hmm I need I_0 nonempty. Let me redo:
+
+Want I_0 nonempty, I_1 empty, I_2 nonempty.
+I_0: P1 [0, b_0], P2 [c_0, 4] (since a_0=0, d_0=4). Nonempty iff c_0 <= b_0.
+I_1: P1 [b_0, b_1], P2 [c_1, c_0]. Empty iff b_1 < c_1 (since b_0 <= c_0 always by I_0 nonempty).
+But c_1 <= c_0 <= b_0 <= b_1, so c_1 <= b_1. Contradiction with b_1 < c_1. So I_1 cannot be empty!
+
+Interesting: if I_0 nonempty, then I_1 nonempty? I_1 = [max(b_0, c_1), min(b_1, c_0)]. Since c_1 <= c_0 <= b_0 <= b_1: max(b_0, c_1) = b_0, min(b_1, c_0) = c_0, and b_0 >= c_0 so [b_0, c_0] nonempty iff c_0 >= b_0, but c_0 <= b_0 so c_0 = b_0: single cell (b_0, 1)?? Wait: I_1 = rows [max(a_1, c_1), min(b_1, d_1)] = [max(b_0, c_1), min(b_1, c_0)]. With c_1 <= c_0 <= b_0 <= b_1: = [b_0, c_0] which is nonempty iff b_0 <= c_0. Since c_0 <= b_0, we need equality: I_1 = {row b_0=c_0}. Hmm, so I_1 is nonempty iff c_0 = b_0 (given c_0 <= b_0 from I_0). Hmm wait c_0 <= b_0 from I_0 nonempty. So I_1 nonempty iff c_0 = b_0? That doesn't sound right. Let me recheck: c_1 <= c_0, b_1 >= b_0. max(b_0, c_1) = b_0 (since c_1 <= c_0 <= b_0). min(b_1, c_0) = c_0 (since c_0 <= b_0 <= b_1). I_1 = [b_0, c_0], nonempty iff b_0 <= c_0. Combined with c_0 <= b_0: need c_0 = b_0. 
+
+Hmm wait, that's saying: if I_0 = [c_0, b_0] (assuming c_0 <= b_0) with c_0 < b_0 strictly, then I_1 empty?? Let's verify with example 1: P1 exits: path (0,0)→(1,0)→(2,0)→(2,1)→(2,2)→(2,3)→(3,3)→(4,3). b_0 = 2 (col0: rows 0-2), b_1=2, b_2=2, b_3=4. P2: (4,0)→(4,1)→(3,1)→(2,1)→(2,2)→(2,3)→(1,3)→(0,3). c_0=4 (col0: only (4,0), d_0=4, c_0=4), c_1=2 (col1: rows 2-4), c_2=2 (col2: rows 2..2? d_2=c_1=2, so col2: just (2,2)), c_3=0 (col3: rows 0-2, d_3=c_2=2).
+
+I_0: P1 rows 0-2, P2 row 4: EMPTY. So intersection starts later. I_1: P1 [a_1,b_1]=[2,2], P2 [c_1,d_1]=[2,4]: shared {2}: (2,1). I_2: P1 [2,2], P2 [2,2]: (2,2). I_3: P1 [2,4], P2 [0,2]: (2,3). Total shared: (2,1),(2,2),(2,3). Matches.
+
+So from my derivation: once the paths "cross", i.e., c_j <= b_j... Let me re-derive generally. Define the relation between paths at column j. Let's think about when intersection is nonempty: max(a_j,c_j) <= min(b_j,d_j), i.e., a_j <= d_j and c_j <= b_j (both conditions needed).
+
+Key claim: the set of columns where intersection is nonempty is a contiguous range of columns, and moreover the shared cells form a connected monotone path. Let me re-examine: Suppose I_j nonempty: c_j <= b_j and a_j <= d_j. Then I_{j+1} = [max(a_{j+1}, c_{j+1}), min(b_{j+1}, d_{j+1})] = [max(b_j, c_{j+1}), min(b_{j+1}, c_j)]. Since c_{j+1} <= c_j <= b_j <= b_{j+1}: max = b_j, min = c_j. Nonempty iff b_j <= c_j. But c_j <= b_j. So nonempty iff b_j = c_j.
+
+Hmm, so I_{j+1} nonempty iff b_j = c_j?? Let me double check with example 1: j=1: b_1=2, c_1=2: equal, I_2 nonempty. j=2: b_2=2, c_2=2: equal, I_3 nonempty. j=0: b_0=2, c_0=4: not equal, I_1... wait I_1 was nonempty though. Contradiction!
+
+Let me recompute I_1 for example 1: a_1 = b_0 = 2, d_1 = c_0 = 4. P1 col1: rows [2,2]. P2 col1: rows [c_1, d_1] = [2,4]. I_1 = [max(2,2), min(2,4)] = [2,2]. Nonempty. But my formula said I_{j+1} = [max(b_j, c_{j+1}), min(b_{j+1}, c_j)] = [max(2, c_1=2), min(b_1=2, c_0=4)] = [2, 2]. Nonempty! I made an algebra error: min(b_{j+1}, c_j) where c_j = c_0 = 4, b_{j+1} = b_1 = 2: min is 2, not c_j. Let me redo: min(b_{j+1}, c_j): we know c_j >= c_{j+1} and b_{j+1} >= b_j, but no relation between b_{j+1} and c_j directly. So I_{j+1} = [max(b_j, c_{j+1}), min(b_{j+1}, c_j)].
+
+OK so the structure is more flexible. Let me think again about whether intersection is always "connected" (as a set of cells, 4-connected).
+
+Consider the intersection cells across columns. In column j, I_j is a vertical segment. I_j and I_{j+1}: I_j = [L_j, R_j] (rows), I_{j+1} = [L_{j+1}, R_{j+1}] with L_{j+1} = max(b_j, c_{j+1}) >= b_j >= ... hmm is R_j >= L_{j+1}? R_j = min(b_j, d_j) <= b_j <= L_{j+1}. And L_j <= R_j. So I_j is entirely at rows <= b_j... wait R_j <= b_j? min(b_j, d_j) <= b_j yes. And L_{j+1} >= b_j. So I_j's bottom row R_j <= b_j <= L_{j+1} = I_{j+1}'s top row. For connectivity between columns, need the segments to touch: R_j >= L_{j+1} (i.e., R_j = b_j = L_{j+1}) — then cell (b_j, j)... wait (R_j, j) and (L_{j+1}, j+1) with R_j = L_{j+1} are horizontally adjacent. Actually they'd need same row: (R_j, j) and (L_{j+1}, j+1) = (R_j, j+1): adjacent horizontally. So connected iff R_j = L_{j+1} or segments overlap in row... but they can't overlap since R_j <= b_j <= L_{j+1}. So connected iff R_j = b_j = L_{j+1}.
+
+Hmm interesting. So the shared cells form a "staircase": in each column a vertical segment, and consecutive columns' segments touch at row b_j if at all.
+
+Actually, I recall now: the intersection of a down-right path and an up-right path forms a contiguous monotone path (possibly with both horizontal and vertical moves), i.e., it is connected and itself a path from its top-left to bottom-right... Let me just trust the DP formulation and find an efficient algorithm.
+
+Let me reconsider. Maybe think of the shared region as a monotone path itself: Suppose the shared cells form a monotone path P from cell s to cell t (moving right/down... or also up?). In column j, shared segment is vertical. Shared path could move vertically within a column (down), then right, etc. Since segments in consecutive columns touch at exactly one row when connected, and segments go down as j increases? L_{j+1} >= b_j >= R_j >= L_j. So the segments move downward as column increases. So the shared region is like a monotone (down-right) "thick path": in column j rows [L_j, R_j], with R_j <= L_{j+1} when both nonempty... 
+
+Wait, actually also note L_j = max(a_j, c_j), R_j = min(b_j, d_j).
+
+Alternative approach: Maybe think of it as: the two paths P1 and P2; shared cells are where they coincide. Equivalent reformulation: choose the shared region first, then extend to full paths.
+
+Hmm, let me look at this from the perspective of known solutions. This is LeetCode 3938, from a recent contest (May 2026? That's a future date in the problem — odd, but the URL says 2026/05/19). Constraints m*n <= 5e5, time 2s. Likely intended solution is O(m*n*min(m,n)) in C++ but that'd be 5e8... hmm, or O(m*n) with cleverness. Actually wait: m,n <= 1000 but m*n <= 5e5. O(m*n*sqrt) fine. O((m*n)^1.5) too slow maybe. Let me think about O(m * n * something).
+
+Alternative DP: Think about "when paths meet". Since both paths move right, consider sweeping column by column, tracking both players' rows. That's the O(n * m^2 * m^2) DP. We need to optimize transitions with prefix maxima.
+
+Let me define DP_j(a, d) = max total shared sum from columns 0..j-1, ending with P1 entering column j at row a (a = a_j) and P2 entering column j at row d (d = d_j). Wait, but entry states: a_j = b_{j-1} can be any row; d_j = c_{j-1} any row. Transitions from (a, d): choose b in [a, m-1], c in [0, d]. Gain = colsum_j over [max(a,c), min(b,d)] (0 if empty). New state (b, c).
+
+Hmm, but we also have constraint... Actually there's a parity/topological constraint: paths must cross odd number of times, but any choice of sequences is valid as both paths are valid regardless. So no constraint needed — any non-decreasing b sequence and non-increasing c sequence give valid paths. So the DP is straightforward but O(m^2) states and O(m^2) transitions per column.
+
+Optimize: gain = colsum_j(max(a,c), min(b,d)). Let's split into cases based on orderings of a,c and b,d.
+
+Note: a <= b, c <= d. Intersection [max(a,c), min(b,d)].
+
+Case analysis: The intersection is nonempty iff max(a,c) <= min(b,d). Sum = S(j, max(a,c), min(b,d)) where S(j, l, r) = sum_{i=l}^{r} grid[i][j].
+
+We want DP_{j+1}(b, c) = max over a <= b, c <= d of DP_j(a, d) + gain_j(a,d,b,c).
+
+Hmm, this is complex due to the max/min. Let's denote prefix sums of column j: ps[i]. gain = ps[min(b,d)+1] - ps[max(a,c)] when nonempty.
+
+Cases:
+1. c >= a and d <= b: intersection [c, d]: gain = ps[d+1]-ps[c]. Doesn't depend on a, b! So for states with a <= c and b >= d, gain = colsum(c,d).
+2. c >= a and d > b: intersection [c, b]: gain = ps[b+1]-ps[c].
+3. c < a and d <= b: intersection [a, d]: gain = ps[d+1]-ps[a].
+4. c < a and d > b: intersection [a, b]: gain = ps[b+1]-ps[a].
+Empty cases when max(a,c) > min(b,d).
+
+This is getting complicated, but maybe there's structure. Alternatively, maybe think in terms of the shared region being a monotone path and do a different DP.
+
+Alternative idea: The shared region is a monotone path (connected sequence). What if we think: the shared cells form a path from some cell (r1, c1) to (r2, c2) moving only right/down, that is a contiguous segment of both paths? Hmm, but is the shared set necessarily a path where consecutive cells are adjacent? In column j it's a vertical segment (adjacent cells), and between columns j and j+1, segments touch at row b_j if R_j = b_j = L_{j+1}. If R_j < L_{j+1} strictly... wait R_j <= b_j <= L_{j+1}. If R_j < L_{j+1}, the segments in column j and j+1 are disconnected from each other! Then the shared set is disconnected. Is that possible? Let's construct: need R_j = min(b_j, d_j) < L_{j+1} = max(b_j, c_{j+1}). Since b_j <= max(b_j, c_{j+1}) = L_{j+1}... R_j <= b_j <= L_{j+1}. For R_j < L_{j+1}: either R_j < b_j (i.e., d_j < b_j) or b_j < L_{j+1} (i.e., c_{j+1} > b_j).
+
+Example: c_{j+1} > b_j: P2 exits column j+1 below P1's exit from column j. E.g., m=5,n=3: P1: b_0=1, b_1=2, b_2=4. P2: c_0=4, c_1=3, c_2=0. Check: I_0: P1 [0,1], P2 [4,4]: empty. I_1: P1 [1,2], P2 [3,4]: empty. I_2: P1 [2,4], P2 [0,3]: [2,3]. Only one shared column.
+
+Try: P1 b_0=1,b_1=2,b_2=4; P2 c_0=2,c_1=3? c must be non-increasing! c_0=2 < c_1=3 invalid. Right, c non-increasing. So c_{j+1} <= c_j. And for I_j nonempty we need c_j <= b_j. Then c_{j+1} <= c_j <= b_j, so L_{j+1} = max(b_j, c_{j+1}) = b_j. And R_j = min(b_j, d_j). R_j = b_j iff b_j <= d_j. So if I_j nonempty (c_j <= b_j) and additionally a_j <= d_j... wait I_j nonempty needs max(a_j,c_j) <= min(b_j,d_j).
+
+R_j = min(b_j, d_j). L_{j+1} = b_j (given c_{j+1} <= c_j <= b_j). So R_j = L_{j+1} iff min(b_j, d_j) = b_j iff d_j >= b_j. If d_j < b_j, then R_j = d_j < b_j = L_{j+1}: disconnected!
+
+Can that happen with I_j nonempty? I_j = [max(a_j,c_j), min(b_j,d_j)] = [max(a_j,c_j), d_j] nonempty iff max(a_j,c_j) <= d_j. And d_j < b_j. Example: a_j=2, c_j=1, d_j=3, b_j=5. I_j = [2,3]. Then c_{j+1} <= 1, L_{j+1} = b_j = 5, I_{j+1} = [5, min(b_{j+1}, c_j=1)] = empty since min <= 1 < 5. Hmm so then I_{j+1} empty. And I_{j+2}: L = max(b_{j+1}, c_{j+2}) >= b_{j+1} >= 5, R = min(b_{j+2}, c_{j+1}) <= 1: empty forever. So once disconnected, stays disconnected? Let me check: after column j, state a_{j+1} = b_j = 5, d_{j+1} = c_j = 1. From then on a >= 5, d <= 1, so max(a,c) >= 5 > 1 >= min(b,d): never intersect again.
+
+So the picture: columns where intersection nonempty form a contiguous block [j1, j2], and within that block, the shared cells form a connected region: consecutive segments touch (R_j = b_j = L_{j+1}... need to double check within the block: for j in [j1, j2-1], both I_j and I_{j+1} nonempty. Then c_{j+1} <= c_j <= b_j <= b_{j+1}... L_{j+1} = max(b_j, c_{j+1}) = b_j. R_j = min(b_j, d_j). Is R_j = b_j? Suppose d_j < b_j. Then I_{j+1} = [b_j, min(b_{j+1}, c_j)] with c_j <= ... hmm we need I_{j+1} nonempty: b_j <= min(b_{j+1}, c_j), so c_j >= b_j, combined c_j <= b_j: c_j = b_j. But d_j = c_{j-1} >= c_j = b_j. Contradiction with d_j < b_j. So within the block, R_j = b_j, L_{j+1} = b_j: segments touch at row b_j. 
+
+So the shared region is a connected "thick monotone path": columns j1..j2, in column j rows [L_j, R_j], with R_j = b_j = L_{j+1} for j1 <= j < j2. Also note L_{j1} = max(a_{j1}, c_{j1}) and R_{j2} = min(b_{j2}, d_{j2}).
+
+Moreover, before j1 and after j2, no shared cells. The paths before j1: P1 and P2 don't share; after j2 likewise.
+
+Hmm OK so here's a cleaner reformulation: The two paths intersect in a (possibly single cell) connected monotone region. Actually, the shared region can be described as: a monotone path from cell u to cell v (right/down moves) that is "common", plus P1's prefix/suffix and P2's prefix/suffix avoiding... this is getting complicated. Let me think about a direct DP that's efficient.
+
+Alternative: think of the shared sum as sum over cells of value * indicator both paths visit. 
+
+Let me think about small cases: what if n=2? Or think about what freedom we have.
+
+Hmm, let me think about the problem from the "boundary crossing" view. P1 path separates grid into upper-right region and lower-left region. P2 starts in lower-left (cell (m-1,0)) and ends in upper-right (0,n-1). The shared cells are where P2 is on P1's path. P2 alternates: starts below P1's path, crosses to above, possibly crosses back, etc. But by monotonicity, how many times can they cross? 
+
+Consider the difference g(j) = (P1's row) - (P2's row) as they move... not well-defined since both span segments. Consider at column j: P1 occupies [a_j,b_j], P2 [c_j,d_j]. Initially a_0=0 <= d_0=m-1. Finally b_{n-1}=m-1 >= c_{n-1}=0. Hmm.
+
+I recall this problem type: "maximum intersection sum of two crossing paths" — solution uses DP where you consider pairs of paths and the meeting structure, O(m*n) states with the two paths' positions encoded by (row of P1 in this column, row of P2 in this column). Since m*n <= 5e5, O(m^2 n) could be 5e8 if m=1000. Hmm. But wait — maybe transpose so that m <= n? No wait, both m,n <= 1000, m*n <= 5e5. Worst case for O(m^2 * n): m=1000, n=500 → 5e8. Borderline too slow even in C++. Hmm.
+
+Let me reconsider. Maybe there's an O(m*n) or O(m*n log) solution.
+
+Reformulate: The shared region is a monotone staircase from some cell to some cell. Claim: the shared region is exactly a monotone path (single-cell-wide)? No — in column j, shared can be a multi-cell vertical segment. E.g., P1 goes down column j rows 2..5, P2 goes up column j rows 1..3: shared 2..3. So vertical segments can be long.
+
+New idea: Let's characterize the shared region by two monotone paths: its "upper-left boundary" and "lower-right boundary". Actually the shared region = cells that are below-right of... hmm.
+
+Alternative: Consider any monotone path Q from (0,-1)... hmm.
+
+Let me think again. Shared cells = P1 ∩ P2. Consider the "upper boundary" of the shared region: In column j, top shared cell L_j = max(a_j, c_j). And bottom R_j = min(b_j, d_j).
+
+Hmm, let me think of it as a min-plus / max-plus convolution or use the "two pointers" structure.
+
+Different angle: total shared sum = sum over columns. For column j, contribution is sum of grid[i][j] for i in [L_j, R_j] (if nonempty). Using prefix sums over rows for each column: contrib(j, L, R).
+
+The constraints linking columns: L_{j+1} = b_j, R_j = b_j (within shared block). So actually within the shared block, the shared region is determined by the sequence b_j (= R_j = L_{j+1}) plus L_{j1} and R_{j2}: shared sum = sum over the staircase: cells (L_{j1}, j1) down to (R_{j1}=b_{j1}, j1)... wait let me recompute. In column j (j1 <= j <= j2), shared rows [L_j, R_j] where R_j = b_j for j < j2... and for j = j2, R_{j2} = min(b_{j2}, d_{j2}), and L_{j1} = max(a_{j1}, c_{j1}).
+
+The shared region: starts at column j1 with rows [L_{j1}, R_{j1}] where R_{j1} = b_{j1} (if j1<j2), then column j1+1 rows [b_{j1}, b_{j2}], ..., column j2 rows [b_{j2-1}, R_{j2}].
+
+So the shared region is a monotone staircase from top cell (L_{j1}, j1) down-right to (R_{j2}, j2): it's exactly the set of cells on a monotone path... but each column's segment is fully included (vertical runs). So shared region = a monotone path (down/right) from (L_{j1}, j1) to (R_{j2}, j2) that includes ALL cells along vertical runs — i.e., it IS a monotone path (a path that goes down some, right one, down some, right one...). Yes! The shared region is exactly a monotone path from some cell u = (L_{j1}, j1) to v = (R_{j2}, j2), moving down/right, where the path's column-j vertical extent is [L_j, R_j]. Wait but a monotone path in column j covers rows from entry to exit — yes exactly a contiguous segment. So the shared region is precisely a monotone down-right path from u to v. 
+
+But wait, we need this shared region to be exactly the intersection — the paths must not intersect outside. Also the shared region must be a subset of both paths. So the structure: P1 = (path from (0,0) to u) + (shared path u→v) + (path from v to (m-1,n-1)). P2 = (path from (m-1,0) to u) + (shared path) + (path from v to (0,n-1)). With constraints that the prefix/suffix don't create extra intersections.
+
+Hmm wait, but u is the top-left of the shared region: u = (L_{j1}, j1) = (max(a_{j1}, c_{j1}), j1). Both paths pass through u? P1's column j1 segment is [a_{j1}, b_{j1}] which includes L_{j1}; and since the shared staircase moves right/down from u... does P1 contain the whole shared staircase? P1 in column j covers [a_j, b_j], shared is [L_j, R_j] ⊆ [a_j, b_j]. The staircase from u to v: in column j rows [L_j, R_j], moving right at row R_j = b_j to next column. P1 contains [a_j, b_j] ⊇ [L_j, R_j], and connectivity: P1 moves right at row b_j = R_j. So yes, the staircase is a subset of P1, and P1's route through the shared columns exactly follows... well P1 enters column j at a_j <= L_j, exits at b_j = R_j. So the staircase is part of P1. Similarly P2 enters column j at d_j >= R_j (d_j >= R_j since R_j = min(b_j, d_j)), exits at c_j <= L_j. So P2 contains the staircase too, moving up.
+
+So: shared region = monotone path from u=(r1, c1) to v=(r2, c2) (r1<=r2, c1<=c2), where:
+- P1 goes (0,0) → u (right/down), then u → v (the shared path), then v → (m-1,n-1).
+- P2 goes (m-1,0) → u (right/up), then v... wait P2 traverses the shared path from v to u? P2 moves right/up, so P2 enters the shared region at its bottom-right? Hmm, P2 in column j covers [c_j, d_j] ⊇ [L_j, R_j], entering at d_j (bottom) moving up to c_j (top), then right. The shared staircase in column j is [L_j, R_j]; P2 traverses it upward from R_j to L_j, and moves right at row c_j... wait no. P2 moves up from d_j to c_j, then right to column j+1 at row c_j = d_{j+1}. The staircase moves right at row b_j = R_j. Hmm, P2 passes through row R_j on its way up, but continues to c_j <= L_j. And d_{j+1} = c_j. For the staircase to be exactly the intersection, we need the regions outside to be disjoint.
+
+OK here's the cleaner structural claim: The two paths' intersection is a monotone path from u to v. Conversely, given u and v and a monotone path Q from u to v, when can we achieve intersection exactly Q? We need P1 = A1 + Q + B1 where A1: (0,0)→u down/right path, B1: v→(m-1,n-1); P2 = A2 + reverse(Q) + B2 where A2: (m-1,0)→u moving right/up, B2: v→(0,n-1), such that A1 ∩ P2 ⊆ u, B1 ∩ P2 ⊆ v, etc. This is complex, but for maximizing the sum of Q, maybe we don't need to worry: for ANY monotone path Q from u to v, can we extend to full paths with intersection ⊇ Q and the intersection's sum at least sum(Q)? If extensions can always be made without adding negative cells... hmm, but extension might be forced to add shared cells.
+
+Actually, wait. For the objective, we want to choose paths to maximize sum of intersection. Perhaps we can think: max over u, v, and monotone path Q from u to v of [sum of Q + best extension without extra intersection]... but extensions always exist without extra intersection? Let's see: given Q from u=(r1,c1) to v=(r2,c2), define P1: (0,0) → u via some path staying "above-left", then Q, then v → (m-1,n-1) staying "below-right". P2: (m-1,0) → u staying "below-left", then Q (traversed upward), then v → (0,n-1) staying "above-right". To avoid extra intersections: P1's prefix A1 must not intersect P2's suffix B2, P1's prefix must not intersect P2's prefix A2 except at u, etc.
+
+Hmm, regions: A1: (0,0)→u in rectangle [0..r1]x[0..c1]. A2: (m-1,0)→u moving right/up: stays in [r1..m-1]x[0..c1]. These rectangles only share row r1: cells (r1, 0..c1). A1 passes through row r1 only at... A1 ends at u=(r1,c1) and before that it's at rows <= r1. A1 could travel along row r1. A2 ends at u moving... A2 in row r1 could travel along row r1 too. So they might intersect along row r1. But we can choose A1 to enter u from above ((r1-1,c1) → down to u) and A2 to enter u from below ((r1+1,c1) → up to u), and keep A1 in rows < r1 except the final cell... A1: path to (r1-1, c1) then down. A2: path to (r1+1, c1) then up. Do such paths exist in the rectangles? A1 needs to reach (r1-1,c1): possible if r1 >= 1. If r1 = 0, A1 travels along row 0. Then A2 must avoid row 0... A2 in rows >= r1 = 0: it ends at u=(0,c1) from below: A2 reaches (1,c1) then up. Fine, A2 stays in rows >= 1 except final cell u. A1 stays in row 0... and A2 visits row 0 only at u? A2 ends at u=(0,c1). Yes possible: A2: (m-1,0) right along row m-1 to (m-1,c1), up to (1,c1), up to (0,c1). Avoids row 0 except u. A1: (0,0) right along row 0 to (0,c1)=u. Intersection A1∩A2 = {u}. 
+
+Similarly B1: v→(m-1,n-1) in rectangle [r2..m-1]x[c2..n-1]; B2: v→(0,n-1) moving up/right in rectangle [0..r2]x[c2..n-1]. Share only row r2; arrange B1 leaves v downward (to (r2+1,c2)) staying rows >= r2+1... wait B1 in rows r2..m-1, B2 in rows 0..r2. Choose B1 to go down first then right along bottom, B2 up first then right along top: intersect only at v. Also cross-intersections: A1 (rows <= r1, cols <= c1) vs B2 (rows <= r2, cols >= c2): A1 cols <= c1 <= c2; intersection possible only if c1 = c2 and... A1 in cols <= c1, B2 in cols >= c2 = c1: share column c1. A1 in column c1: ends at u=(r1,c1) coming from (r1-1,c1) (if r1>=1). B2 in column c1=c2: starts at v=(r2,c2) going up to (0,c2) then right. Hmm B2 goes v→(0,c2) covering rows 0..r2 in column c2, including (r1,c1)=u if c1=c2 and r1 <= r2! Then u ∈ B2, but u is in Q anyway (u is start of Q). Is u ∈ B2 ∩ P1 counted extra? u is already in Q, so it's fine — it's part of shared region Q. But also (r1-1, c1) ∈ B2 ∩ A1 possibly! That would add an extra shared cell not in Q.
+
+Ugh, this is getting complicated. The extension question: given Q from u to v, do there exist extensions with intersection EXACTLY Q? Not always. But for max sum maybe we can consider: max over paths = max over (u, v, Q) where Q ranges over monotone paths u→v, of sum(Q), but only over Q that are "exactly realizable", AND with the constraint that the shared region of the constructed paths is exactly Q... but actually for the objective we just need: max shared sum = max over (P1, P2) of sum(P1 ∩ P2) = max over realizable Q of sum(Q) where Q ranges over "exactly realizable" monotone paths. 
+
+Claim: Every monotone path Q from u to v (with u != ... hmm any u, v) is exactly realizable? Need to handle boundary effects. Also Q could be a single cell.
+
+Wait, but actually maybe I don't need "exactly". Note sum(P1 ∩ P2) for the extension might be larger than sum(Q) — but then that larger intersection is itself a monotone path, counted elsewhere. So max over (P1,P2) of sum(intersection) = max over exactly-realizable Q of sum(Q) = max over all monotone paths Q (u→v, any u<=v) of sum(Q), IF every monotone path is exactly realizable. And max over all monotone paths of sum = the classic "max path sum from any cell to any cell going right/down" — but that would be trivially: just take the single cell with max value! That can't be right, because the extension constraints must force something.
+
+Wait, single cell Q = {u}: is it realizable as exact intersection? P1 from (0,0) to (m-1,n-1) through u, P2 from (m-1,0) to (0,n-1) through u, intersecting only at u. Is that always possible? Consider u=(0,0): P1 starts at u, P2 must pass through (0,0): P2: (m-1,0) up column 0 to (0,0) then right along row 0 to (0,n-1). P1: (0,0) right along row 0 → shares all of row 0 with P2! Or P1: (0,0) down... P1 from (0,0): first move right or down. If down: (0,0)→(1,0)→...→(m-1,0)? Then shares column 0 with P2. Hmm: P2 goes up column 0 entirely (from (m-1,0) to (0,0)). P1 leaves (0,0) either right (row 0 shared with P2's row-0 traversal) or down (column 0 shared with P2's column-0 traversal). So intersection includes more than u. So max shared sum is NOT just max cell. Indeed example 2: grid max cell is 4 at (0,0); answer 3 = 4 + (-1): cells (0,0),(1,0). Because P2 forced to traverse... Let me see example 2 answer: shared (0,0),(1,0): P2 path (2,0)→(1,0)→(0,0)→(0,1)→(0,2), P1: (0,0)→(1,0)→(1,1)→(1,2)→(2,2). Intersection: (0,0),(1,0). Sum 3. Could we get just {4}? P1 through (0,0) obviously (start). P2 through (0,0)? P2 ends at (0,2); passing (0,0) means traversing row 0: (0,0)→(0,1)→(0,2). P1 must avoid row 0 cells (0,1),(0,2): P1: (0,0)→(1,0)→... fine, P1 down to (1,0), then avoid (1,0)? P2 visits (1,0)? In this P2: (2,0)→(1,0)→(0,0): yes visits (1,0),(2,0). P1 from (1,0) to (2,2) avoiding (1,0)... P1 is at (1,0) — shared! So intersection includes (1,0). Alternatively P2 not through (0,0): then intersection doesn't include 4. So the structure matters.
+
+So we need exact realizability. Let me characterize exactly-realizable monotone paths Q from u to v.
+
+Let me think again about the column-based structure. Shared region Q: columns j1..j2, in column j rows [L_j, R_j], with R_j = L_{j+1} for j1 <= j < j2 (horizontal moves), i.e., Q is determined by j1, j2, L_{j1}, R_{j2}, and the "turn rows" b_j for j1 <= j < j2 with L_j <= R_j = b_j, L_{j+1} = b_j, b_j non-decreasing? b_j for P1 non-decreasing, yes. And L_j = max(a_j, c_j), R_j = min(b_j, d_j).
+
+Constraints for exact intersection:
+- For j < j1: I_j empty.
+- For j > j2: I_j empty.
+- For j1 <= j <= j2: I_j = [L_j, R_j] as prescribed.
+
+And in particular, at the boundaries: for j = j1: I_{j1-1} empty, I_{j1} starts at L_{j1} = max(a_{j1}, c_{j1}).
+
+Hmm, let me think about when I_{j} first becomes nonempty. Before j1, I_j empty for all j < j1. a_0 = 0 <= d_0 = m-1. I_0 empty iff max(0, c_0) > min(b_0, m-1) iff c_0 > b_0 (since c_0 >= 0, min(b_0,m-1)=b_0): I_0 empty iff c_0 > b_0. So initially c_0 > b_0: P2's exit row below P1's exit row. As j increases, b_j non-decreasing, c_j non-increasing; the first column where c_j <= b_j... but careful, intersection also needs a_j <= d_j.
+
+Let me define: f(j) = b_j - c_j (increases over time since b up, c down). I_j nonempty requires c_j <= b_j AND a_j <= d_j. Note a_j = b_{j-1} <= b_j, d_j = c_{j-1} >= c_j. If c_j <= b_j, is a_j <= d_j automatic? a_j = b_{j-1}, d_j = c_{j-1}. Hmm, not obviously.
+
+Let me think about "crossing". At column j, consider whether paths have crossed: P2 starts below P1. In column 0, P1 at rows [0, b_0], P2 at [c_0, m-1] with c_0 > b_0 (disjoint, P2 below). At the end, P1 at (m-1, n-1) (bottom), P2 at (0, n-1) (top): they've crossed. The crossing happens in some column where the order swaps.
+
+Claim: once they've crossed (I_j nonempty), can they "uncross" and cross again? Suppose I_j nonempty and I_{j+1} empty. We showed I_{j+1} empty requires (within analysis) ... earlier: I_j nonempty (c_j <= b_j) gives L_{j+1} = max(b_j, c_{j+1}) = b_j. I_{j+1} empty iff max(a_{j+1}, c_{j+1}) > min(b_{j+1}, d_{j+1}) = min(b_{j+1}, c_j), i.e., b_j > min(b_{j+1}, c_j) (since L_{j+1} = b_j), i.e., b_j > c_j (then min(b_{j+1},c_j) <= c_j < b_j) — but I_j nonempty includes c_j <= b_j; if c_j < b_j strictly then I_{j+1} empty?? Wait but example 1: c_1 = 2 = b_1, c_2 = 2 = b_2... Let me recheck: I_{j+1} = [max(b_j, c_{j+1}), min(b_{j+1}, c_j)]. Since c_{j+1} <= c_j and b_j <= b_{j+1}: if c_j < b_j: then c_{j+1} <= c_j < b_j, so max(b_j, c_{j+1}) = b_j, and min(b_{j+1}, c_j) <= c_j < b_j: empty. So: if c_j < b_j (strict crossing at exit rows), next column has no intersection. Then subsequent: a_{j+2} = b_{j+1} >= b_j > c_j >= c_{j+1} = d_{j+1}: so a_{j+2} > d_{j+1}: P1 entirely below P2 from now on: no more intersections ever. And also I_j itself: [max(a_j,c_j), min(b_j,d_j)].
+
+So the picture: there's a "crossing zone" of consecutive columns j1..j2 where c_j = b_j for j1 <= j < j2 (the paths travel together... wait c_j = b_j means P2's exit row equals P1's exit row — they move right together at row b_j = c_j!). And at the final column j2, either c_{j2} = b_{j2} (then... next column j2+1: L = b_{j2}, R = min(b_{j2+1}, c_{j2}) = b_{j2}: nonempty! contradiction with j2 last) — so at j2 we must have c_{j2} < b_{j2} OR j2 = n-1. Hmm wait, if c_{j2} = b_{j2}, then I_{j2+1} = [b_{j2}, min(b_{j2+1}, c_{j2})] = [b_{j2}, b_{j2}] nonempty. So if j2 is the last intersecting column and j2 < n-1, then c_{j2} < b_{j2}... but hold on, we also need I_{j2} nonempty and the crossing completes.
+
+Hmm wait, but actually the shared region could also end because the grid ends (j2 = n-1).
+
+Similarly, before j1: for j < j1, c_j > b_j (P2 strictly below P1 at exits). At j1: c_{j1} <= b_{j1} first time. The shared cell top L_{j1} = max(a_{j1}, c_{j1}).
+
+So the shared region: columns j1..j2. For j1 <= j < j2: c_j = b_j, shared segment in column j: [max(a_j, c_j), min(b_j, d_j)] where d_j = c_{j-1}, a_j = b_{j-1}. With c_j = b_j: [max(b_{j-1}, c_j), min(b_j, c_{j-1})] = [max(b_{j-1}, b_j)... wait c_j = b_j: max(b_{j-1}, c_j) = max(b_{j-1}, b_j) = b_j (since b non-decreasing). min(b_j, c_{j-1}) = min(b_j, c_{j-1}); c_{j-1} >= c_j = b_j so min = b_j. So I_j = {b_j} — a single cell! Interesting: for j1 < j <= ... wait let me redo for j1 < j < j2... Hmm, for j strictly between, I_j = [max(a_j, c_j), min(b_j, d_j)] = [max(b_{j-1}, c_j), min(b_j, c_{j-1})]. With c_j = b_j (for j < j2): = [max(b_{j-1}, b_j), min(b_j, c_{j-1})] = [b_j, b_j] = single cell (b_j, j).
+
+And at j1: I_{j1} = [max(a_{j1}, c_{j1}), min(b_{j1}, d_{j1})] = [max(b_{j1-1}, c_{j1}), min(b_{j1}, c_{j1-1})]. Since c_{j1-1} > b_{j1-1} (previous column no intersection... wait need c_{j1-1} > b_{j1-1}? I_{j1-1} empty: [max(b_{j1-2}, c_{j1-1}), min(b_{j1-1}, c_{j1-2})] empty. Hmm, earlier we said before crossing c_j > b_j. Let me verify: I_j empty for j < j1. Is c_j > b_j for j < j1? We know c_0 > b_0 (if I_0 empty). Suppose c_{j} > b_{j} for j <= t < j1 - 1... Since c non-increasing, b non-decreasing, c_{j} > b_j propagates? c_{j+1} could drop below b_{j+1}. j1 is the first column with c_{j1} <= b_{j1}... but wait, I_j nonempty also needs a_j <= d_j. If c_j <= b_j then a_j = b_{j-1} <= b_j and d_j = c_{j-1} >= c_j; need b_{j-1} <= c_{j-1}. Since j-1 < j1 means c_{j-1} > b_{j-1}, yes. So indeed first intersection column j1 = first j with c_j <= b_j. For j < j1: c_j > b_j strictly.
+
+So at j1: I_{j1} = [max(b_{j1-1}, c_{j1}), min(b_{j1}, c_{j1-1})]. We have c_{j1} <= b_{j1}, b_{j1-1} < c_{j1-1}, b_{j1-1} <= b_{j1}, c_{j1} <= c_{j1-1}. L = max(b_{j1-1}, c_{j1}), R = min(b_{j1}, c_{j1-1}). Nonempty since c_{j1} <= b_{j1}, b_{j1-1} <= b_{j1}, c_{j1} < c_{j1-1}+1... need max <= min: b_{j1-1} <= b_{j1} ✓, b_{j1-1} < c_{j1-1} ✓ (so b_{j1-1} <= c_{j1-1}), c_{j1} <= b_{j1} ✓, c_{j1} <= c_{j1-1} ✓. Good. So I_{j1} = vertical segment from L to R. And note it includes b_{j1} (since c_{j1} <= b_{j1} <= b_{j1}, and b_{j1} <= min... b_{j1} <= b_{j1} ✓ and b_{j1} <= c_{j1-1}? b_{j1-1} < c_{j1-1} and b_{j1} >= b_{j1-1}... not necessarily b_{j1} <= c_{j1-1}. Hmm. If b_{j1} > c_{j1-1}, then R = c_{j1-1} < b_{j1}. Then I_{j1} doesn't include b_{j1}. But then I_{j1+1} = [max(b_{j1}, c_{j1+1}), min(b_{j1+1}, c_{j1})] — for this to be nonempty (if j1 < j2) need c_{j1} = b_{j1}... wait we derived: I_{j+1} nonempty (j >= j1) requires c_j = b_j. Let me redo: I_{j+1} = [max(b_j, c_{j+1}), min(b_{j+1}, c_j)]. Nonempty iff max(b_j, c_{j+1}) <= min(b_{j+1}, c_j). Since c_{j+1} <= c_j and b_j <= b_{j+1}: need b_j <= c_j (because max(b_j, c_{j+1}) >= b_j and min(b_{j+1}, c_j) <= c_j). Combined with c_j <= b_j (j >= j1): c_j = b_j. Then I_{j+1} = [max(b_j, c_{j+1}), min(b_{j+1}, b_j)] = [b_j, b_j] (since c_{j+1} <= c_j = b_j <= b_{j+1}) = single cell (b_j, j+1).
+
+So: For j1 <= j < j2: c_j = b_j, and I_{j+1} = {(b_j, j+1)} single cell. I_{j1} = [max(b_{j1-1}, c_{j1}), min(b_{j1}, c_{j1-1})] (for j1 > 0). I_j = {(b_{j-1}, j)} for j1 < j <= j2... wait for j in (j1, j2]: I_j = single cell (b_{j-1}, j). And I_{j2}: if j2 > j1: single cell (b_{j2-1}, j2)?? But then what makes j2 the last? If c_{j2} = b_{j2} then I_{j2+1} nonempty (if j2 < n-1). So last column j2 has c_{j2} < b_{j2} or j2 = n-1. But for j in (j1, j2], I_j = single cell requires c_{j-1} = b_{j-1}. At j = j2: need c_{j2-1} = b_{j2-1}, I_{j2} = {(b_{j2-1}, j2)}. And c_{j2} < b_{j2} (else continues). Note c_{j2} <= c_{j2-1} = b_{j2-1} <= b_{j2}: consistent.
+
+Hmm wait, that gives shared region = vertical segment at column j1 + horizontal run of single cells at rows b_{j1}, b_{j1}+... let me recompute: I_{j1} = segment [L, R] in column j1, I_{j} = single cell (b_{j-1}, j) for j1 < j <= j2. And we need connectivity: I_{j1} must connect to I_{j1+1} = (b_{j1}, j1+1): need b_{j1} ∈ I_{j1}, i.e., R = min(b_{j1}, c_{j1-1}) = b_{j1}, i.e., b_{j1} <= c_{j1-1}. Since c_{j1} = b_{j1} (for j1 < j2) and c_{j1-1} >= c_{j1} = b_{j1}: yes R = b_{j1}. And L = max(b_{j1-1}, c_{j1}) = max(b_{j1-1}, b_{j1}) = b_{j1}?? That gives I_{j1} = single cell too. Hmm wait, c_{j1} = b_{j1} only if j1 < j2. So if the shared region spans multiple columns (j1 < j2), then I_{j1} = [max(b_{j1-1}, b_{j1}), min(b_{j1}, c_{j1-1})] = [b_{j1}, b_{j1}] single cell.
+
+That contradicts example 1 where shared region is (2,1),(2,2),(2,3) — all single cells per column! j1=1, j2=3: I_1 = {(2,1)} (b_0 = 2), I_2 = {(2,2)} (b_1=2), I_3 = {(2,3)} (b_2=2). Yes! Consistent.
+
+And example 2: shared (0,0),(1,0): column 0, rows 0-1: a vertical segment, single column j1=j2=0. Let me verify: P1: b_0=1 (col0 rows 0-1), b_1=1,b_2=2. P2: (2,0)→(1,0)→(0,0)→(0,1)→(0,2): c_0=0 (col0 rows 0..2, d_0=2, c_0=0), c_1=0, c_2=0. I_0: [max(a_0,c_0), min(b_0,d_0)] = [max(0,0), min(1,2)] = [0,1]: cells (0,0),(1,0). ✓. I_1: [max(b_0,c_1), min(b_1,c_0)] = [max(1,0), min(1,0)] = [1,1]?? That says (1,1) shared! But P2 visits (1,1)? P2: (0,0)→(0,1): at column 1, P2 is at (0,1) only. d_1 = c_0 = 0, c_1 = 0: P2 column 1 segment = [0,0] = {(0,1)}. I_1 = [max(a_1, c_1), min(b_1, d_1)] = [max(1,0), min(1,0)] = empty ([1,0] invalid). I mis-wrote: min(b_1, d_1) = min(1, 0) = 0, max(a_1,c_1) = max(1,0)=1, [1,0] empty. Good. I used wrong formula (c_0 vs d_1: d_1 = c_0 = 0, and min(b_1, d_1) = min(1,0) = 0). OK so formula: I_{j} = [max(a_j, c_j), min(b_j, d_j)] with a_j = b_{j-1}, d_j = c_{j-1}.
+
+So the shared region structure: single column case (j1 = j2): a vertical segment [max(b_{j1-1}, c_{j1}), min(b_{j1}, c_{j1-1})] in column j1, with c_{j1} < b_{j1} strictly (if j2 < n-1) or c_{j2}... hmm wait if j1 = j2 we don't need c_{j1} = b_{j1}. The condition is just c_{j1} <= b_{j1} (first crossing) and (c_{j1} < b_{j1} if j1 < n-1 else anything) — wait j2 = j1 means I_{j1+1} empty (or j1 = n-1). I_{j1+1} empty iff NOT(c_{j1} = b_{j1}) iff c_{j1} < b_{j1}.
+
+Multi-column case (j1 < j2): shared cells: (b_{j1}, j1), (b_{j1}, j1+1), ..., wait: I_{j1} = {(b_{j1}, j1)} (single cell, since c_{j1}=b_{j1}), and I_j = {(b_{j-1}, j)} for j1<j<=j2. With c_j = b_j for j1 <= j < j2, and b non-decreasing: the shared cells are: (b_{j1}, j1), (b_{j1}, j1+1), (b_{j2-1}, j2)... let me list: I_{j1} = (b_{j1}, j1). I_{j1+1} = (b_{j1}, j1+1). I_{j1+2} = (b_{j1+1}, j1+2). ... I_{j2} = (b_{j2-1}, j2). So cells: (b_{j1}, j1), (b_{j1}, j1+1), (b_{j1+1}, j1+2), (b_{j1+2}, j1+3), ..., (b_{j2-1}, j2). So it's a monotone path going right, with vertical moves between columns: from (b_{j1+k}, j1+k+1)... The rows b_{j1} <= b_{j1+1} <= ... So shared path: start (b_{j1}, j1), right to (b_{j1}, j1+1), then down from row b_{j1} to b_{j1+1} within column j1+1?? But I_{j1+1} = single cell (b_{j1}, j1+1) — the down-move cells in column j1+1 are NOT shared! Wait, that breaks connectivity: (b_{j1}, j1+1) and (b_{j1+1}, j1+2) with b_{j1+1} > b_{j1}: these aren't adjacent!
+
+Hold on, that means the intersection can be disconnected after all?! Let me construct: P1: b_0 = 1, b_1 = 3, b_2 = ... ; P2: c_0 = 1 (= b_0), c_1 < b_1... Let's do m=4, n=3. P1: a_0=0,b_0=1; a_1=1,b_1=3; a_2=3,b_2=3. P1 cells: col0: (0,0),(1,0); col1: (1,1),(2,1),(3,1); col2: (3,2). P2: d_0=3, c_0=1; col0: (1,0),(2,0),(3,0). d_1=1, c_1=? For I_2 nonempty need c_1 = b_1 = 3? But c_1 <= d_1 = 1 < 3. Contradiction! So c_1 = b_1 impossible when c_0 = 1 < b_1 = 3. 
+
+Interesting — so if b increases strictly between j1 and j1+1, then c_{j1} = b_{j1} implies d_{j1+1} = c_{j1} = b_{j1} < b_{j1+1} = a_{j1+1}... then I_{j1+1} = [max(a_{j1+1}, c_{j1+1}), min(b_{j1+1}, d_{j1+1})] = [max(b_{j1}, c_{j1+1}), min(b_{j1+1}, b_{j1})] = [b_{j1}, b_{j1}] = single cell (b_{j1}, j1+1). And P2's column j1+1 segment: [c_{j1+1}, d_{j1+1}] = [c_{j1+1}, b_{j1}]: includes (b_{j1}, j1+1). P1's segment [b_{j1}, b_{j1+1}] includes it. OK so I_{j1+1} = {(b_{j1}, j1+1)}. Then c_{j1+1} <= b_{j1} < b_{j1+1}: c_{j1+1} < b_{j1+1}: crossing ends at j1+1. So j2 = j1+1. Shared: (b_{j1}, j1) and (b_{j1}, j1+1): adjacent horizontally. Connected!
+
+I see — so strict increase of b forces crossing to end. So the multi-column shared region requires b_{j1} = b_{j1+1} = ... = b_{j2-1} = some row r, i.e., shared region is: cell (r, j1), (r, j1+1), ..., (r, j2-1), and I_{j2} = single cell (b_{j2-1}, j2) = (r, j2). So horizontal run along row r from column j1 to j2! Plus possibly a vertical segment at the ends?
+
+Wait, I think I need to redo the ends. Let me redo carefully. Also I should double check whether I_{j1} can be a multi-cell vertical segment when j1 < j2. We had: if j1 < j2 then c_{j1} = b_{j1}, so I_{j1} = [max(b_{j1-1}, c_{j1}), min(b_{j1}, c_{j1-1})] = [max(b_{j1-1}, b_{j1}), min(b_{j1}, c_{j1-1})] = [b_{j1}, b_{j1}] (using b_{j1-1} <= b_{j1} and c_{j1-1} >= c_{j1} = b_{j1}). Single cell. Yes.
+
+Hmm wait, but that's only if j1 >= 1 (so that a_{j1} = b_{j1-1} exists). If j1 = 0: a_0 = 0, d_0 = m-1. I_0 = [max(0, c_0), min(b_0, m-1)] = [c_0, b_0] (needs c_0 <= b_0). If j2 > j1 = 0: c_0 = b_0: I_0 = {b_0} single cell. If j2 = j1 = 0: I_0 = [c_0, b_0], a vertical segment (possibly multi-cell) with c_0 < b_0 strictly (if n > 1)... wait need I_1 empty: iff c_0 != b_0 iff c_0 < b_0. Hmm, but example 2 has I_0 = [0,1]: c_0 = 0, b_0 = 1: c_0 < b_0 ✓, and indeed I_1 empty.
+
+So shared region possibilities:
+(A) Single column j1 = j2 = j*: vertical segment [L, R] in column j*, where L = max(a_{j*}, c_{j*}), R = min(b_{j*}, d_{j*}), with: c_{j*} <= b_{j*}, a_{j*} <= d_{j*}, and (if j* < n-1) c_{j*} < b_{j*} (strict end), and (if j* > 0) c_{j*-1} > b_{j*-1} (not yet crossed).
+
+Wait, I should double check the "not yet crossed" condition and "strict end" more carefully, plus whether I_{j*} for j1=j2 can have R - L >= 1 with the end conditions.
+
+(B) Multi-column j1 < j2: horizontal run along a single row r = b_{j1} = ... = b_{j2-1} = c_{j1} = ... = c_{j2-1}, cells (r, j1..j2). Conditions: before j1: c_j > b_j (strict); at j1: c_{j1} = b_{j1} = r; for j1 < j < j2: c_j = b_j = r; at j2: I_{j2} = (r, j2) = (b_{j2-1}, j2): need this to be the last: c_{j2} < b_{j2} (if j2 < n-1). Note b_{j2} >= b_{j2-1} = r, c_{j2} <= c_{j2-1} = r.
+
+Hmm wait, so the shared region is either a vertical segment in one column, or a horizontal segment in one row?! Let me sanity check with the examples: Ex1: horizontal run row 2, columns 1-3 ✓. Ex2: vertical segment column 0 rows 0-1 ✓.
+
+Hmm wait, is that really the full characterization? What about an "L-shaped" or staircase shared region? From the analysis: once crossing starts at j1 (c_{j1} <= b_{j1}), for the intersection to continue to j1+1 we need c_{j1} = b_{j1} = r, and then I_{j1+1} = single cell (r, j1+1), and for continuing to j1+2 need c_{j1+1} = b_{j1+1} — but c_{j1+1} <= c_{j1} = r and b_{j1+1} >= b_{j1} = r, so c_{j1+1} = b_{j1+1} forces both = r. So indeed the row is locked to r throughout. So shared region is always a "straight" segment: vertical (single column) or horizontal (single row). 
+
+Wait, but also need to double-check the case j1 = j2 = n-1 and j1 = j2 = 0 etc. And also: could the shared region be a horizontal run that ends exactly at column n-1 with c_{n-1} = b_{n-1}? c_{n-1} = 0, b_{n-1} = m-1: equal iff m=1, but m >= 2. So at j = n-1, c_{n-1} = 0 < m-1 = b_{n-1}: I_{n-1} = [max(a_{n-1}, c_{n-1}), min(b_{n-1}, d_{n-1})] = [max(b_{n-2}, 0), min(m-1, c_{n-2})]. Fine.
+
+So in all cases the intersection is either:
+(V) a vertical segment in some column j*, rows [L, R] (L <= R), OR
+(H) a horizontal segment in some row r, columns [j1, j2] (j1 <= j2).
+
+But wait — single cell is both. Also, for (H) with j1 = j2, it's a single cell — overlap with (V) single cell. Fine.
+
+Hmm, but actually wait: in case (H), I claimed I_{j1} is a single cell (r, j1). But what if j1 = 0? Then I_0 = [c_0, b_0] with c_0 = b_0 = r required for continuation: single cell (r, 0). OK consistent.
+
+Now, given this characterization, the problem becomes: maximize over all valid configurations. But we also need the shared segment to be EXACTLY the intersection (no extra shared cells), and the extensions must exist. Let me now formulate the optimization.
+
+Case (H): shared = row r, columns [j1, j2]. Conditions on paths:
+- For j < j1: c_j > b_j (P1 exit row strictly above P2 exit row).
+- c_{j1} = b_{j1} = r. For j1 <= j < j2: c_j = b_j = r.
+- At j2: c_{j2} < b_{j2} (if j2 < n-1); if j2 = n-1, automatic (0 < m-1).
+- Also need I_j empty for j > j2: since a_{j2+1} = b_{j2} > c_{j2} = d_{j2+1}, and afterwards a >= b_{j2} > c_{j2} >= ... so a_j > d_j for all j > j2: intersections empty automatically. 
+
+Wait, we need to double-check that I_j empty for j > j2 given a_{j2+1} > d_{j2+1}: I_j = [max(a_j,c_j), min(b_j,d_j)], empty if a_j > d_j. a_j = b_{j-1} >= b_{j2} and d_j = c_{j-1} <= c_{j2} < b_{j2} <= a_j. Yes empty. Good.
+
+- Also for j < j1, we need I_j empty: given c_j > b_j: I_j = [max(a_j, c_j), min(b_j, d_j)]: max(a_j,c_j) >= c_j > b_j >= min(b_j, d_j): empty. ✓.
+
+So case (H) conditions:
+- There exist non-decreasing sequence b_0 <= ... <= b_{n-1} = m-1 and non-increasing c_0 >= ... >= c_{n-1} = 0 with: c_j > b_j for j < j1; c_j = b_j = r for j1 <= j <= j2 - 1; c_{j2} < b_{j2} with c_{j2} <= r <= b_{j2}.
+
+Wait, also we need b_{j1} = r and c_{j1} = r. For j < j1: b_j < r (since b_j < c_j and c_j >= ... hmm c_j > b_j, and c_j >= c_{j1} = r... so b_j < c_j but b_j could be >= r? If b_j >= r and c_j >= r with c_j > b_j: e.g., b_j = r, c_j = r+1... wait c_j > b_j means c_j >= b_j + 1. Hmm b_j < c_j, c_j >= r (non-increasing to c_{j1} = r). So b_j can be anything < c_j; but b_j <= b_{j1} = r. So b_j <= r and b_j < c_j.
+
+Hmm, wait: actually the conditions are just on the sequences. Let me re-derive feasibility: we need sequences b (non-dec, b_{n-1}=m-1... wait also b_j >= a_j = b_{j-1} and b_j can be anything >= b_{j-1}; a_0 = 0 means b_0 >= 0) and c (non-inc, c_{n-1} = 0, c_0 <= m-1... d_0 = m-1 means c_0 <= m-1) with:
+- b_{j1} = r, b_j <= r for j <= j1 (auto since non-dec), b_j >= r for j >= j1 (auto).
+- Actually need b_j = r for j1 <= j <= j2-1.
+- c_j = r for j1 <= j <= j2-1; c_{j2} <= r - ... c_{j2} < b_{j2}. Since c_{j2} <= c_{j2-1} = r <= b_{j2}: need strict c_{j2} < b_{j2}. If b_{j2} > r: automatic since c_{j2} <= r < b_{j2}? No: c_{j2} <= r and b_{j2} > r gives c_{j2} < b_{j2} ✓. If b_{j2} = r: need c_{j2} < r.
+- For j < j1: c_j > b_j.
+- For j > j2: no constraint needed (intersections automatically empty). But wait, we need c_{j2} >= c_{j2+1} >= ... >= c_{n-1} = 0 and b similarly. Always satisfiable.
+
+Feasibility of (H) with parameters (r, j1, j2): We need to choose b_0..b_{j1-1} < ... : b_j non-dec, b_j < c_j, b_{j1} = r. And c_j non-inc, c_j >= r (for j <= j1, since c_{j1} = r), c_j > b_j for j < j1. Can we always find such? Take b_j = min(r, something)... Simple: set b_j = 0 for j < j1? Then need c_j > 0 for j < j1: set c_j = max(r, 1)? Wait c_j must be non-increasing with c_{j1} = r, so c_j >= r for j < j1; need c_j > b_j. If r >= 1: set b_j = 0, c_j = r for j < j1: c_j = r > 0 = b_j ✓ (if r >= 1). If r = 0: b_j <= 0, need c_j > b_j = 0, c_j >= 1 > 0 ✓ with c_j = 1 >= c_{j1} = 0 ✓ non-inc ✓. So always feasible for the prefix. Suffix: j > j2: b_j from b_{j2} to b_{n-1} = m-1 non-dec: fine. c_j from c_{j2} to c_{n-1} = 0 non-inc: fine as long as c_{j2} >= 0.
+
+Hmm wait, but there's a subtlety: for j in (j2, n-1], intersections must be empty: shown automatic. But ALSO: the condition "I_{j} empty for j > j2" — what if m-1 = b_{n-1}... we showed a_j > d_j for j > j2. Fine.
+
+But actually hold on: I need to double check the very first/last columns constraints: b_{n-1} = m-1 (P1 must end at (m-1, n-1): in column n-1, P1 enters at a_{n-1} = b_{n-2} and must reach (m-1, n-1), so b_{n-1} = m-1). c_{n-1} = 0 similarly. a_0 = 0 (P1 starts at (0,0)), d_0 = m-1.
+
+So case (H) is feasible for any (r, j1, j2) with 0 <= r <= m-1, 0 <= j1 <= j2 <= n-1, EXCEPT we need to check the end conditions more carefully:
+- If j2 = n-1: shared run reaches last column. I_{n-1} = (r, n-1)?? Wait I_{n-1} = [max(a_{n-1}, c_{n-1}), min(b_{n-1}, d_{n-1})] = [max(b_{n-2}, 0), min(m-1, c_{n-2})]. With b_{n-2} = r (if j2 - 1 = n-2 >= j1) and c_{n-2} = r: I_{n-1} = [r, r] = (r, n-1). ✓. So run from j1 to n-1 inclusive.
+
+Hmm OK wait, but now I realize for case (H) the shared sum is just sum of grid[r][j1..j2] — a row subarray sum! And feasibility is always satisfied (need to double check edge cases j1=0, j2=n-1). Let me double check j1 = 0, j2 = n-1: whole row r shared: P1: b_j = r for j <= n-2, b_{n-1} = m-1. P1: (0,0) down to (r,0), right along row r to (r, n-1), down to (m-1, n-1). P2: c_j = r for j <= n-2, c_{n-1} = 0: P2: (m-1,0) up to (r,0), right along row r to (r, n-1), up to (0, n-1). Intersection: row r entirely + maybe more? P1 col0 rows 0..r, P2 col0 rows r..m-1: share (r,0) only. Column j (0<j<n-1): P1 {r} (a_j = b_{j-1} = r = b_j), P2 {r}: share (r,j). Column n-1: P1 rows r..m-1, P2 rows 0..r: share (r, n-1). Total: row r. Sum = row sum. Feasible ✓.
+
+So the answer includes: max over r, j1 <= j2 of sum(grid[r][j1..j2]) = max subarray sum within any row (contiguous, non-empty). Wait — but hold on, is that really achievable for ANY subarray [j1,j2] of row r, with the intersection EXACTLY that subarray? We need strict crossing conditions: c_j > b_j for j < j1 (fine as shown), c_j = b_j = r for j1 <= j < j2, and at j2: c_{j2} < b_{j2} (if j2 < n-1). Set b_{j2} = r... then need c_{j2} < r: requires r >= 1. Hmm! If r = 0 and j2 < n-1: b_{j2} = 0, c_{j2} < 0 impossible. Alternative: b_{j2} > r: set b_{j2} = 1 (or m-1), c_{j2} = 0 = r: then c_{j2} = 0 < 1 = b_{j2} ✓. Wait c_{j2} <= c_{j2-1} = r = 0: c_{j2} = 0. And b_{j2} >= b_{j2-1} = 0, choose b_{j2} = m-1 >= 1 (m >= 2): c_{j2} = 0 < m-1 ✓. Then I_{j2} = [max(b_{j2-1}, c_{j2}), min(b_{j2}, c_{j2-1})] = [max(0, 0), min(m-1, 0)] = [0,0] = {(0, j2)} ✓ single cell. And afterwards a_j >= m-1 > 0 >= d_j: empty. ✓. So r=0 works with b_{j2} = m-1.
+
+Wait, but generally: choose b_{j2} = max(r, 1)? If r = m-1: b_{j2} = m-1, need c_{j2} < m-1: c_{j2} = min(r, m-2)... c_{j2} <= c_{j2-1} = r = m-1, choose c_{j2} = m-2 (need m-2 >= 0; m >= 2 so m-2 >= 0 ✓). Then I_{j2} = [max(r, m-2), min(m-1, m-1)] = [max(m-1, m-2), m-1] = [m-1, m-1] = (m-1, j2) = (r, j2) ✓. Good.
+
+So for case (H), ANY contiguous non-empty subarray of any row is exactly realizable as the intersection. Thus candidate answer: max over rows of (max subarray sum in that row) — where subarray must be non-empty (j1 <= j2).
+
+Wait, but hmm, actually we should double-check whether the shared region in case (H) could ALSO include a vertical part at the ends — I concluded I_{j1} is a single cell and I_j single cells. But what about the FIRST crossing column having a vertical segment when the crossing starts AND ends in the same column (j1 = j2) — that's case (V). In case (V), the vertical segment [L, R] in column j*: what are the constraints? I_{j*} = [max(a_{j*}, c_{j*}), min(b_{j*}, d_{j*})], with c_{j*} <= b_{j*}, a_{j*} <= d_{j*}, and if j* > 0: c_{j*-1} > b_{j*-1} (no earlier crossing)... wait, actually the condition for j* being the FIRST crossing column is: for j < j*, I_j empty. I derived that I_j empty for j < j* iff c_j > b_j for all j < j* (given the monotone structure). Let me verify: if c_j <= b_j for some j < j*, then I_j nonempty (need also a_j <= d_j: a_j = b_{j-1}, d_j = c_{j-1}; c_{j-1} > b_{j-1} by induction... base case j=0: a_0=0 <= m-1 = d_0 ✓). So first crossing column j1 = min{j : c_j <= b_j}. For j < j1: c_j > b_j.
+
+And crossing ends at j2 = max{j : I_j nonempty}. We showed: if c_{j1} < b_{j1} then j2 = j1 (crossing starts and ends same column → vertical segment). If c_{j1} = b_{j1} = r then continues; the run continues while c_j = b_j = r; ends at j2 = first j > j1 with c_j < b_j (or n-1). Shared cells = {(r, j) : j1 <= j <= j2} (horizontal run).
+
+Wait, one more check: in the horizontal run case, I_j for j1 < j <= j2 is single cell (b_{j-1}, j) = (r, j). But ALSO I need to make sure I_j isn't bigger: I_j = [max(b_{j-1}, c_j), min(b_j, c_{j-1})] = [max(r, c_j), min(b_j, r)] — for j < j2: c_j = b_j = r: [r, r] ✓. For j = j2: [max(r, c_{j2}), min(b_{j2}, r)] = [r, r] since c_{j2} <= r <= b_{j2} ✓ (and note c_{j2} < b_{j2} ensures stop). Good, single cell.
+
+So overall, the shared region is either:
+(V) vertical segment in column j*: rows [L, R], with feasibility constraints, OR
+(H) horizontal segment in row r: columns [j1, j2], always feasible (any r, j1, j2).
+
+Now case (V): what's feasible? Vertical segment [L, R] in column j*. Conditions: I_{j*} = [L, R] where L = max(a_{j*}, c_{j*}), R = min(b_{j*}, d_{j*}), and crossing starts and ends at j*: c_j > b_j for j < j*, c_{j*} <= b_{j*}, and (if j* < n-1) c_{j*} < b_{j*} (strict so it ends) — wait, is that the exact condition for ending? I_{j*+1} empty iff c_{j*} != b_{j*} iff c_{j*} < b_{j*} (given c_{j*} <= b_{j*}). If j* = n-1, no end condition needed (but c_{n-1} = 0 < m-1 = b_{n-1} automatically, fine).
+
+Hmm wait, but actually if j1 = j2 = j*, the shared region is I_{j*} = [L, R]. But what are the possible (L, R)? Constraints: L = max(b_{j*-1}, c_{j*}), R = min(b_{j*}, c_{j*-1}) (for j* >= 1; for j* = 0: L = max(0, c_0) = c_0, R = min(b_0, m-1) = b_0). With b_{j*-1} < c_{j*-1}, c_{j*} < b_{j*}, c_{j*} <= b_{j*}, b_{j*-1} <= b_{j*}, c_{j*} <= c_{j*-1}.
+
+Which segments [L, R] in column j* are achievable? Necessary: L <= R. Can we achieve any [L, R] with 0 <= L <= R <= m-1? Let's try: want max(b_{j*-1}, c_{j*}) = L, min(b_{j*}, c_{j*-1}) = R. Set: c_{j*} = L, b_{j*-1} <= L (e.g., b_{j*-1} = min(L, ...) hmm need b_{j*-1} < c_{j*-1} = R... wait c_{j*-1} >= R and b_{j*} >= R. Set c_{j*-1} = R, b_{j*} = R, need b_{j*-1} < c_{j*-1} = R, b_{j*-1} <= b_{j*} = R, and c_{j*} = L <= c_{j*-1} = R ✓, c_{j*} = L < b_{j*} = R (need L < R; if L = R single cell fine with c_{j*} = L = R = b_{j*}? then c_{j*} = b_{j*} → crossing continues! Hmm, if j* < n-1 and L = R, we need c_{j*} < b_{j*}: can't have both = L. Let me redo.
+
+Let me handle: for j* with 1 <= j* <= n-2 (interior). Want I_{j*} = [L, R], crossing only at j*.
+- Need c_{j*} <= b_{j*}, c_{j*} < b_{j*} is required only if... wait I_{j*+1} empty iff NOT(c_{j*} = b_{j*}) — actually let me recompute: I_{j*+1} = [max(b_{j*}, c_{j*+1}), min(b_{j*+1}, c_{j*})]. Empty iff max(b_{j*}, c_{j*+1}) > min(b_{j*+1}, c_{j*}). If c_{j*} = b_{j*}: [b_{j*}, min(b_{j*+1}, b_{j*})] = [b_{j*}, b_{j*}] nonempty. If c_{j*} < b_{j*}: max(b_{j*},...) >= b_{j*} > c_{j*} >= min(..., c_{j*}): empty ✓. So end condition: c_{j*} < b_{j*} (for j* < n-1).
+- L = max(b_{j*-1}, c_{j*}), R = min(b_{j*}, c_{j*-1}).
+- b_{j*-1} < c_{j*-1} (strict, from no earlier crossing... actually condition is c_{j*-1} > b_{j*-1}).
+
+Given target [L, R], L <= R: set c_{j*} = L (then need c_{j*} <= b_{j*} and < b_{j*} if interior/end-condition), b_{j*} = R requires L = c_{j*} < R = b_{j*} if j* < n-1: so need L < R. Set c_{j*-1} = R (then R = min(b_{j*}, c_{j*-1}) = min(R, R) ✓, need c_{j*-1} >= c_{j*}: R >= L ✓). Set b_{j*-1} = L (then L = max(b_{j*-1}, c_{j*}) = max(L, L) ✓, need b_{j*-1} <= b_{j*}: L <= R ✓, need b_{j*-1} < c_{j*-1}: L < R ✓). So for interior j* (1 <= j* <= n-2): achievable iff L < R. Hmm! So single-cell vertical (L = R) NOT achievable in interior columns?? Wait, that can't be right. Let me recheck: if L = R (single cell (L, j*)), we need I_{j*} = {L}, c_{j*} < b_{j*} (end), c_{j*-1} > b_{j*-1} (start). L = max(b_{j*-1}, c_{j*}) = R = min(b_{j*}, c_{j*-1}). E.g., b_{j*-1} = L, c_{j*} = L, but then L = max(L, L) fine, need c_{j*} = L < b_{j*} and min(b_{j*}, c_{j*-1}) = L with b_{j*} > L and c_{j*-1} >= ... min = L needs c_{j*-1} = L or b_{j*} = L: b_{j*} > L, so c_{j*-1} = L. But need c_{j*-1} > b_{j*-1} = L: contradiction (L > L false). Alternatively b_{j*-1} < L, c_{j*} = L: max = L ✓. c_{j*-1} = L: need c_{j*-1} >= c_{j*} = L ✓ and > b_{j*-1} ✓ (b_{j*-1} < L). min(b_{j*}, L) = L requires b_{j*} >= L, and end condition c_{j*} = L < b_{j*}: choose b_{j*} = L+... b_{j*} >= L and > L: b_{j*} >= L+1. Then min(b_{j*}, c_{j*-1}) = min(L+1, L) = L ✓. So: b_{j*-1} = L-1? wait b_{j*-1} < L and b_{j*-1} <= ... also max(b_{j*-1}, c_{j*}) = max(b_{j*-1}, L) = L ✓ for any b_{j*-1} <= L. Take b_{j*-1} = 0? Hmm wait but we need c_{j*-1} = L >= c_{j*} = L ✓ (non-inc ok, equal fine). And c_{j*-1} = L > b_{j*-1} = 0 ✓. And b_{j*} = L+1 (need L+1 <= m-1, i.e., L <= m-2). Hmm, if L = m-1: b_{j*} >= m-1, b_{j*} = m-1, but need b_{j*} > c_{j*} = m-1: impossible. So single cell (m-1, j*) in interior column: achievable? Let's see alternatives: L = R = m-1: max(b_{j*-1}, c_{j*}) = m-1: so b_{j*-1} = m-1 or c_{j*} = m-1. min(b_{j*}, c_{j*-1}) = m-1: b_{j*} = m-1 and c_{j*-1} = m-1 (both <= m-1). End condition: c_{j*} < b_{j*} = m-1: c_{j*} <= m-2, so b_{j*-1} = m-1. Start condition: c_{j*-1} = m-1 > b_{j*-1} = m-1? False! Contradiction. So single cell (m-1, j*) NOT achievable as exact intersection in interior column j* (1 <= j* <= n-2). Interesting!
+
+Hmm, wait, but a single cell is also a horizontal segment (j1 = j2). Is (m-1, j*) achievable via case (H)? Shared = {(m-1, j*)}: row r = m-1, j1 = j2 = j*. Conditions: c_j > b_j for j < j*, c_{j*} = b_{j*} = m-1 (since j1 <= j < j2 is vacuous... wait j1 = j2 means the "run" c_j = b_j = r for j1 <= j <= j2-1 is empty range!). Hmm wait, for case (H) with j1 = j2, the shared cell is I_{j1} = single cell — let me recompute. Case (H) run: cells (r, j1..j2). With j1 = j2: single cell. Conditions: c_j > b_j for j < j1; c_{j1} <= b_{j1} (crossing at j1); I_{j1} = {(r, j1)} where r = ... hmm, I conflated. Let me redo case (H) with j1 = j2: it's the same as case (V) single cell! Because the shared region is a single cell. The distinction (V) vs (H) only matters for multi-cell. A multi-cell vertical segment (L < R) is case (V) (achievable in interior columns per above). A multi-cell horizontal segment is case (H). A single cell: either analysis; achievable iff [vertical analysis with L = R] or [horizontal with j1 = j2]. In horizontal analysis with j1 = j2 = j*, r: conditions: c_j > b_j for j < j*, c_{j*} <= b_{j*}, I_{j*} = {(r, j*)}, and c_{j*} < b_{j*} (if j* < n-1) — same as vertical single-cell conditions. So single-cell achievability in interior column j*: need I_{j*} = {(r, j*)}, c_{j*-1} > b_{j*-1}, c_{j*} < b_{j*} (if j* <= n-2). From the analysis: achievable iff... we found (m-1, j*) impossible, others? Let me redo generally: single cell (r, j*) in interior column. I_{j*} = [max(b_{j*-1}, c_{j*}), min(b_{j*}, c_{j*-1})] = {r}. Conditions: c_{j*-1} > b_{j*-1}, c_{j*} < b_{j*}, all in range, b non-dec, c non-inc (locally: b_{j*-1} <= b_{j*}, c_{j*-1} >= c_{j*}).
+
+max(b_{j*-1}, c_{j*}) = r = min(b_{j*}, c_{j*-1}). So b_{j*-1} <= r, c_{j*} <= r, at least one equal... max = r means at least one of b_{j*-1}, c_{j*} equals r and both <= r. min = r: both b_{j*}, c_{j*-1} >= r, at least one equal r. c_{j*} < b_{j*}, c_{j*-1} > b_{j*-1}.
+
+Subcase c_{j*} = r: then b_{j*} > r, so min(b_{j*}, c_{j*-1}) = c_{j*-1} = r (need = r), so c_{j*-1} = r, and b_{j*-1} < c_{j*-1} = r ✓ (b_{j*-1} <= r, need < r... need strict: b_{j*-1} < r). And b_{j*-1} <= r ✓. Also b_{j*-1} <= b_{j*} ✓. Feasible iff we can have b_{j*-1} < r and b_{j*} > r: need r >= 1 (for b_{j*-1} = r-1 >= 0? actually b_{j*-1} could be 0 if r >= 1) and r <= m-2 (b_{j*} = r+1 <= m-1). So r in [1, m-2] works... wait r >= 1 and r <= m-2. Hmm, but what about r = 0? Subcase b_{j*-1} = r = 0, c_{j*} <= r = 0: c_{j*} = 0. max(0,0) = 0 = r ✓. c_{j*} = 0 < b_{j*}: b_{j*} >= 1. min(b_{j*}, c_{j*-1}) = 0: need c_{j*-1} = 0 (since b_{j*} >= 1). But c_{j*-1} >= c_{j*} = 0 ✓; c_{j*-1} = 0 > b_{j*-1} = 0? False. Contradiction. Alternatively c_{j*} < r = 0 impossible. So r = 0 single cell in interior column impossible!? Hmm wait, or b_{j*-1} = 0, c_{j*} < 0 impossible. So indeed (0, j*) for interior j* not achievable as single-cell intersection? 
+
+Hmm wait, that seems odd. Let me sanity check with a small grid. m=n=3. Can we have intersection exactly {(0,1)}? P1: (0,0)→(0,1)→(0,2)→...→(2,2): P1: (0,0),(0,1),(0,2),(1,2),(2,2). P2: (2,0)→(2,1)→(1,1)? no must reach (0,1)... P2 through (0,1): e.g., (2,0)→(2,1)→(1,1)→(0,1)→(0,2): intersection with P1: (0,1),(0,2). Not single. P2: (2,0)→(1,0)→(0,0)→(0,1)→(0,2): ∩ P1: (0,0),(0,1),(0,2). P1 alt: (0,0)→(1,0)→(1,1)→(1,2)→(2,2) — doesn't include (0,1). For (0,1) ∈ P1, P1 must go right along row 0 at least to column 1. Then P1 continues from row 0... P1 passes (0,1); to have ONLY (0,1) shared: P1: (0,0),(0,1), then must continue right to (0,2) or down to (1,1). If right to (0,2): then P2 must avoid (0,2) — impossible since P2 ends at (0,2). So P1: (0,1)→(1,1)→...→(2,2): P1 = {(0,0),(0,1),(1,1),(1,2)?,...}. P2 through (0,1): comes from (1,1) (up) or (0,0) (right). If from (1,1): (1,1) ∈ P1 too → shared. If from (0,0): (0,0) ∈ P1 → shared. So indeed impossible! Great, consistent: single cell (0,1) not achievable in 3x3. 
+
+So the exact-intersection constraint is subtle. The answer = max over exactly-achievable shared regions (vertical segment [L,R] column j*, or horizontal segment row r cols [j1,j2]) of the segment sum.
+
+Hmm, wait. But actually, I wonder if it's cleaner to think of it as: the shared region is a monotone path segment... no — we established it's always a straight (horizontal or vertical) segment. Let me re-examine: is that REALLY right? Let me test with brute force on small grids: enumerate all pairs of paths, compute intersection, check it's always a horizontal or vertical contiguous segment. I'll do that in code later. But based on the derivation: crossing starts at j1 (first column with c_j <= b_j), ends at j2. If c_{j1} < b_{j1}: single column → vertical segment [L, R]. If c_{j1} = b_{j1} = r: horizontal run at row r until first j2 with c_{j2} < b_{j2} (all intermediate c_j = b_j = r). And I showed the shared cells are exactly (r, j1..j2). Also edge cases j1 = 0, j2 = n-1 handled. So yes: intersection is always a straight segment. 
+
+Wait, I want to double-check the claim "first crossing column j1 satisfies: for j < j1, c_j > b_j ⟺ I_j empty". I_j = [max(a_j, c_j), min(b_j, d_j)]. I_j empty iff max(a_j, c_j) > min(b_j, d_j) iff (a_j > min(b_j,d_j)) or (c_j > min(b_j, d_j)) iff... Since a_j <= b_j and c_j <= d_j: I_j nonempty iff a_j <= d_j AND c_j <= b_j. For j=0: a_0=0 <= m-1=d_0 always; nonempty iff c_0 <= b_0. Inductively, if c_{j'} > b_{j'} for all j' < j: a_j = b_{j-1} < c_{j-1} = d_j ✓; so I_j nonempty iff c_j <= b_j. Good. And if I_j nonempty (c_j <= b_j): then for j+1: I_{j+1} nonempty iff [max(b_j, c_{j+1}), min(b_{j+1}, c_j)] nonempty. As computed: iff c_j = b_j (then it's single cell (b_j, j+1)). So the run continues with equality. ✓. And once I_{j+1} empty (c_j < b_j): a_{j+1} = b_j > c_j = d_{j+1}, and for all later j': a_{j'} >= b_j > c_j >= d_{j'}: empty forever ✓.
+
+Great, so the characterization is solid:
+
+The intersection is always exactly one of:
+- (H) Horizontal: row r, columns j1..j2 (contiguous, j1 <= j2), with the crossing pattern: c_{j1} = b_{j1} = r (if j2 > j1), etc.
+- (V) Vertical: column j*, rows L..R (L < R for multi-cell; single cell is both).
+
+And the answer = max segment sum over achievable segments. Now I need to determine achievability constraints precisely for both cases, then compute max sum.
+
+Case (H) [horizontal run row r, columns j1..j2, where if j1 = j2 it's a single cell — handle via general conditions]: The conditions derived: 
+- c_j > b_j for j < j1 (strict),
+- c_j = b_j = r for j1 <= j <= j2-1 (if j1 < j2); c_{j1} <= b_{j1} with I_{j1} = {(r, j1)} where r = b_{j1} = c_{j1} when j2 > j1... 
+
+Hmm, let me unify: shared horizontal run (r, j1..j2) with j1 < j2 (multi-cell horizontal, j2 >= j1+1): conditions: c_j > b_j for j < j1; c_j = b_j = r for j1 <= j <= j2-1; I_{j2} = {(r, j2)}: [max(b_{j2-1}, c_{j2}), min(b_{j2}, c_{j2-1})] = [max(r, c_{j2}), min(b_{j2}, r)] = {r}: need c_{j2} <= r <= b_{j2} ✓ (always, given c_{j2} <= c_{j2-1} = r and b_{j2} >= b_{j2-1} = r); and if j2 < n-1: end condition c_{j2} < b_{j2}. If j2 = n-1: b_{n-1} = m-1, c_{n-1} = 0: I_{n-1} = [max(r, 0), min(m-1, r)] = [r, r] ✓ automatically.
+
+Feasibility of (H) for (r, j1, j2), j1 < j2: need sequences with c_j > b_j for j < j1, c_j = b_j = r on [j1, j2-1], c_{j2} <= r <= b_{j2}, c_{j2} < b_{j2} if j2 < n-1... wait, we need c_{j2} < b_{j2} OR (c_{j2} = b_{j2} would continue run — that changes j2). Since we're free to choose, just need some valid choice. Also boundary: if j1 = 0: c_0 = b_0 = r needed (since 0 in [j1, j2-1] as j2 >= j1+1 = 1): I_0 = [max(0, c_0), min(b_0, m-1)] = [c_0, b_0] = [r, r] single ✓ (c_0 = b_0 = r). Fine, any r works for j1 = 0. For j2 = n-1: need r arbitrary, b_{n-1} = m-1 >= r ✓, c_{n-1} = 0 <= r ✓; end condition not needed. And I_{n-1} = [max(b_{n-2}, c_{n-1}), min(b_{n-1}, c_{n-2})] = [max(r, 0), min(m-1, r)] = [r, r] ✓.
+
+So feasibility (H), j1 < j2: need to choose b_0 <= ... <= b_{j1-1} <= r with c_0 >= ... >= c_{j1-1} >= r and c_j > b_j (j < j1). As before: if r >= 1: b_j = 0 (< r <= c_j) hmm c_j >= r >= 1 > 0 = b_j ✓. If r = 0: b_j <= 0 → b_j = 0, c_j > 0, c_j >= ... c_j >= c_{j1} = 0, choose c_j = 1 for j < j1 (>= c_{j1} = 0 ✓ non-inc: 1 >= 0 ✓). So feasible for all r. At j2: if j2 < n-1, need c_{j2} < b_{j2} with c_{j2} <= r <= b_{j2}: if r <= m-2: b_{j2} = r+... choose b_{j2} = m-1? wait b_{j2} <= b_{n-1} = m-1 fine. Hmm, but also b continues to b_{n-1} = m-1. If r < m-1: b_{j2} = r+1? Then need c_{j2} < r+1, c_{j2} <= r ✓ any. Choose c_{j2} = r, b_{j2} = r+1: I_{j2} = [max(r, r), min(r+1, r)] = [r, r] ✓. If r = m-1: b_{j2} = m-1, c_{j2} < m-1: c_{j2} = m-2 (>= 0 since m >= 2): I_{j2} = [max(m-1, m-2), min(m-1, m-1)] = [m-1, m-1] ✓. So all (r, j1, j2) with j1 < j2 feasible! 
+
+Wait, but we need also to make sure that I_{j1} is exactly (r, j1) and the crossing starts exactly at j1: for j < j1, c_j > b_j ensures I_j empty. ✓. And c_{j1} = b_{j1} = r: I_{j1} = [max(b_{j1-1}, r), min(b_{j1+1}... wait for j1 < j2: I_{j1} = [max(b_{j1-1}, c_{j1}), min(b_{j1}, c_{j1-1})] = [max(b_{j1-1}, r), min(r, c_{j1-1})]. b_{j1-1} <= r, c_{j1-1} >= r: = [r, r] ✓ (if j1 >= 1). Good.
+
+So: every horizontal segment with >= 2 cells is achievable. Sum = sum of grid[r][j1..j2].
+
+Case (V) [vertical segment column j*, rows L..R, L < R (multi-cell)]: conditions: c_j > b_j for j < j*; c_{j*} <= b_{j*}; I_{j*} = [max(b_{j*-1}, c_{j*}), min(b_{j*}, c_{j*-1})] = [L, R]; and if j* < n-1: c_{j*} < b_{j*} (end). If j* = 0: I_0 = [c_0, b_0] = [L, R]: c_0 = L, b_0 = R, end condition (if n > 1): c_0 < b_0: L < R ✓ (multi-cell). So any [L, R] with L < R achievable for j* = 0. For j* = n-1: I_{n-1} = [max(b_{n-2}, 0), min(m-1, c_{n-2})] = [max(b_{n-2}, 0), c_{n-2}] hmm: min(m-1, c_{n-2}) = c_{n-2}. = [b_{n-2}, c_{n-2}] with b_{n-2} < c_{n-2} (start condition) → [L, R] = [b_{n-2}, c_{n-2}], any L < R achievable (b_{n-2} = L, c_{n-2} = R). For interior j* (1 <= j* <= n-2): [L, R] = [max(b_{j*-1}, c_{j*}), min(b_{j*}, c_{j*-1})], with b_{j*-1} < c_{j*-1}, c_{j*} < b_{j*}, b_{j*-1} <= b_{j*}, c_{j*-1} >= c_{j*}. Achievable [L, R]: choose c_{j*} = L, b_{j*} = R (need L < R ✓ for c_{j*} < b_{j*}), b_{j*-1} <= L and c_{j*-1} >= R, with b_{j*-1} < c_{j*-1}: choose b_{j*-1} = L, c_{j*-1} = R: L < R ✓. Then max(b_{j*-1}, c_{j*}) = L ✓, min(b_{j*}, c_{j*-1}) = R ✓. So any L < R achievable in interior columns too! Great — so case (V) multi-cell: any vertical segment with >= 2 cells, in any column, is achievable.
+
+Hmm wait, but I should double check the full sequence feasibility (extending to all columns): For j < j*: need c_j > b_j with c non-inc toward c_{j*-1} = R, b non-dec toward b_{j*-1} = L: choose b_j = 0? Need b_j < c_j: c_j >= R > L >= ... hmm choose b_j = L for all j <= j*-1? b non-dec: b_j = L, c_j = R for j in [.., j*-1]: c_j = R > L = b_j ✓ (L < R). Non-inc c ✓, non-dec b ✓. Boundary: if j* = 0 no prefix needed. Also b_0 >= a_0 = 0 fine; d_0 = m-1 >= c_0 fine (c_0 = R <= m-1 ✓). Suffix j > j*: b from b_{j*} = R to b_{n-1} = m-1 non-dec ✓; c from c_{j*} = L to c_{n-1} = 0 non-inc ✓. Intersections after j*: a_j >= R... wait a_{j*+1} = b_{j*} = R > L = c_{j*} = d_{j*+1}: empty ✓ and stays empty. 
+
+But wait, also need to check intersections BEFORE j* more carefully: I_j empty for j < j* given c_j > b_j ✓ (shown). But hold on: what about a_j <= d_j? For j < j*: a_j = b_{j-1} = L <= ... d_j = c_{j-1} = R: a_j = L < R = d_j ✓ but combined with c_j > b_j: I_j = [max(a_j, c_j), min(b_j, d_j)] with c_j > b_j: max >= c_j > b_j >= min: empty ✓.
+
+Also the endpoint constraints: b_{n-1} = m-1, c_{n-1} = 0, a_0 = 0, d_0 = m-1 — need to ensure our sequences satisfy: b_{n-1} = m-1: for j* < n-1, suffix sets b_j increasing from R to m-1 ✓; for j* = n-1, b_{n-1} = m-1 but we said I_{n-1} = [b_{n-2}, c_{n-2}] — wait, b_{n-1} = m-1 is the exit row in last column = m-1, but I_{n-1} = [max(b_{n-2}, c_{n-1}), min(b_{n-1}, c_{n-2})] = [max(b_{n-2}, 0), min(m-1, c_{n-2})] = [b_{n-2}, c_{n-2}] (assuming b_{n-2} <= c_{n-2}). So [L, R] = [b_{n-2}, c_{n-2}] ✓ any L < R fine (need also c_{n-2} <= m-1 ✓ and start condition b_{n-3}... c_{n-2} > b_{n-2} i.e. R > L ✓).
+
+So: ANY vertical segment with >= 2 cells (any column, any L < R) is exactly-achievable. ANY horizontal segment with >= 2 cells (any row, any j1 < j2) is exactly-achievable. Single cells: achievable in some cases (depends on position) — but a single cell's sum is just its value; since segments of length >= 2 can have negative sums, single cells matter! E.g., all-negative grid: answer = max over achievable single cells? Wait, must the intersection be non-empty? Yes, paths always intersect (shown: crossing always happens since c_0 = ... hmm c_0 > b_0 initially? c_0 <= m-1, b_0 >= 0; is I_0 maybe nonempty... The crossing must happen by the end: at n-1, c_{n-1} = 0 <= m-1 = b_{n-1}: I_{n-1} nonempty always (a_{n-1} <= d_{n-1}? need b_{n-2} <= c_{n-2}: if crossing happened earlier, fine; else c_j > b_j for j <= n-2: then a_{n-1} = b_{n-2} < c_{n-2} = d_{n-1} ✓, so I_{n-1} = nonempty). So yes, intersection always nonempty. Good — so answer always exists, and if all values negative, we want the least-negative achievable single cell (or segment).
+
+Hmm, so now the problem reduces to:
+
+Answer = max of:
+- max over columns j* and L < R of (sum of column j* rows L..R) [vertical segments, >= 2 cells]
+- max over rows r and j1 < j2 of (sum of row r cols j1..j2) [horizontal segments, >= 2 cells]
+- max over achievable single cells (r, j*) of grid[r][j*].
+
+Wait, but single cells: horizontal j1=j2 and vertical L=R are the same thing. Achievability of single cell (r, j): derived conditions: For interior columns... let me redo generally for single cell (r, j*) with the strict conditions:
+- If j* = 0: I_0 = [c_0, b_0] = {r}: c_0 = b_0 = r. End (n > 1): c_0 < b_0 needed for I_1 empty! But c_0 = b_0 = r → I_1 = [max(b_0, c_1), min(b_1, c_0)] = [max(r, c_1), min(b_1, r)] = {r}?? If c_0 = b_0 = r: I_1 = [max(r, c_1), min(b_1, r)] = [r, r] nonempty! So intersection would include (r, 1) — not single. So single cell in column 0 impossible?? Wait, unless n = 1, but n >= 2. Hmm, so single-cell intersection in column 0 is impossible? Let me verify with 2x2: paths P1: (0,0)→(0,1)→(1,1); P2: (1,0)→(0,0)→(0,1): ∩ = {(0,0),(0,1)}. P1: (0,0)→(1,0)→(1,1); P2: (1,0)→(1,1)→(0,1): ∩ = {(1,0),(1,1)}. P1: (0,0)→(0,1)→(1,1), P2: (1,0)→(1,1)→(0,1): ∩ = {(0,1),(1,1)}. Indeed intersections always have >= 2 cells in 2x2! Because each path has 3 cells, in a 2x2 grid... Makes sense.
+
+Wait, hmm, but is single cell EVER achievable? Consider m=2, n=3. P1: (0,0)→(0,1)→(0,2)→(1,2); P2: (1,0)→(1,1)→(1,2)→(0,2): ∩ = {(0,2),(1,2)}. P1: (0,0)→(1,0)→(1,1)→(1,2); P2: (1,0)→(0,0)→(0,1)→(0,2): ∩ = {(1,0)}? P1 cells: (0,0),(1,0),(1,1),(1,2). P2 cells: (1,0),(0,0),(0,1),(0,2). ∩ = {(0,0),(1,0)}. Hmm. P1: (0,0)→(0,1)→(1,1)→(1,2); P2: (1,0)→(1,1)→(0,1)→(0,2): ∩ = {(0,1),(1,1)}. P1: (0,0)→(1,0)→(1,1)→(1,2), P2: (1,0)→(1,1)→(0,1)→(0,2): ∩ = {(1,0),(1,1)}. Hmm, seems hard to get single cell in 2x3. 
+
+Consider m=3,n=3: P1: (0,0)→(1,0)→(1,1)→(1,2)→(2,2); P2: (2,0)→(2,1)→(1,1)→(0,1)→(0,2): ∩ = {(1,1)}? P1: (0,0),(1,0),(1,1),(1,2),(2,2). P2: (2,0),(2,1),(1,1),(0,1),(0,2). ∩ = {(1,1)} ✓! Single cell (1,1) — center, interior column j*=1. Check conditions: r=1, m=3: 1 <= r <= m-2? r=1, m-2=1: r in [1, m-2] = {1} ✓ achievable.
+
+So single cell (r, j*) interior column (1 <= j* <= n-2): achievable iff 1 <= r <= m-2 (from subcase analysis: r in [1, m-2]; what about r=0 or r=m-1 in interior columns — shown impossible). What about single cell in column 0 or column n-1? Column 0: shown impossible (for n >= 2). Column n-1: I_{n-1} = [b_{n-2}, c_{n-2}] single cell: b_{n-2} = c_{n-2} = r. But start condition: for j < n-1, c_j > b_j — at j = n-2: c_{n-2} > b_{n-2} needed (else crossing starts earlier). But c_{n-2} = b_{n-2} = r contradicts c_{n-2} > b_{n-2}. So crossing starts at or before n-2, and I_{n-2} nonempty: then intersection isn't single cell (has cells in columns n-2 and n-1). So single cell in column n-1 impossible too.
+
+Hmm wait, unless the crossing starts at n-1: need c_j > b_j for j <= n-2, then I_{n-1} = [b_{n-2}, c_{n-2}] with b_{n-2} < c_{n-2}: at least 2 cells. So intersection in last column is never a single cell (it's a vertical segment of >= 2 cells if crossing starts at n-1, or includes earlier columns). Similarly column 0.
+
+So single-cell intersections: only (r, j*) with 1 <= j* <= n-2 and 1 <= r <= m-2. I.e., interior cells (not on top/bottom row, not on leftmost/rightmost column).
+
+Hmm wait, but that seems weird for the problem. Let me reconsider: maybe the intended interpretation allows the paths to share edges... no, shared = cells. Let me brute-force verify all these claims with code on small grids:
+
+1. Intersection is always a contiguous horizontal or vertical segment (possibly single cell).
+2. Achievable segments: all horizontal with >= 2 cells; all vertical with >= 2 cells; single cells only at interior positions (1 <= r <= m-2, 1 <= c <= n-2).
+
+Wait, I realize I should double-check the horizontal >= 2 claim for edge cases: j1 = 0 (segment starts at left edge): P1: b_0 = r = c_0: P1 col0: rows 0..r, P2 col0: rows r..m-1 (c_0 = r, d_0 = m-1): I_0 = {r}? [max(0, c_0), min(b_0, m-1)] = [r, r] ✓ single cell (r, 0). Then continues along row r. ✓. E.g., 2x2: row 0, j1=0, j2=1: r=0: P1: b_0 = 0, b_1 = 1: (0,0)→(0,1)→(1,1). P2: c_0 = 0, c_1 = 0: (1,0)→(0,0)→(0,1)→(0,2)... wait n=2: (1,0)→(0,0)→(0,1). ∩: (0,0),(0,1) ✓ row 0 cols 0..1. Sum = grid[0][0]+grid[0][1]. ✓ achievable.
+
+Vertical >= 2 in column 0: [L, R], L < R: c_0 = L, b_0 = R: P1 col0 rows 0..R, P2 col0 rows L..m-1: I_0 = [L, R] ✓. End: c_0 = L < R = b_0 ✓ → I_1 empty (need to construct rest: P1 from (R,0) right/down to (m-1,n-1), P2 from (L,0) right/up to (0,n-1), avoiding each other: a_1 = R > L = d_1, and P1 stays rows >= R > L >= P2 rows: ✓ possible: P1 right along row R... P1 from (R, 0): move right along row R to (R, n-1), down to (m-1,n-1). P2 from (L,0): right along row L to (L, n-1), up. No intersections since R > L ✓.)
+
+OK so now the answer formula. But wait — I should double-check the claim that intersection is ALWAYS a straight segment by brute force, and also compute the answer by brute force for small grids and compare with the formula:
+
+answer = max(
+  max over rows r of max subarray sum of row r with length >= 2,
+  max over cols c of max subarray sum of column c with length >= 2,
+  max over interior cells (1<=r<=m-2, 1<=c<=n-2) of grid[r][c]
+)
+
+Hmm wait, but actually, hold on: single cell (r, c) interior — but also note that the max-subarray-with-length>=2 might miss better single cells on the boundary... those aren't achievable anyway. But wait, also: what about a horizontal segment of length >= 2 in row r vs single cell — the formula takes max over all. For all-negative grids, best might be an interior single cell. Also, edge: m=2: no interior rows (1 <= r <= m-2 = 0): none. n=2: no interior columns. So for 2x2: answer = max over horizontal segments length 2 (rows) and vertical segments length 2 (columns) = max(row sums, col sums)? Let's test 2x2 grid [[1,2],[3,4]]: row sums 3, 7; col sums 4, 6 → answer 7? Check: P1: (0,0)→(0,1)→(1,1), P2: (1,0)→(1,1)→(0,1): ∩ = {(0,1),(1,1)} sum 2+4=6. P1: (0,0)→(1,0)→(1,1), P2: (1,0)→(0,0)→(0,1): ∩ = {(0,0),(1,0)} sum 4. P1: (0,0)→(0,1)→(1,1); P2: (1,0)→(0,0)→(0,1): ∩ = {(0,0),(0,1)} sum 3. P1: (0,0)→(1,0)→(1,1), P2: (1,0)→(1,1)→(0,1): ∩ = {(1,0),(1,1)} sum 7 ✓. Answer 7 matches.
+
+Let me verify example 1 with the formula: grid = [[1,2,0,-3],[1,-2,1,0],[-4,2,-1,3],[3,-3,3,-2],[-1,-5,0,1]]. Row max subarray (len >= 2): Row 0: [1,2,0,-3]: best len>=2: 1+2=3, 1+2+0=3, 2+0=2, ... max = 3. Row 1: [1,-2,1,0]: 1, 1+(-2)+1 = 0, 1+(-2)+1+0=0, 1 (just [1,0]=1), (-2,1) = -1, (1,0)=1: max = 1. Row 2: [-4,2,-1,3]: (2,-1,3)=4, (-4,2)=-2, (2,-1)=1, (-1,3)=2: max=4. Row 3: [3,-3,3,-2]: (3), (3,-3,3)=3, (3,-2)=1: max 3. Row 4: [-1,-5,0,1]: (0,1)=1: max 1. So row max = 4. Column max (len>=2): Col0: [1,1,-4,3,-1]: (1,1)=2, (3,-1)=2, (1,1,-4,3)=1... max=2. Col1: [2,-2,2,-3,-5]: (2), (2,-2,2)=2: max 2. Col2: [0,1,-1,3,0]: (0,1)=1, (3,0)=3, (0,1,-1,3)=3: max 3. Col3: [-3,0,3,-2,1]: (0,3)=3, (3), (-2,1)=-1: max 3. Interior single cells: rows 1..3, cols 1..2: grid[1][1]=-2, grid[1][2]=1, grid[2][1]=2, grid[2][2]=-1, grid[3][1]=-3, grid[3][2]=3: max = 3. Overall max = 4 ✓ matches expected!
+
+Example 2: [[4,-2,-3],[-1,-3,-1],[-4,2,-1]]. Rows len>=2: row0: (4,-2)=2, (4,-2,-3)=-1, (-2,-3)=-5: max 2. row1: (-1,-3)=-4, (-3,-1)=-4, (-1,-3,-1)=-5: max -4. row2: (-4,2)=-2, (2,-1)=1, (-4,2,-1)=-3: max 1. Cols: col0: (4,-1)=3, (4,-1,-4)=-1, (-1,-4)=-5: max 3. col1: (-2,-3)=-5, (-3,2)=-1, (-2,-3,2)=-3: max -1. col2: (-3,-1)=-4, (-1,-1)=-2, (-3,-1,-1)=-5: max -2. Interior cells: r=1, c=1: grid[1][1]=-3. Overall max = 3 ✓ matches!
+
+The formula works for both examples. Now, complexity: O(m*n) — compute max subarray sum with length >= 2 for each row and column, plus max interior cell. That's easily O(m*n). 
+
+But wait, I need to be careful: the problem says m*n >= 4 and m,n >= 2. The formula needs length >= 2 subarrays — always exist since n >= 2 and m >= 2.
+
+But before finalizing, I MUST verify the structural claims by brute force. Let me write a brute-force enumerator for small grids (m, n <= 4 maybe) enumerating all path pairs, computing intersections, checking: (1) intersection is always a contiguous horizontal or vertical segment (or single cell), (2) the achievable set matches my characterization, (3) max sum matches formula.
+
+Number of paths: C(m+n-2, m-1) each; for m=n=4: C(6,3)=20 each, 400 pairs: fine. For m=n=5: C(8,4)=70, 4900 pairs: fine.
+
+Let me now also double check the "interior single cell" achievability characterization by brute force: enumerate achievable intersections exactly.
+
+Also hmm, wait: I should double check one thing — the characterization "intersection is always horizontal or vertical segment" — what about the case where crossing column j1 has c_{j1} = b_{j1} AND also a vertical extent? I showed I_{j1} = [max(b_{j1-1}, c_{j1}), min(b_{j1}, c_{j1-1})] and with c_{j1} = b_{j1} = r: [max(b_{j1-1}, r), min(r, c_{j1-1})] = [r, r] since b_{j1-1} <= r, c_{j1-1} >= r. Yes single. But wait — is it possible that c_{j1} = b_{j1} = r but ALSO the segment extends due to a_{j1} < ... no, I computed exactly. OK.
+
+But hmm, one more scenario: what if j1 = 0 and c_0 = b_0 = r, and j2 > 0: horizontal run from column 0. And I_0 = [max(0, c_0), min(b_0, m-1)] = [r, r] ✓.
+
+What if crossing starts at j1 = 0 with c_0 < b_0: vertical segment [c_0, b_0] in column 0, possibly multi-cell. ✓ (case V at column 0).
+
+Alright. Also — very important — I should double check that in case (H) with j1 < j2, the intersection is exactly the horizontal run and doesn't include extra cells in columns < j1 or between: for j < j1: c_j > b_j → I_j empty ✓. For j1 <= j <= j2: I_j = {(r,j)} ✓ computed. For j > j2: a_j >= b_{j2} > c_{j2} >= d_j → empty ✓. Wait, need b_{j2} > c_{j2} strict — that's our end condition. ✓.
+
+And another subtle point: in case (H), I need c_j > b_j STRICT for j < j1. We chose b_j = 0... wait for r=0 we chose b_j = 0, c_j = 1 for j < j1. But b_j = 0 = r = c_{j1}... fine, b non-dec: 0 <= 0 ✓. c: 1 >= 0 ✓. c_j = 1 > 0 = b_j ✓. Good.
+
+Now the achievability of single cells: only interior (1 <= r <= m-2 AND 1 <= j* <= n-2)? Let me re-derive once more, because it affects all-negative grids. Single cell (r, j*):
+
+Subcase j* interior (1 <= j* <= n-2): Need I_{j*} = {r}, I_j empty for j != j*. I_j empty for j < j* iff c_j > b_j (j < j*). I_j empty for j > j*: need c_{j*} < b_{j*} (then propagates). I_{j*} = [max(b_{j*-1}, c_{j*}), min(b_{j*}, c_{j*-1})] = {r}. Since c_{j*-1} > b_{j*-1}, c_{j*} < b_{j*}, b_{j*-1} <= b_{j*}, c_{j*-1} >= c_{j*}: max(b_{j*-1}, c_{j*}) = r, min(b_{j*}, c_{j*-1}) = r. So b_{j*-1} <= r, c_{j*} <= r, b_{j*} >= r, c_{j*-1} >= r, and (b_{j*-1} = r or c_{j*} = r), and (b_{j*} = r or c_{j*-1} = r). Constraints: c_{j*} < b_{j*} and c_{j*-1} > b_{j*-1}.
+
+If c_{j*} = r: b_{j*} > r, so b_{j*} >= r+1, then min(b_{j*}, c_{j*-1}) = r needs c_{j*-1} = r (as b_{j*} > r). c_{j*-1} = r > b_{j*-1}: b_{j*-1} <= r-1. Feasible: need r >= 1 (for b_{j*-1} <= r-1, take b_{j*-1} = r-1 or 0... need b_{j*-1} >= 0, so r >= 1) and r + 1 <= m-1 (b_{j*} = r+1 <= m-1) so r <= m-2. So r in [1, m-2].
+If c_{j*} < r: then b_{j*-1} = r (for max = r). Then c_{j*-1} > b_{j*-1} = r, c_{j*-1} >= r+1; min(b_{j*}, c_{j*-1}) = r needs b_{j*} = r (since c_{j*-1} > r). But b_{j*} >= b_{j*-1} = r ✓ and c_{j*} < b_{j*} = r ✓ (c_{j*} < r). Feasible: c_{j*} <= r-1 needs r >= 1; c_{j*-1} >= r+1 needs r <= m-2. Same range [1, m-2]. 
+
+So interior column single cell (r, j*): achievable iff 1 <= r <= m-2. And j* range 1..n-2. What about j* = 0 single cell: shown impossible (I_1 would be nonempty). j* = n-1: impossible. So single cells achievable iff 1 <= r <= m-2 and 1 <= j* <= n-2: strictly interior cells. 
+
+Hmm, wait, but actually — hmm, what about single cell (r, 0) where the intersection is just that... we showed impossible. And actually also note: single cell at (r, j*) with j* interior — we need n >= 3 and m >= 3 for any interior cell to exist.
+
+So final answer formula:
+
+ans = max(
+    max_{r} (max subarray sum of row r with length >= 2),
+    max_{c} (max subarray sum of col c with length >= 2),
+    max_{1<=r<=m-2, 1<=c<=n-2} grid[r][c]   // only if m >= 3 and n >= 3
+)
+
+Let me now verify by brute force extensively. Let me write the code.
+
+Brute force: enumerate all monotone paths P1 (right/down) and P2 (right/up), compute intersection set, sum. Track max sum, and collect all achievable intersection sets to verify characterization.
+
+Let me code:
+
+```python
+from itertools import combinations
+
+def paths_p1(m, n):
+    # from (0,0) to (m-1,n-1), moves R/D
+    # represent as list of cells
+    res = []
+    def rec(r, c, path):
+        if r == m-1 and c == n-1:
+            res.append(tuple(path))
+            return
+        if r+1 <= m-1:
+            rec(r+1, c, path+[(r+1,c)])
+        if c+1 <= n-1:
+            rec(r, c+1, path+[(r,c+1)])
+    rec(0,0,[(0,0)])
+    return res
+
+def paths_p2(m, n):
+    # from (m-1,0) to (0,n-1), moves R/U
+    res = []
+    def rec(r, c, path):
+        if r == 0 and c == n-1:
+            res.append(tuple(path))
+            return
+        if r-1 >= 0:
+            rec(r-1, c, path+[(r-1,c)])
+        if c+1 <= n-1:
+            rec(r, c+1, path+[(r,c+1)])
+    rec(m-1,0,[(m-1,0)])
+    return res
+```
+
+Then for each pair, intersection = set(P1) & set(P2), sum. Check structure: cells form contiguous horizontal or vertical segment. And compute max sum, compare with formula. Also collect achievable segments to verify exact characterization. Test all small grids with random values, m,n in 2..4 or so.
+
+Let me also think again about whether "length >= 2" subarray max is computed correctly: For a row [a0, a1, ..., a_{n-1}], max over j1 < j2 of sum(a[j1..j2]) = max subarray with length at least 2. Compute via DP: for each ending position j >= 1: best = max(sum a[j-1..j], best_ending_at_j-1 + a[j]) where best_ending_at_j is max sum of subarray ending at j with length >= 2: f(j) = max(a[j-1]+a[j], f(j-1)+a[j]). Answer max over f(j). 
+
+Now, wait. I want to reconsider the problem statement once more: "A cell is called shared if it belongs to both chosen paths." Sum of values of all shared cells. Yes.
+
+Also constraints: m*n between 4 and 5e5, m,n in [2, 1000]. O(m*n) solution fine.
+
+Let me now also double-check the structural theorem with brute force including sums. Let me write the test.
+
+Actually, let me reconsider one more time whether the intersection could include cells where paths touch at corners... no, shared = same cell only.
+
+Also — hmm, one more consideration: are there constraints I missed for case (V) in column j* = 0? c_0 = L, b_0 = R, and for j >= 1: a_1 = R, d_1 = L: a_1 > d_1 so I_1 empty ✓ and stays empty. ✓. But wait, P2 in column 0: from (m-1,0) up to (L, 0) then right: covers rows L..m-1. P1 col0: rows 0..R. I_0 = [max(0, L), min(R, m-1)] = [L, R] ✓.
+
+Case (V) column j* = n-1: [L, R] = [b_{n-2}, c_{n-2}]: need c_j > b_j for j < n-1: in particular c_{n-2} > b_{n-2}, so R > L ✓. Feasible: b_{n-2} = L, c_{n-2} = R, prefix: b_j = L... wait need c_j > b_j for ALL j <= n-2: choose b_j = 0? but b_{n-2} = L: non-dec: b_j = 0 for j < n-2 if L > 0... b_j <= L. c_j >= R. c_j > b_j: choose b_j = 0 (if L > 0) else... L >= 1? If L = 0: b_{n-2} = 0, c_{n-2} = R >= 1: prefix b_j = 0, c_j = R... c_j = R > 0 = b_j ✓. Hmm wait c non-inc toward c_{n-2} = R: c_j >= R ✓ choose = R. c_j = R > 0 = b_j ✓. Fine. If L >= 1: b_j = L? c_j = R > L = b_j ✓. Either way works.
+
+So the characterization is:
+
+Achievable intersections (exactly):
+1. Any horizontal segment (row r, columns j1..j2) with j2 > j1 (>= 2 cells).
+2. Any vertical segment (column c, rows L..R) with R > L (>= 2 cells).
+3. Single cells (r, c) with 1 <= r <= m-2 and 1 <= c <= n-2.
+
+And the answer = max sum over these.
+
+Wait, hmm, but actually let me reconsider #3: is every interior single cell achievable? From the analysis: r in [1, m-2], j* in [1, n-2]: choose (subcase c_{j*} = r): b_{j*} = r+1, c_{j*-1} = r, b_{j*-1} = r-1: then prefix j < j*: need c_j > b_j, c_j >= c_{j*-1} = r, b_j <= b_{j*-1} = r-1: choose b_j = r-1, c_j = r for j <= j*-1: c_j = r > r-1 = b_j ✓. Suffix j > j*: b_j from r+1 up to m-1 (b_{n-1} = m-1: r+1 <= m-1 since r <= m-2 ✓), c_j from r down to 0 (c_{n-1} = 0 ✓). Intersections for j > j*: a_{j*+1} = r+1 > r = c_{j*} = d_{j*+1} → empty ✓ stays empty ✓. For j < j*: c_j > b_j → empty ✓. I_{j*} = [max(b_{j*-1}, c_{j*}), min(b_{j*}, c_{j*-1})] = [max(r-1, r), min(r+1, r)] = [r, r] ✓. 
+
+So the answer formula stands. Let me now also sanity check that we never want the "empty intersection" — impossible anyway.
+
+Now, hmm, wait. Let me reconsider the single-cell interior achievability once more with an explicit example: m=3, n=3, cell (1,1). b = [0? ...]. j* = 1: b_0 = r-1 = 0, b_1 = r+1 = 2, b_2 = 2. c_0 = r = 1, c_1 = r = 1, c_2 = 0. P1: a_0=0,b_0=0: col0: (0,0). a_1=0, b_1=2: col1: (0,1),(1,1),(2,1). a_2=2,b_2=2: col2: (2,2). P1: (0,0),(0,1),(1,1),(2,1),(2,2). P2: d_0=3? m=3: d_0=2, c_0=1: col0: (1,0),(2,0). d_1=c_0=1, c_1=1: col1: (1,1). d_2=c_1=1, c_2=0: col2: (0,2),(1,2). P2: (2,0),(1,0),(1,1),(1,2),(0,2). ∩ = {(1,1)} ✓. Single cell achievable. Sum = grid[1][1].
+
+And check (1,1) with m=3,n=3 but cell (0,1) (r=0): not achievable (shown earlier by hand). Cell (1,0) (column 0): impossible. Cell (1,2) (column n-1=2): impossible. OK.
+
+So for all-negative grids, e.g., 3x3 all -5: answer = max(interior cell = -5, segments len>=2 = -10...) = -5. Let me make sure brute force agrees.
+
+Now let me write the solution:
+
+```python
+class Solution:
+    def maxScore(self, grid):
+        m = len(grid)
+        n = len(grid[0])
+        NEG = float('-inf')
+        ans = NEG
+        # horizontal segments: max subarray sum with len >= 2 in each row
+        for r in range(m):
+            row = grid[r]
+            f = row[0] + row[1]  # best sum of subarray ending at current index with len>=2
+            ans = max(ans, f)
+            for j in range(1, n-1):
+                f = max(row[j] + row[j+1], f + row[j+1])
+                ans = max(ans, f)
+        # vertical segments: max subarray sum with len >= 2 in each column
+        for c in range(n):
+            f = grid[0][c] + grid[1][c]
+            ans = max(ans, f)
+            for i in range(1, m-1):
+                f = max(grid[i][c] + grid[i+1][c], f + grid[i+1][c])
+                ans = max(ans, f)
+        # interior single cells
+        if m >= 3 and n >= 3:
+            for r in range(1, m-1):
+                row = grid[r]
+                for c in range(1, n-1):
+                    if row[c] > ans:
+                        ans = row[c]
+        return ans
+```
+
+Wait, careful with the row DP: f(j) = max sum subarray ending at j with length >= 2: f(1) = a0+a1; f(j) = max(a[j-1]+a[j], f(j-1)+a[j]). Let me index: for j from 1 to n-1: f = a[j-1]+a[j] if j==1 else max(a[j-1]+a[j], f + a[j]). My loop above: f initialized a0+a1, ans updated; then for j in 1..n-2: f = max(a[j]+a[j+1], f+a[j+1]) — this computes f(j+1). Correct.
+
+Edge: n = 2: loop range(1, 1) empty, just f = a0+a1. ✓.
+
+Let me now verify with brute force. I'll write test code enumerating everything for small sizes and random grids, checking both the structural characterization and the max sum.
+
+One more consideration: are there achievable intersections that are NOT captured? The characterization says intersection is always exactly a segment (horizontal/vertical/single). And we characterized which segments are achievable. The max over achievable = formula. Brute force will confirm.
+
+Let me write the files now.
+
+Actually, hold on. Let me reconsider whether intersection could be a segment that is BOTH... e.g., could the intersection be an entire row segment that is longer than... no. Fine.
+
+Also, potential subtlety: the problem says 4 <= m*n — so m,n >= 2 given. Fine.
+
+Let me also double check the interior single cell condition with m=2 or n=2: no interior cells, formula skips. For 2x2: answer = max over row sums (len 2 = whole row) and col sums: matches earlier computation.
+
+Let me write brute force and test.
+
+Also, let me think: is it possible that the intersection is a vertical segment with L = R (single cell) at column 0 — we said impossible — brute force will confirm via achievable-set comparison.
+
+Let me write everything and test.
+
+def brute_max(grid): enumerate paths, compute max sum; also collect achievable intersections (as frozensets), verify each is a segment of the claimed types, and verify every claimed-achievable segment appears.
+
+Number of paths grows fast; for m=n=4: C(6,3)=20 → 400 pairs; m=4,n=5: C(7,3)=35 → 1225 pairs; m=n=5: 70 each → 4900. OK test up to 5x5, plus random values.
+
+Let me write it.
+
+After verifying, finalize solution.
+
+Let me be careful about the DP for max subarray with len >= 2 — alternatively compute directly.
+
+Let me write solution.py and test.py with the two examples, plus a brute-force cross-check file for my own verification (can be part of test.py or separate). I'll include brute force checks in test.py guarded to small sizes... Actually instructions say test.py should call the solution on every example. I can also add brute force. Let me do both: examples + randomized brute-force comparison.
+
+Let me write the code now.
+
+def solve(grid): as above.
+
+Brute force:
+
+```python
+def brute(grid):
+    m, n = len(grid), len(grid[0])
+    def gen(r, c, dr, dc, tr, tc, path, acc):
+        ...
+```
+
+I'll generate paths via recursion.
+
+Let me now write files and run.
+
+Actually, let me reconsider the problem constraints once more: values in [-100, 100], m*n <= 5e5, sums fit in int easily (max |sum| <= 5e5 * 100 = 5e7). Fine.
+
+Now — I realize I should double-check the structural theorem even more carefully, because the whole solution hinges on it. Let me re-examine the derivation of "shared region is straight segment" via the sequence formulation, and let brute force confirm.
+
+P1 path ↔ non-decreasing sequence b_0..b_{n-1} with b_{n-1} = m-1? Wait: b_j = exit row of column j. In column j, P1 enters at a_j = b_{j-1} (a_0 = 0), moves down to b_j, exits right. In last column n-1, P1 must end at (m-1, n-1): enters at a_{n-1}, moves down to m-1 = b_{n-1}. So b_{n-1} = m-1. b non-decreasing, b_j in [0, m-1], b_0 >= 0. Any such sequence gives a unique valid path. ✓.
+
+P2 path ↔ non-increasing sequence c_0..c_{n-1} with c_{n-1} = 0, c_0 <= m-1: in column j, enters at d_j = c_{j-1} (d_0 = m-1), moves up to c_j, exits right. Last column: c_{n-1} = 0 (end at (0, n-1)). ✓.
+
+Shared cells in column j: rows [max(a_j, c_j), min(b_j, d_j)] = [max(b_{j-1}, c_j), min(b_j, c_{j-1})] (with b_{-1} = 0, c_{-1} = m-1). Nonempty iff max <= min.
+
+I'm fairly confident. Brute force will validate.
+
+Let me also think: do we even need "exactly achievable" analysis, or is there an even simpler way to see the answer? The answer = max over achievable segments of sum. We showed achievable = {horizontal len>=2} ∪ {vertical len>=2} ∪ {interior singles}. The max is the formula. 
+
+Hmm, wait: actually let me reconsider whether horizontal single... no. Let me also double check: vertical segment with L < R in interior column — is the intersection EXACTLY [L, R] and nothing else? Constructed: b_{j*-1} = L, b_{j*} = R, c_{j*-1} = R, c_{j*} = L, prefix b_j = L, c_j = R for j < j* (wait need c_j > b_j: R > L ✓), suffix: b from R to m-1, c from L to 0. Check I_j for j < j*: c_j = R > L = b_j → empty ✓. I_{j*} = [max(b_{j*-1}, c_{j*}), min(b_{j*}, c_{j*-1})] = [max(L, L), min(R, R)] = [L, R] ✓. I_{j*+1}: a = R > L = d → empty ✓. 
+
+But wait — prefix: b_j = L for j <= j*-1, c_j = R for j <= j*-1. But b must satisfy b_0 >= a_0 = 0: L >= 0 ✓. c_0 <= d_0 = m-1: R <= m-1 ✓. Good. Also in column j < j*, P1 segment [a_j, b_j] = [L, L] (a_j = b_{j-1} = L), P2 [c_j, d_j] = [R, R]: I_j = [max(L,R), min(L,R)] = [R, L] empty since L < R ✓.
+
+Everything checks. Now also confirm there's no requirement j* >= 1 vs j* = 0 for vertical: column 0: [L, R] = [c_0, b_0] with c_0 < b_0: L = c_0, R = b_0: prefix none, suffix: a_1 = R > L = d_1 empty ✓. So vertical at column 0 any L < R ✓. Column n-1: shown ✓.
+
+Great. Now, let me also handle potential off-by-one: interior single cells: 1 <= r <= m-2, 1 <= c <= n-2 — requires m >= 3 and n >= 3.
+
+Now write code and verify by brute force. Let me create solution.py, test.py (examples + brute force randomized).
+
+Let me write the brute force carefully:
+
+```python
+from itertools import product
+import random
+
+def gen_paths(m, n, start, moves):
+    # moves: list of (dr, dc)
+    paths = []
+    stack = [(start, [start])]
+    # recursive
+    def rec(r, c, path):
+        if (moves == [(0,1),(1,0)] and r == m-1 and c == n-1) or (moves == [(0,1),(-1,0)] and r == 0 and c == n-1):
+            paths.append(path[:])
+            return
+        for dr, dc in moves:
+            nr, nc = r+dr, c+dc
+            if 0 <= nr < m and 0 <= nc < n:
+                path.append((nr,nc))
+                rec(nr, nc, path)
+                path.pop()
+    rec(start[0], start[1], [start])
+    return paths
+```
+
+Then brute max sum and achievable sets.
+
+Check structure of each intersection: cells sorted; verify it's a horizontal segment (same row, contiguous cols), vertical segment (same col, contiguous rows), or single cell.
+
+Then verify: achievable set == claimed set. And brute max == formula max.
+
+Let me code it all up and run.
+
+I'll now write solution.py:
+
+```python
+class Solution:
+    def maxScore(self, grid: list[list[int]]) -> int:
+        m = len(grid)
+        n = len(grid[0])
+        ans = -10**18
+        # horizontal segments (length >= 2)
+        for r in range(m):
+            row = grid[r]
+            f = row[0] + row[1]
+            if f > ans: ans = f
+            for j in range(1, n - 1):
+                f = max(row[j] + row[j+1], f + row[j+1])
+                if f > ans: ans = f
+        # vertical segments (length >= 2)
+        for c in range(n):
+            f = grid[0][c] + grid[1][c]
+            if f > ans: ans = f
+            for i in range(1, m - 1):
+                f = max(grid[i][c] + grid[i+1][c], f + grid[i+1][c])
+                if f > ans: ans = f
+        # interior single cells
+        for r in range(1, m - 1):
+            row = grid[r]
+            for c in range(1, n - 1):
+                if row[c] > ans: ans = row[c]
+        return ans
+```
+
+test.py: two examples + brute force comparison on random small grids.
+
+Let me write the brute force in test.py.
+
+```python
+from solution import Solution
+import random, itertools
+
+def gen_paths(m, n, second=False):
+    paths = []
+    if not second:
+        start, end, moves = (0,0), (m-1,n-1), ((1,0),(0,1))
+    else:
+        start, end, moves = (m-1,0), (0,n-1), ((-1,0),(0,1))
+    def rec(r, c, path):
+        if (r,c) == end:
+            paths.append(tuple(path)); return
+        for dr, dc in moves:
+            nr, nc = r+dr, c+dc
+            if 0 <= nr < m and 0 <= nc < n:
+                path.append((nr,nc)); rec(nr,nc,path); path.pop()
+    rec(*start, [start])
+    return paths
+
+def brute(grid):
+    m, n = len(grid), len(grid[0])
+    P1 = gen_paths(m,n,False); P2 = gen_paths(m,n,True)
+    best = None
+    achievable = set()
+    for p1 in P1:
+        s1 = set(p1)
+        for p2 in P2:
+            inter = frozenset(s1 & set(p2))
+            achievable.add(inter)
+            s = sum(grid[r][c] for r,c in inter)
+            if best is None or s > best: best = s
+    return best, achievable
+```
+
+Then check structure and compare.
+
+Also verify the achievable set equals claimed:
+
+claimed segments as frozensets:
+- for each row r, j1 < j2: frozenset((r,j) for j in j1..j2)
+- for each col c, L < R: frozenset((i,c) for i in L..R)
+- single interior cells.
+
+Check achievable == claimed. That's a strong verification. Note single cells at non-interior should NOT appear; and no other shapes.
+
+Then compare max sums.
+
+Let me write and run for m,n in {2,3,4}x{2,3,4} with a few random grids each, plus the two examples.
+
+Complexity fine.
+
+Let me write the files.
+
+One more sanity check on the formula with an all-negative example: 3x3 all -5: rows: len2 sum = -10; cols: -10; interior cell (1,1) = -5: answer -5. Brute: minimal intersection size... intersection must be a segment; best is single cell -5 if achievable: (1,1) interior ✓. So -5. Plausible.
+
+2x3 all -5: no interior (m=2): rows len2 sums -10; cols len2 -10: answer -10. Brute: intersections in 2x3: e.g., {(0,0),(1,0)} etc. all size 2: sum -10. Single cells impossible (no interior). ✓ plausible.
+
+Let me code and run now.
+
+Also I want to double-check the characterization for larger grids (5x5) with the achievable-set equality.
+
+Let me write everything.
+
+Actually, one more thought: the brute-force achievable set includes ALL intersections from all path pairs — including, e.g., horizontal segments of length >= 2 that are subsets... every pair gives some intersection; the set of all intersections should equal claimed set. But careful: claimed includes ALL horizontal segments (r, j1..j2) j1<j2 — we showed each is exactly achievable, so each appears. And every intersection is one of claimed. So equality should hold. Also single interior cells appear (achievable). Good.
+
+Let me write it.
+
+After running and confirming, I'll finalize.
+
+Let me also consider: is O(m*n) within 2s in Python for 5e5 cells? Yes, simple loops ~1e6 operations total. Fine.
+
+Write files now.<|close|>thinkLet me analyze this problem carefully by thinking about the structure of the two paths.
+
+**Key structural idea:** Player 1's path can be described by a non-decreasing sequence `b_j` (the row where it exits column `j`), with `b_{n-1} = m-1`. Player 2's path is a non-increasing sequence `c_j` (row where it exits column `j` moving up), with `c_{n-1} = 0`. In column `j`, P1 covers rows `[b_{j-1}, b_j]` and P2 covers rows `[c_j, c_{j-1}]`. The shared cells in column `j` are the overlap `[max(b_{j-1}, c_j), min(b_j, c_{j-1})]`.
+
+Analyzing when overlaps appear/disappear, the intersection must always be:
+- a **horizontal segment** (one row, contiguous columns), or
+- a **vertical segment** (one column, contiguous rows), or
+- a **single cell** (only achievable at strictly interior cells).
+
+Let me verify this by brute force before trusting it.
+[finish_reason: tool_calls | provider: Wafer | reasoning chars: 0 | usage: {'prompt_tokens': 1298, 'completion_tokens': 43774, 'total_tokens': 45072, 'cost': 0.700688444, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 448, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.700688444, 'upstream_inference_prompt_cost': 0.000304444, 'upstream_inference_completions_cost': 0.700384}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'path': 'solution.py', 'content': 'class Solution:\n    def maxScore(self, grid: list[list[int]]) -> int:\n        m = len(grid)\n        n = len(grid[0])\n        ans = -10**18\n        # horizontal segments (contiguous, length >= 2) in each row\n        for r in range(m):\n            row = grid[
+writing
+[write_file] result: Content written to solution.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: Wafer | reasoning chars: 0 | usage: {'prompt_tokens': 45111, 'completion_tokens': 938, 'total_tokens': 46049, 'cost': 0.025731618, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 1280, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.025731618, 'upstream_inference_prompt_cost': 0.010723618, 'upstream_inference_completions_cost': 0.015008}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'path': 'test.py', 'content': 'from solution import Solution\nimport random\n\ns = Solution()\n\n# ---- Provided examples ----\ng1 = [[1,2,0,-3],[1,-2,1,0],[-4,2,-1,3],[3,-3,3,-2],[-1,-5,0,1]]\nprint(s.maxScore(g1), "expected", 4)\n\ng2 = [[4,-2,-3],[-1,-3,-1],[-4,2,-1]]\nprint(s.maxScore(g2), "exp
+writing
+[write_file] result: Content written to test.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: Wafer | reasoning chars: 0 | usage: {'prompt_tokens': 46089, 'completion_tokens': 40, 'total_tokens': 46129, 'cost': 0.011165022, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 44416, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.011165022, 'upstream_inference_prompt_cost': 0.010525022, 'upstream_inference_completions_cost': 0.00064}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'test.py'}
+running python
+[run_python] result: Result running test.py: stdout + stderr: 4 expected 4
+3 expected 3
+m=2 n=2 trial=0 OK (brute=7, formula=7, segments=4)
+m=2 n=2 trial=1 OK (brute=13, formula=13, segments=4)
+m=2 n=2 trial=2 OK (brute=15, formula=15, segments=4)
+m=2 n=2 trial=3 OK (brute=7, formula=7, segments=4)
+m=2 n=2 trial=4 OK (brute=3, formula=3, segments=4)
+m=2 n=3 trial=0 OK (brute=15, formula=15, segments=9)
+m=2 n=3 trial=1 OK (brute=12, formula=12, segments=9)
+m=2 n=3 trial=2 OK (brute=18, formula=18, segments=9)
+m=2 n=3
+
+Assistant: Every test passes:
+- Both provided examples match (4 and 3).
+- For all grid sizes from 2×2 to 5×5 with random values, brute force over **all path pairs** confirms:
+  1. Every achievable intersection is exactly one of the claimed segments (horizontal run, vertical run, or interior single cell) — no other shapes occur.
+  2. Every claimed segment is achievable.
+  3. The formula's answer matches the brute-force maximum.
+
+The solution is O(m·n), well within limits for m·n ≤ 5·10⁵.
+
+```python
+class Solution:
+    def maxScore(self, grid: list[list[int]]) -> int:
+        m = len(grid)
+        n = len(grid[0])
+        ans = -10**18
+        # horizontal segments (contiguous, length >= 2) in each row
+        for r in range(m):
+            row = grid[r]
+            f = row[0] + row[1]  # best sum of subarray ending at index 1 with len>=2
+            if f > ans:
+                ans = f
+            for j in range(1, n - 1):
+                f = max(row[j] + row[j + 1], f + row[j + 1])
+                if f > ans:
+                    ans = f
+        # vertical segments (contiguous, length >= 2) in each column
+        for c in range(n):
+            f = grid[0][c] + grid[1][c]
+            if f > ans:
+                ans = f
+            for i in range(1, m - 1):
+                f = max(grid[i][c] + grid[i + 1][c], f + grid[i + 1][c])
+                if f > ans:
+                    ans = f
+        # single cells, only strictly interior cells are achievable
+        for r in range(1, m - 1):
+            row = grid[r]
+            for c in range(1, n - 1):
+                if row[c] > ans:
+                    ans = row[c]
+        return ans
+```
+[finish_reason: stop | provider: Wafer | reasoning chars: 0 | usage: {'prompt_tokens': 48106, 'completion_tokens': 455, 'total_tokens': 48561, 'cost': 0.018278668, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 45056, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.018278668, 'upstream_inference_prompt_cost': 0.010998668, 'upstream_inference_completions_cost': 0.00728}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

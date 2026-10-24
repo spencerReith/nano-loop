@@ -1,0 +1,341 @@
+
+Assistant: ```python
+class Solution:
+    def maxValue(self, nums: list[int]) -> int:
+        n = len(nums)
+        # original pulse value
+        orig = 0
+        for i in range(n):
+            if i % 2 == 0:
+                orig += nums[i]
+            else:
+                orig -= nums[i]
+        
+        # Base best is original
+        best = orig
+        
+        # Precompute prefix alternating sums with even starting index at 0
+        # Let pre[i] = pulse(nums[0..i-1]) with arr[0] at index 0 (i.e., normal alternating sum)
+        pre = [0] * (n + 1)
+        for i in range(1, n + 1):
+            if (i - 1) % 2 == 0:  # nums[i-1] has even position in original indexing
+                pre[i] = pre[i - 1] + nums[i - 1]
+            else:
+                pre[i] = pre[i - 1] - nums[i - 1]
+        
+        # Suffix alternating sums starting at index i with sign + for nums[i] (i even global index? We'll handle via parity)
+        # We want for a rotation of [l, r] (0-indexed, l<r), new array:
+        # nums[0..l-1] unchanged
+        # nums[r], nums[l], nums[l+1], ..., nums[r-1]  (i.e., left rotate)
+        # nums[r+1..n-1] unchanged
+        
+        # For indices before l, pulse contribution is same as original for positions < l.
+        # For the rotated block, the pulse contributions change at position l.
+        # Let's compute the change in pulse value when we rotate subarray [l, r] by one left.
+        
+        # Instead of recomputing entire pulse, compute delta = new_pulse - original_pulse.
+        # Original contribution of block [l, r] in pulse:
+        # For original array: at positions l, l+1, ..., r, signs alternate starting with sign = (+ if l even, - if l odd)
+        # After rotation: block becomes [nums[r], nums[l], nums[l+1], ..., nums[r-1]]
+        # The sign at position l in new array is (+ if l even) because pulse always starts with + at index 0.
+        # So we need to compute new contribution of block under the same global sign pattern (starting at index 0 with +).
+        
+        # Let global sign at index i be s(i) = +1 if i even, -1 if i odd.
+        # Original contribution of block = sum_{i=l}^{r} s(i) * nums[i].
+        # New contribution after rotation:
+        # At position l: s(l) * nums[r]
+        # At position l+1: s(l+1) * nums[l]
+        # At position l+2: s(l+2) * nums[l+1]
+        # ...
+        # At position r: s(r) * nums[r-1]
+        
+        # So delta = (new_block_contrib - old_block_contrib)
+        
+        # We'll iterate over l and r efficiently by scanning.
+        
+        # Precompute for each possible start of rotation the best r?
+        
+        # We can rewrite the new block contribution as:
+        # s(l)*nums[r] + s(l+1)*nums[l] + s(l+2)*nums[l+1] + ... + s(r)*nums[r-1]
+        
+        # Let’s define for each l, we want to maximize over r>l:
+        # contribution = s(l)*nums[r] + sum_{k=l}^{r-1} s(l+k) * nums[k]  ??? careful: at position l+k (for k=0 to r-l), we have:
+        # - at pos l+k (k=0): s(l) * nums[r]  (k=0 corresponds to nums[r])
+        # - at pos l+k+1 (k=0): s(l+1) * nums[l]  (k=0 for nums[l] at pos l+1)
+        # Actually:
+        # new block at indices: l -> nums[r], l+1 -> nums[l], l+2 -> nums[l+1], ..., r -> nums[r-1]
+        # So for t from 0 to len-1 where len = r-l+1:
+        #   at index = l + t, value = nums[ r - t + l? Let's set: index = l + t, value = nums[l + t] for t>=1 except t=0 gets nums[r]; t=len-1 gets nums[r-1].
+        # Better: define m = r - l + 1 length. Then new block: [nums[r], nums[l], nums[l+1], ..., nums[r-1]]
+        # So at offset t (0-based within block):
+        #   value = nums[ (l + t) % (m) ? no ] Actually:
+        #   t=0 -> nums[r]
+        #   t=1 -> nums[l]
+        #   t=2 -> nums[l+1]
+        #   ...
+        #   t=m-1 -> nums[r-1]
+        # So value = nums[ (l + t - 1) if t>=1 else r ]? Not simple modulo.
+        
+        # Instead, compute delta directly as:
+        # new_pulse = orig + (new_block_contrib - old_block_contrib)
+        
+        # old_block_contrib = sum_{i=l}^r s(i)*nums[i]
+        # new_block_contrib = s(l)*nums[r] + sum_{i=l}^{r-1} s(i+1)*nums[i]  because:
+        #   at index l+i (i from 0 to m-1):
+        #       if i=0: s(l)*nums[r]
+        #       if i>=1: index = l+i, value = nums[l+i-1], sign = s(l+i)
+        
+        # So new_block_contrib = s(l)*nums[r] + sum_{i=l}^{r-1} s(l+i)*nums[i]
+        
+        # Therefore delta = s(l)*nums[r] + sum_{i=l}^{r-1} s(l+i)*nums[i] - sum_{i=l}^r s(i)*nums[i]
+        # = s(l)*nums[r] + sum_{i=l}^{r-1} [s(l+i) - s(i)] * nums[i] - s(r)*nums[r]
+        
+        # But note s(i) = (-1)^i. So s(i+1) = -s(i). Thus s(l+i) = (-1)^{l+i} = (-1)^l * (-1)^i.
+        # Also s(i) = (-1)^i. So s(l+i) - s(i) = (-1)^l * (-1)^i - (-1)^i = (-1)^i * ( (-1)^l - 1 )
+        # This is 0 if l even? Because (-1)^l = 1 when l even, then s(l+i)=s(i), so difference 0.
+        # If l odd, (-1)^l = -1, then s(l+i) = -s(i), so s(l+i)-s(i) = -s(i)-s(i) = -2*s(i)
+        
+        # Let's verify:
+        # l=0 (even): s(i)=(-1)^i, s(l+i)=s(i), so new_block_contrib = nums[r] + sum_{i=0}^{r-1} s(i)*nums[i], old = sum_{i=0}^r s(i)*nums[i]
+        #   delta = nums[r] + sum_{i=0}^{r-1} s(i)*nums[i] - (sum_{i=0}^{r-1} s(i)*nums[i] + s(r)*nums[r]) = nums[r] - s(r)*nums[r] = nums[r]*(1 - (-1)^r)
+        # That seems too simple? Check example: nums=[1,5,2], l=0,r=1: old_block=[1,5] contrib=1-5=-4? Wait pulse: index0:+1, index1:-5 -> -4; new_block=[5,1] contrib=5-1=4; delta=8; original pulse=-2, new=6, delta=8, works? -2+8=6 yes.
+        # Using formula: nums[r]=5, s(r)=s(1)=-1, 1 - (-1)=2, 5*2=10? Not 8. Mist: new_block_contrib = s(l)*nums[r] + sum_{i=l}^{r-1} s(l+i)*nums[i] = s(0)*nums[1] + sum_{i=0}^{0} s(0+i)*nums[i] = 1*5 + s(0)*nums[0] =5+1*1=6? But that's for block only? Actually pulse contribution of block includes signs relative to global index. For block [0,1] in global, signs: index0:+, index1:-. After rotation: [5,1] at indices0,1: +5, -1 -> 5-1=4. But our formula gave 5+1=6? Because s(l+i) for i=0: l+i=0 -> s(0)=1, nums[0]=1 -> 1*1=1; plus s(l)*nums[r]=1*5=5 -> total 6? That's double counting? Let's recalc carefully.
+        
+        # We must define block contribution as sum over global indices of block of s(index)*value.
+        # Original block contribution C_old = sum_{i=l}^r s(i)*nums[i].
+        # New block contribution C_new = sum_{i=l}^r s(i)*new_val[i], where new_val[l]=nums[r], new_val[l+1]=nums[l], ..., new_val[r]=nums[r-1].
+        # So C_new = s(l)*nums[r] + sum_{i=l+1}^r s(i)*nums[i-1] (since at index i>=l+1, value is nums[i-1]).
+        # = s(l)*nums[r] + sum_{i=l}^{r-1} s(i+1)*nums[i].
+        
+        # Yes: for i from l to r-1, at index i+1 we put nums[i], sign s(i+1).
+        
+        # So C_new = s(l)*nums[r] + sum_{i=l}^{r-1} s(i+1)*nums[i].
+        
+        # Then delta = C_new - C_old = s(l)*nums[r] + sum_{i=l}^{r-1} s(i+1)*nums[i] - sum_{i=l}^r s(i)*nums[i]
+        # = s(l)*nums[r] - s(r)*nums[r] + sum_{i=l}^{r-1} [s(i+1) - s(i)] * nums[i]
+        
+        # Now s(i+1) - s(i) = (-1)^{i+1} - (-1)^i = -2*(-1)^i when? Since (-1)^{i+1} = -(-1)^i, so difference = -(-1)^i - (-1)^i = -2*(-1)^i.
+        
+        # Let t_i = (-1)^i. Then s(i+1)-s(i) = -2*t_i.
+        
+        # So delta = s(l)*nums[r] - s(r)*nums[r] + sum_{i=l}^{r-1} (-2 * (-1)^i) * nums[i]
+        
+        # = nums[r]*(s(l) - s(r)) - 2 * sum_{i=l}^{r-1} (-1)^i * nums[i]
+        
+        # Now s(i) = (-1)^i, so s(l) = (-1)^l, s(r)=(-1)^r.
+        
+        # Also note that (-1)^i = t_i.
+        
+        # So we can precompute:
+        #   pref_t[i] = sum_{j=0}^{i-1} (-1)^j * nums[j]  (i.e., alternating sum with + at j=0)
+        # Then sum_{i=l}^{r-1} (-1)^i * nums[i] = pref_t[r] - pref_t[l]  (since pref_t[k] = sum_{j=0}^{k-1} (-1)^j nums[j], so sum_{j=l}^{r-1} = pref_t[r] - pref_t[l])
+        
+        # Let A[i] = (-1)^i * nums[i].
+        
+        # Precompute prefA where prefA[0]=0, prefA[i+1]=prefA[i] + A[i].
+        
+        # Then sum_{i=l}^{r-1} (-1)^i * nums[i] = prefA[r] - prefA[l].
+        
+        # Also original pulse orig = prefA[n] (since pulse = sum_{i=0}^{n-1} (-1)^i nums[i]).
+        
+        # Now for a rotation [l, r], delta = nums[r] * ((-1)^l - (-1)^r) - 2 * (prefA[r] - prefA[l]).
+        
+        # Then new_pulse = orig + delta.
+        
+        # We need to maximize new_pulse over 0 <= l < r < n.
+        
+        # Edge: no rotation gives orig, so best >= orig.
+        
+        # Complexity O(n^2) if naive, but we can optimize.
+        
+        # Let’s denote:
+        #   sign_l = 1 if l even else -1  (since (-1)^l)
+        #   sign_r = 1 if r even else -1
+        
+        # Then term1 = nums[r] * (sign_l - sign_r)
+        # term2 = -2 * (prefA[r] - prefA[l])
+        
+        # So new_pulse = orig + nums[r]*(sign_l - sign_r) - 2*(prefA[r] - prefA[l])
+        
+        # Rearranged for fixed r, we want to maximize over l < r:
+        #   part = nums[r]*sign_l - 2*(-prefA[l])? Let's write:
+        
+        #   new_pulse = orig + nums[r]*sign_l - nums[r]*sign_r - 2*prefA[r] + 2*prefA[l]
+        
+        # = (orig - nums[r]*sign_r - 2*prefA[r]) + (nums[r]*sign_l + 2*prefA[l])
+        
+        # Since orig and prefA are known, for each r we can compute base = orig - nums[r]*sign_r - 2*prefA[r] (constant for given r), and for l<r we want to maximize (nums[r]*sign_l + 2*prefA[l]).
+        
+        # But sign_l depends on l parity. So we need to maintain for l<r, with known parity of l, the maximum of (sign_l * nums[r] + 2*prefA[l])? Wait sign_l = (-1)^l, which depends on l's parity.
+        
+        # Let’s define for each l, value V(l) = 2*prefA[l] + sign_l * X, but X = nums[r] is variable per r.
+        
+        # Better: for fixed r, we want max_{l<r} [ sign_l * nums[r] + 2*prefA[l] ].
+        
+        # Let’s precompute for each parity two structures:
+        #   even_l: l even -> sign_l = 1
+        #   odd_l: l odd -> sign_l = -1
+        
+        # Then for given r, we need:
+        #   max( max_{l<r, l even} (nums[r] + 2*prefA[l]), max_{l<r, l odd} (-nums[r] + 2*prefA[l]) )
+        
+        # = max( nums[r] + max_even_2prefA[l<r], -nums[r] + max_odd_2prefA[l<r] )
+        
+        # where max_even_2prefA[l<r] = max_{l<r, l even} 2*prefA[l], similarly for odd.
+        
+        # But note l must be < r, and l can be any index < r with correct parity.
+        
+        # We can iterate r from 0 to n-1, and maintain running maximums for even and odd l seen so far (with l < r). However, note that l must be < r, and when r=0 no l exists, skip.
+        
+        # But careful: l and r must satisfy l < r, and the subarray [l,r] has at least length 2, so r >= l+1. But our formula works for any l<r? Yes, rotation defined for l<r, so length>=2.
+        
+        # However, when iterating r, we consider l < r, and we have seen all l from 0 to r-1.
+        
+        # So algorithm:
+        #   Precompute A[i] = (-1)^i * nums[i] for i=0..n-1
+        #   prefA[0]=0, prefA[i+1]=prefA[i]+A[i]  (so prefA[k] = sum_{i=0}^{k-1} A[i])
+        #   orig = prefA[n]
+        #   Initialize max_even_pref = -inf, max_odd_pref = -inf (for 2*prefA[l]? Actually we need 2*prefA[l], but 2*prefA[l] = 2*prefA[l]; we can store max_2pref for even and odd l)
+        #   We'll maintain best_even = maximum of 2*prefA[l] for l even seen so far, similarly best_odd.
+        #   Start with r=0: no l <0, skip.
+        #   Then for r from 0 to n-1:
+        #       sign_r = 1 if r even else -1
+        #       base = orig - nums[r]*sign_r - 2*prefA[r]   # prefA[r] = sum_{i=0}^{r-1} A[i], note that prefA[r] corresponds to sum up to index r-1
+        #       But in delta formula we used prefA[r] and prefA[l] where prefA[i] = sum_{j=0}^{i-1} A[j], so prefA[l] = sum_{j=0}^{l-1} A[j], and prefA[r] = sum_{j=0}^{r-1} A[j]. That matches our definition.
+        #       Now for l < r, we consider l from 0 to r-1.
+        #       We have not yet included l = r in the max for future r's? We'll after processing r, add current l=r to the max sets for future r's? But l must be < r for current r, so when processing r, we should use max from l=0..r-1 only.
+        #       So before updating with current index as l, we query using current best_even/odd from previous l.
+        #       Query: cand1 = nums[r] + best_even   (if best_even not -inf)
+        #               cand2 = -nums[r] + best_odd
+        #               best_for_r = max(cand1, cand2)  if any exists
+        #       Then candidate_pulse = base + best_for_r
+        #       Update best = max(best, candidate_pulse)
+        #       After query, add current index r as a potential l for future rotations (i.e., l = r will be < some future r'). So update:
+        #           if r % 2 == 0: best_even = max(best_even, 2*prefA[r])  # because l=r, prefA[l] = prefA[r] (sum up to r-1), and sign_l = 1 since r even
+        #           else: best_odd = max(best_odd, 2*prefA[r])
+        #   Note: prefA[r] is defined for r from 0 to n, with prefA[0]=0. When r=0, prefA[0]=0, and we add l=0 with 2*prefA[0]=0.
+        #   But l must be < r, so when r=0, no l exists, so we skip query and only update after.
+        
+        # However, note that in our formula, l can be any index < r, and we use prefA[l] (sum up to l-1). For l=0, prefA[0]=0, correct.
+        
+        # Let's test with example [1,5,2]:
+        #   nums=[1,5,2]
+        #   A[0]=1, A[1]=-5, A[2]=2  (since (-1)^0=1, (-1)^1=-1, (-1)^2=1)
+        #   prefA[0]=0
+        #   prefA[1]=A[0]=1
+        #   prefA[2]=1+(-5)=-4
+        #   prefA[3]= -4+2 = -2 = orig
+        #   orig = -2
+        #   Initialize best_even = -inf, best_odd = -inf
+        #   r=0:
+        #       sign_r = 1 (0 even)
+        #       base = orig - nums[0]*1 - 2*prefA[0] = -2 -1 -0 = -3
+        #       query: no l (since no previous), skip
+        #       update: r even -> best_even = max(-inf, 2*prefA[0]=0) = 0
+        #   r=1:
+        #       sign_r = -1 (1 odd)
+        #       base = orig - nums[1]*(-1) - 2*prefA[1] = -2 -5*(-1)? Wait: nums[1]=5, sign_r=-1 -> nums[r]*sign_r = 5*(-1)=-5, so -nums[r]*sign_r? base = orig - nums[r]*sign_r - 2*prefA[r] = -2 - (5 * (-1)) - 2*prefA[1] = -2 - (-5) - 2*1 = -2+5-2=1
+        #       Actually: - nums[r]*sign_r = - (5 * (-1)) = 5? Let's recalc: base = orig - nums[r]*sign_r - 2*prefA[r] = -2 - (5 * (-1)) - 2*1 = -2 - (-5) - 2 = -2+5-2=1.
+        #       Query: best_even=0 (from l=0), best_odd=-inf
+        #           cand1 = nums[1] + best_even = 5 + 0 = 5
+        #           cand2 = -nums[1] + best_odd = -5 + (-inf) = -inf -> ignore
+        #           best_for_r = 5
+        #       candidate = base + best_for_r = 1 + 5 = 6
+        #       best = max(orig=-2, 6)=6
+        #       Update: r=1 odd -> best_odd = max(-inf, 2*prefA[1]=2*1=2) = 2
+        #   r=2:
+        #       sign_r = 1 (2 even)
+        #       base = orig - nums[2]*1 - 2*prefA[2] = -2 -2 -2*(-4)= -4 +8=4? Compute: -2 -2 -2*(-4)= -4 +8=4
+        #       Query: best_even=0, best_odd=2
+        #           cand1 = nums[2] + best_even = 2+0=2
+        #           cand2 = -nums[2] + best_odd = -2+2=0
+        #           best_for_r = 2
+        #       candidate = 4+2=6
+        #       best = max(6,6)=6
+        #       Update: r=2 even -> best_even = max(0, 2*prefA[2]=2*(-4)=-8) = 0 (since 0 > -8)
+        #   Result best=6, correct.
+        
+        # Example [6,4,3]:
+        #   nums=[6,4,3]
+        #   A[0]=6, A[1]=-4, A[2]=3
+        #   prefA[0]=0, prefA[1]=6, prefA[2]=6-4=2, prefA[3]=2+3=5=orig
+        #   orig=5
+        #   best_even=-inf, best_odd=-inf
+        #   r=0: base = 5 -6*1 -0= -1? 5-6= -1; query none; update best_even=0
+        #   r=1: sign_r=-1, base = 5 -4*(-1) -2*prefA[1]=5 - (-4) -12=5+4-12= -3? prefA[1]=6, 2*6=12 -> 5 - (4*(-1)= -4) =5+4=9? Wait: base = orig - nums[r]*sign_r - 2*prefA[r] = 5 - (4 * (-1)) - 2*6 = 5 - (-4) -12 = 5+4-12= -3
+        #        query: best_even=0 -> cand1=4+0=4; cand2 ignored -> best_for_r=4; candidate= -3+4=1; best=max(5,1)=5
+        #        update best_odd = 2*prefA[1]=12
+        #   r=2: sign_r=1, base = 5 -3*1 -2*prefA[2]=5-3-4= -2? prefA[2]=2, 2*2=4 -> 5-3-4=-2
+        #        query: best_even=0, best_odd=12
+        #            cand1=3+0=3; cand2=-3+12=9 -> best_for_r=9
+        #            candidate= -2+9=7; best=max(5,7)=7
+        #        correct.
+        
+        # Example [9,7]:
+        #   nums=[9,7]
+        #   A[0]=9, A[1]=-7, prefA[0]=0, prefA[1]=9, prefA[2]=2=orig
+        #   orig=2
+        #   r=0: base=2-9-0=-7; update best_even=0
+        #   r=1: sign_r=-1, base=2 -7*(-1) -2*9 =2+7-18= -9; query: best_even=0 -> cand1=7+0=7; candidate= -9+7= -2; best=max(2,-2)=2
+        #   correct.
+        
+        # Edge: n=1? but constraints n>=1, but rotation requires l<r so no rotation possible, best=orig. Our loop for r=0 only updates, no query, best remains orig.
+        
+        # Implementation details:
+        #   Use -10**30 as -inf, but nums up to 1e9, so -1e30 is safe.
+        
+        # Let's code accordingly.
+        
+        n = len(nums)
+        if n < 2:
+            return orig  # but we compute orig below
+        
+        # Compute A and prefA
+        prefA = [0] * (n + 1)
+        for i in range(n):
+            sign = 1 if i % 2 == 0 else -1
+            A_i = sign * nums[i]
+            prefA[i+1] = prefA[i] + A_i
+        
+        orig = prefA[n]
+        
+        # Initialize best
+        best = orig
+        
+        # best_even_2pref: max of 2*prefA[l] for l even seen so far (l < current r)
+        # best_odd_2pref: same for l odd
+        # We'll use -inf initially
+        INF_NEG = -10**30
+        best_even = INF_NEG
+        best_odd = INF_NEG
+        
+        # Iterate r from 0 to n-1
+        for r in range(n):
+            sign_r = 1 if r % 2 == 0 else -1
+            base = orig - nums[r] * sign_r - 2 * prefA[r]
+            
+            # Query using l < r
+            if r > 0:  # at least one l exists
+                cand = INF_NEG
+                if best_even != INF_NEG:
+                    cand = max(cand, nums[r] + best_even)
+                if best_odd != INF_NEG:
+                    cand = max(cand, -nums[r] + best_odd)
+                if cand != INF_NEG:
+                    candidate = base + cand
+                    if candidate > best:
+                        best = candidate
+            
+            # Update with current index r as potential l for future r' > r
+            if r % 2 == 0:
+                val = 2 * prefA[r]
+                if val > best_even:
+                    best_even = val
+            else:
+                val = 2 * prefA[r]
+                if val > best_odd:
+                    best_odd = val
+        
+        return best
+```
+[finish_reason: stop | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 674, 'completion_tokens': 7189, 'total_tokens': 7863, 'cost': 0.00114575, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00114575, 'upstream_inference_prompt_cost': 6.74e-05, 'upstream_inference_completions_cost': 0.00107835}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

@@ -1,0 +1,420 @@
+
+Assistant: # Solution Explanation
+
+## Insight
+
+For a subarray `nums[i..j]` to be a peak subarray, there must be some peak index `k` with `i < k < j`. Define `peak[k] = 1` if `nums[k] > nums[k-1]` and `nums[k] > nums[k+1]` (for `0 < k < n-1`).
+
+The number of peak subarrays fully inside `[l, r]` equals the number of subarrays `[i, j]` with `l <= i < j <= r`, `j - i >= 2`, that contain at least one peak index strictly inside. Using complement counting:
+
+```
+answer = total_subarrays - sum over i of (distance from i to first peak > i)
+```
+
+Equivalently, for each start `i`, let `nextPeak[i]` = smallest peak index `p > i` (needs `p <= r-1` to be usable). Subarrays starting at `i` with a peak are those ending at `j >= nextPeak[i] + 1`, giving `(r - nextPeak[i])` choices.
+
+A cleaner formulation with a Fenwick tree on peaks:
+- Number of peak-containing subarrays in `[l, r]` = sum over each peak `p` of the number of subarrays `[i, j]` where `p` is the **first** peak inside. If `prev[p]` is the previous peak before `p`, then `i` ranges over `(prev[p], p)` intersected with `[l, ...]`, and `j` ranges over `[p+1, r]`. Count = `(min(p, r) - max(prev[p], l-1)) ... ` — this gets complex.
+
+## Better Approach: BIT + Offline... but updates are online interleaved.
+
+Use a Fenwick tree maintaining peak indicator array `peak[]`. Then:
+
+```
+answer(l, r) = sum_{i=l}^{r-2} max(0, r - f(i))
+```
+where `f(i)` = smallest peak index `> i`, or infinity.
+
+This requires `next peak` queries — maintain an ordered set (e.g., `sortedcontainers.SortedList`) of peak indices. Then `f(i)` via binary search. But summing over all `i` in `[l, r-2]` is O(length) per query — too slow.
+
+## Key Reformulation
+
+Count subarrays with at least one peak:
+```
+count(l,r) = sum over peaks p in (l, r): (# starts i with prev_peak(p) < i < p, i >= l) * (r - p)
+```
+Wait — actually each subarray `[i, j]` with a peak: let `p` be the **leftmost** peak in `(i, j)`. Then `i ∈ (prevPeak[p], p]`, `i >= l`, and `j ∈ [p+1, r]`. Since leftmost peak decomposition partitions subarrays uniquely:
+
+```
+count(l, r) = sum over peaks p with l < p < r:
+    (min(p - 1, r - 2) ... )
+```
+
+More precisely: `i` can range in `[max(l, prevPeak[p]+1), p-1]`, and `j` in `[p+1, r]`. So contribution is `(p - max(l, prevPeak[p]+1)) * (r - p)`.
+
+This still requires iterating peaks in range — could be O(n) per query in the worst case... but with a Fenwick storing peaks, we need aggregate of `(p - max(l, prev+1)) * (r - p)` which splits at the first peak `> l`. Hmm, note `prevPeak[p] >= l` only fails for the first peak after `l`. For all other peaks `p`, `prevPeak[p] >= l`, so `i` ranges fully in `[prevPeak[p]+1, p-1]`, giving `(p - prevPeak[p] - 1) * (r - p)`.
+
+This is getting complicated but workable: total = correction for first peak + sum of weights `w[p] = (p - prevPeak[p] - 1) * (r - p)` for peaks `p` in `(firstPeak, r)`. `w[p]` depends on `r` linearly: `w[p] = (p - prevPeak[p]-1) * r - (p - prevPeak[p]-1) * p`. So we need Fenwick sums of `a[p] = (p - prevPeak[p]-1)` and `b[p] = a[p]*p` over peaks. But `a[p]` depends on `prevPeak[p]`, which changes with updates — need to maintain both BITs plus the sorted set, updating `a[p]` for `p` and its successor peak when peaks are inserted/deleted. 
+
+That's O(log n) per update. Queries O(log n). Total O((n+q) log n).
+
+Actually, there's a simpler alternative: count subarrays **without** any peak — that's sum over `i` of `(nextPeak[i] - i)` capped... also complex. Let's just go with the two-BIT + SortedList approach. But `sortedcontainers` may not be available. We can implement a balanced structure via... In LeetCode environment, `sortedcontainers` is usually available. Alternatively, we can avoid needing prevPeak by a different trick:
+
+Alternative simpler contribution: each peak `p` contributes to subarrays where it's the leftmost peak. We can instead compute answer = sum over peaks p in (l, r) of `(p - max(l, prevPeak[p] + 1)) * (r - p)`.
+
+Let `S` = peaks. For peaks `p` in `(l, r)`, only the smallest such peak has `prevPeak[p] < l` possibly. So:
+
+```
+answer = (p0 - l) * (r - p0)   [if p0 = first peak > l exists and p0 < r]
+       + sum over peaks p in (p0, r): (p - prevPeak[p] - 1) * (r - p)
+```
+
+Maintain BIT1 over peaks storing `c[p] = p - prevPeak[p] - 1`, BIT2 storing `c[p] * p`. Then the sum = `r * (sum c) - (sum c*p)`.
+
+Updates: when peak status at index `x` toggles, find predecessor/successor peaks in sorted set, update `c` values of affected peaks (the toggled one and its successor). 
+
+We need an ordered set supporting insert, delete, predecessor, successor, and "first element > l" in O(log n). Without `sortedcontainers`, we can implement a Fenwick-based order statistic structure over the peak indicator array! Since peaks are 0/1, a Fenwick tree can give us: count of peaks in range, find k-th peak (select), predecessor (count up to x-1 then select), successor (count up to x then select next). All O(log n). 
+
+So use three Fenwick trees (or combine):
+- `bitCount`: peak indicators.
+- `bitC`: sum of `c[p]` over peaks.
+- `bitCP`: sum of `c[p]*p` over peaks.
+
+Fenwick select (find by order) via binary lifting in O(log n).
+
+Plan:
+- `peak[x]` for `1 <= x <= n-2`.
+- `c[x] = x - prevPeak[x] - 1` where `prevPeak` = greatest peak `< x`, or if none, `prevPeak = 0`... but careful: starts `i` range over `(prevPeak, p-1]` i.e. `i ∈ [prevPeak+1, p-1]`, count = `p - prevPeak - 1`. If no previous peak, `i ∈ [0, p-1]`, count = `p`... but for the query formula, the first peak in `(l, r)` is handled specially with `(p0 - l)`, so for `c` of the leftmost overall peak, define `prev = 0`? If no prev peak, `c[p] = p - 0`? But then when used in the sum for non-first peaks it's correct since non-first peaks in range have a previous peak. The leftmost peak overall: its `c` would only be used if it's not the first peak in `(l, r)`—impossible, since if it's in range and there's no peak before it, it's the first. Actually wait, "first peak after l" is `p0`; sum is over peaks in `(p0, r)` — those all have a prev peak (namely at least `p0`). So define `c[p]` with `prevPeak` possibly "none" → treat as 0? Count of starts from 0..p-1 is `p`. With prev = 0 gives `p - 1`. Off by one — but it doesn't matter because such `c[p]` is never used in the aggregate sum. Fine.
+
+Query(l, r):
+- `cnt = bitCount.rangeSum(l+1, r-1)` — number of peaks strictly inside... Actually peaks `p` valid must satisfy `l < p < r` (since `i < p < j` with `i >= l`, `j <= r`... wait `i` can equal... `i >= l` and `i <= p-1`, `j >= p+1`, `j <= r`, so `p <= r-1`, `p >= l+1`).
+- If `cnt == 0`: answer 0.
+- `p0` = first peak `>= l+1`.
+- Answer = `(p0 - l) * (r - p0)` + `r * sumC - sumCP`, where `sumC = bitC.rangeSum(p0+1, r-1)`, `sumCP = bitCP.rangeSum(p0+1, r-1)`.
+
+Check example 1: nums=[1,3,2,4], peaks: x=1 (3>1,3>2) yes; x=2 (2>3?) no. Query (0,3): cnt=1, p0=1, answer = (1-0)*(3-1)=2. ✓
+
+Example 3 after update: nums=[3,6,2,0,1]. Peaks: x=1: 6>3,6>2 yes. x=2: 2>6 no. x=3: 0>2 no. Query (0,4): p0=1, answer=(1-0)*(4-1)=3. ✓
+
+Update at `index`: affected peak statuses at `x ∈ {index-1, index, index+1}` (within `[1, n-2]`). Recompute each; if changed, toggle in structures.
+
+Toggle on at `p`: find predecessor peak `prev` (strictly less) and successor `nxt` (strictly greater, existing before insertion).
+- Insert into bitCount.
+- `c[p] = p - prev - 1` (prev = 0 if none).
+- If `nxt` exists: old `c[nxt]` removed, new `c[nxt] = nxt - p - 1`; update bitC/bitCP accordingly.
+
+Toggle off at `p`: find `prev` and `nxt` around `p` (excluding p: query counts `< p`).
+- Remove `c[p]` contributions, remove from bitCount.
+- If `nxt` exists: `c[nxt] = nxt - prev - 1` (prev=0 if none).
+
+Fenwick operations needed: add(pos, delta), prefix sum, range sum, and select k-th (1-indexed smallest index with prefixSum >= k). Predecessor of `x`: `c = prefixSum(x-1)`; if `c>0`, select(c). Successor of `x` (strictly greater): `c = prefixSum(x)`; total = overall; if total > c, select(c+1). First peak `>= l+1`: `c = prefixSum(l)`; if total > c → select(c+1).
+
+Fenwick size n+2. Select via bitmask binary lifting.
+
+Complexities fine. Now write code.
+
+```python
+class Fenwick:
+    def __init__(self, n):
+        self.n = n
+        self.tree = [0] * (n + 1)
+
+    def add(self, i, delta):
+        # i is 1-indexed
+        n = self.n
+        tree = self.tree
+        while i <= n:
+            tree[i] += delta
+            i += i & -i
+
+    def sum(self, i):
+        s = 0
+        tree = self.tree
+        while i > 0:
+            s += tree[i]
+            i -= i & -i
+        return s
+
+    def range_sum(self, l, r):
+        if l > r:
+            return 0
+        return self.sum(r) - self.sum(l - 1)
+
+    def select(self, k):
+        # smallest i with prefix sum >= k (k >= 1)
+        i = 0
+        bitmask = 1 << (self.n.bit_length() - 1)
+        tree = self.tree
+        while bitmask:
+            t = i + bitmask
+            if t <= self.n and tree[t] < k:
+                i = t
+                k -= tree[t]
+            bitmask >>= 1
+        return i + 1
+```
+
+Use 1-indexed Fenwick with positions shifted by +1: position `x` (array index) maps to Fenwick index `x+1`.
+
+Main class:
+
+```python
+class Solution:
+    def countOfPeaks(self, nums, queries):
+        n = len(nums)
+        bitCnt = Fenwick(n + 2)
+        bitC = Fenwick(n + 2)
+        bitCP = Fenwick(n + 2)
+
+        def is_peak(x):
+            return 0 < x < n - 1 and nums[x] > nums[x - 1] and nums[x] > nums[x + 1]
+
+        def prev_peak(x):
+            c = bitCnt.sum(x)  # fenwick idx x => positions <= x-1
+            if c == 0:
+                return 0
+            return bitCnt.select(c) - 1
+
+        def next_peak(x):
+            c = bitCnt.sum(x + 1)  # positions <= x
+            if bitCnt.sum(n + 1) > c:
+                return bitCnt.select(c + 1) - 1
+            return -1
+```
+
+Careful with mapping: Fenwick index = position + 1. `bitCnt.sum(fi)` counts peaks at positions `0..fi-1`. So peaks `< x` = `bitCnt.sum(x)`. Peaks `<= x` = `bitCnt.sum(x+1)`. Total = `bitCnt.sum(n+1)`.
+
+```python
+        def add_peak(p):
+            prev = prev_peak(p)
+            nxt = next_peak(p)
+            c = p - prev - 1
+            bitCnt.add(p + 1, 1)
+            bitC.add(p + 1, c)
+            bitCP.add(p + 1, c * p)
+            if nxt != -1:
+                old_c = nxt - prev - 1
+                new_c = nxt - p - 1
+                bitC.add(nxt + 1, new_c - old_c)
+                bitCP.add(nxt + 1, (new_c - old_c) * nxt)
+
+        def remove_peak(p):
+            prev = prev_peak(p)
+            nxt = next_peak(p)
+            c = p - prev - 1
+            bitCnt.add(p + 1, -1)
+            bitC.add(p + 1, -c)
+            bitCP.add(p + 1, -c * p)
+            if nxt != -1:
+                old_c = nxt - p - 1
+                new_c = nxt - prev - 1
+                bitC.add(nxt + 1, new_c - old_c)
+                bitCP.add(nxt + 1, (new_c - old_c) * nxt)
+```
+
+Wait, in `remove_peak`, `nxt = next_peak(p)` — computed before removal, but `next_peak` counts `<= p` then selects next — since p is currently in the set, `sum(p+1)` includes p, so select(c+1) gives the peak after p. Correct. `prev_peak(p)` uses `sum(x)` = peaks `< p`, correct.
+
+In `add_peak`, computed before insertion: `prev_peak` = peaks `< p` correct; `next_peak` uses `sum(p+1)` = peaks `<= p`, p not yet inserted so it's peaks `< p`, select(c+1) = first peak `> p`. Correct.
+
+Init:
+```python
+        for x in range(1, n - 1):
+            if is_peak(x):
+                # need prev among already inserted
+                ...
+```
+Simpler: first collect all peaks, insert into bitCnt, then compute c for each via prev. Or call add_peak sequentially — it handles everything. Just iterate x ascending and call add_peak(x) when is_peak(x). That's O(n log n).
+
+Query:
+```python
+        ans = []
+        for q in queries:
+            if q[0] == 1:
+                l, r = q[1], q[2]
+                if r - l < 2:
+                    ans.append(0)
+                    continue
+                cntInside = bitCnt.sum(r) - bitCnt.sum(l + 1)  # peaks in (l, r): positions l+1..r-1
+```
+Check: peaks `<= r-1` = sum(fi = r). Peaks `<= l` = sum(fi = l+1). So inside = `bitCnt.sum(r) - bitCnt.sum(l+1)`.
+
+```python
+                if cntInside == 0:
+                    ans.append(0)
+                    continue
+                # first peak > l: c = peaks <= l = sum(l+1); select(c+1)
+                p0 = bitCnt.select(bitCnt.sum(l + 1) + 1) - 1
+                total = (p0 - l) * (r - p0)
+                sumC = bitC.sum(r) - bitC.sum(p0 + 1)      # peaks p0+1..r-1
+                sumCP = bitCP.sum(r) - bitCP.sum(p0 + 1)
+                total += r * sumC - sumCP
+                ans.append(total)
+            else:
+                idx, val = q[1], q[2]
+                if nums[idx] == val:
+                    continue
+                affected = [x for x in (idx - 1, idx, idx + 1) if 1 <= x <= n - 2]
+                old = {x: is_peak(x) for x in affected}
+                nums[idx] = val
+                for x in affected:
+                    new = is_peak(x)
+                    if new and not old[x]:
+                        add_peak(x)
+                    elif old[x] and not new:
+                        remove_peak(x)
+        return ans
+```
+
+Check `sumC` range: peaks in `(p0, r)` i.e. positions `p0+1 .. r-1`: `bitC.sum(fi=r) - bitC.sum(fi=p0+1)`. `sum(fi=r)` covers positions `<= r-1`. `sum(fi=p0+1)` covers positions `<= p0`. Correct.
+
+Edge: `select` requires k valid; cntInside>0 ensures first peak exists and is `<= r-1`.
+
+Double-check the formula with a case of two peaks. nums such that peaks at p1 < p2 in (l, r). Subarrays containing at least one peak:
+- Leftmost peak = p1: i ∈ [l, p1-1] → (p1 - l) choices; j ∈ [p1+1, r] → (r - p1). Contribution (p1-l)*(r-p1). ✓ (our special term)
+- Leftmost peak = p2: i ∈ [p1+1, p2-1] → p2-p1-1 = c[p2] choices; j ∈ [p2+1, r] → (r-p2). Contribution c*(r-p2) = r*c - c*p2. ✓
+
+Formula holds for more peaks similarly.
+
+Test mentally with example 2: nums=[9,8,9,8]. Peaks: x=1: 8>9? no. x=2: 9>8 and 9>8 yes. Query [1,1,3]: l=1,r=3. Inside peaks: positions 2..2 → x=2 yes, cnt=1. p0 = first peak > 1 = 2. total = (2-1)*(3-2)=1. ✓. Update [2,2,1]: nums[2]=1. Affected x∈{1,2,3}∩[1,2] = {1,2}. old: is_peak(1): 8>9 no; is_peak(2): yes before. nums[2]=1 → new: x=1: nums[1]=8 >9? no. x=2: 1>8 no. Remove peak 2. Query [1,0,2]: l=0,r=2, r-l=2, peaks in (0,2): position 1 only. None → 0. ✓
+
+Now potential large answer: number of subarrays up to ~ (1e5)^2/2 = 5e9 → fits in Python int anyway.
+
+Fenwick select bitmask: `1 << (self.n.bit_length())` might overshoot; standard is highest power of two <= n: `1 << (self.n.bit_length() - 1)`. With n+2 size fine.
+
+One more check: `prev_peak` returns 0 when no previous peak. If p = 1 and no prev, c = 1 - 0 - 1 = 0. Fine (never used in sums since p would be p0). But wait—could a peak with prev none be a non-first peak in range? No, since any peak in (l, r) that has no predecessor is the global first, and p0 = first peak > l would equal it. So its c is excluded from sumC (which starts at p0+1). Good.
+
+Also note `next_peak` total count: `bitCnt.sum(n + 1)` — Fenwick size n+2, max index n+1? Positions up to n-1 map to fi = n. Size n+2 gives valid indices up to n+1. sum(n+1) is total. Fine.
+
+Now confirm c update on successor when adding/removing: c[nxt] = nxt - prevPeak(nxt) - 1. In add_peak, before insertion prevPeak(nxt) was `prev` (the predecessor of p), after insertion becomes p. We update bitC by (new-old)*1 and bitCP by (new-old)*nxt. Correct.
+
+Edge: updating nums[idx] where affected includes x but is_peak uses updated nums for all — we set nums[idx]=val before recomputing, correct order. Old statuses computed before assignment. Good.
+
+Skip update if val unchanged — fine (statuses unchanged).
+
+Time: O((n + q) log n). Should pass 3s in Python; 1e5 * ~17 * small constant. Fenwick select is O(log n) each; per query a handful of Fenwick ops (~ up to 10). ~3e6-5e6 operations total — okay in 3s, maybe borderline but likely fine. Optimize inner loops with local variables where easy.
+
+Let me write the final code compactly with micro-optimizations: inline Fenwick as lists with local references? Keep class but fine.
+
+One micro-concern: Python speed. ~1e5 queries each doing: type1 → 2 sums for cnt, select (log), sums for bitC/bitCP → ~5 Fenwick ops ≈ 5*17*... Each Fenwick op ~17 iterations → 85 loop iterations per query → 8.5e6 total; updates similar ×3 affected. Should fit in 3s.
+
+Write final answer.```python
+class Fenwick:
+    __slots__ = ('n', 'tree')
+
+    def __init__(self, n):
+        self.n = n
+        self.tree = [0] * (n + 1)
+
+    def add(self, i, delta):
+        tree = self.tree
+        n = self.n
+        while i <= n:
+            tree[i] += delta
+            i += i & -i
+
+    def sum(self, i):
+        s = 0
+        tree = self.tree
+        while i > 0:
+            s += tree[i]
+            i -= i & -i
+        return s
+
+    def select(self, k):
+        # smallest index i with prefix sum >= k (assumes k >= 1 and valid)
+        i = 0
+        tree = self.tree
+        bitmask = 1 << (self.n.bit_length() - 1)
+        while bitmask:
+            t = i + bitmask
+            if t <= self.n and tree[t] < k:
+                i = t
+                k -= tree[t]
+            bitmask >>= 1
+        return i + 1
+
+
+class Solution:
+    def countOfPeaks(self, nums: list[int], queries: list[list[int]]) -> list[int]:
+        n = len(nums)
+        # Fenwick trees, position x (array index) -> fenwick index x + 1
+        bitCnt = Fenwick(n + 2)   # peak indicators
+        bitC = Fenwick(n + 2)     # sum of c[p] over peaks
+        bitCP = Fenwick(n + 2)    # sum of c[p] * p over peaks
+
+        def is_peak(x):
+            return nums[x] > nums[x - 1] and nums[x] > nums[x + 1]
+
+        def prev_peak(x):
+            # greatest peak index < x, or 0 if none
+            c = bitCnt.sum(x)          # peaks at positions <= x-1
+            if c == 0:
+                return 0
+            return bitCnt.select(c) - 1
+
+        def next_peak(x):
+            # smallest peak index > x, or -1 if none
+            c = bitCnt.sum(x + 1)      # peaks at positions <= x
+            if bitCnt.sum(n + 1) > c:
+                return bitCnt.select(c + 1) - 1
+            return -1
+
+        def add_peak(p):
+            prev = prev_peak(p)
+            nxt = next_peak(p)
+            c = p - prev - 1
+            bitCnt.add(p + 1, 1)
+            bitC.add(p + 1, c)
+            bitCP.add(p + 1, c * p)
+            if nxt != -1:
+                diff = (nxt - p - 1) - (nxt - prev - 1)
+                bitC.add(nxt + 1, diff)
+                bitCP.add(nxt + 1, diff * nxt)
+
+        def remove_peak(p):
+            prev = prev_peak(p)
+            nxt = next_peak(p)
+            c = p - prev - 1
+            bitCnt.add(p + 1, -1)
+            bitC.add(p + 1, -c)
+            bitCP.add(p + 1, -c * p)
+            if nxt != -1:
+                diff = (nxt - prev - 1) - (nxt - p - 1)
+                bitC.add(nxt + 1, diff)
+                bitCP.add(nxt + 1, diff * nxt)
+
+        for x in range(1, n - 1):
+            if is_peak(x):
+                add_peak(x)
+
+        ans = []
+        for q in queries:
+            if q[0] == 1:
+                l, r = q[1], q[2]
+                # peaks p with l < p < r
+                cnt = bitCnt.sum(r) - bitCnt.sum(l + 1)
+                if cnt == 0:
+                    ans.append(0)
+                    continue
+                p0 = bitCnt.select(bitCnt.sum(l + 1) + 1) - 1
+                total = (p0 - l) * (r - p0)
+                sumC = bitC.sum(r) - bitC.sum(p0 + 1)
+                sumCP = bitCP.sum(r) - bitCP.sum(p0 + 1)
+                total += r * sumC - sumCP
+                ans.append(total)
+            else:
+                idx, val = q[1], q[2]
+                if nums[idx] == val:
+                    continue
+                affected = [x for x in (idx - 1, idx, idx + 1)
+                            if 1 <= x <= n - 2]
+                old = {}
+                for x in affected:
+                    old[x] = is_peak(x)
+                nums[idx] = val
+                for x in affected:
+                    now = is_peak(x)
+                    if now and not old[x]:
+                        add_peak(x)
+                    elif old[x] and not now:
+                        remove_peak(x)
+        return ans
+```
+
+**Approach:** A subarray `[i, j]` is a peak subarray iff it contains a peak index `p` (`nums[p]` greater than both neighbors) with `i < p < j`. Each qualifying subarray has a unique **leftmost** peak `p`, where `i` ranges over `(prevPeak[p], p-1]` and `j` over `[p+1, r]`. For query `[l, r]`, the answer is:
+
+- `(p0 - l) * (r - p0)` for the first peak `p0 > l`, plus
+- `Σ (p - prevPeak[p] - 1) * (r - p)` over remaining peaks `p` in `(p0, r)`, which splits as `r·Σc[p] − Σc[p]·p`.
+
+Three Fenwick trees maintain peak indicators, `Σc[p]`, and `Σc[p]·p`; the count Fenwick also supports order-statistic selection (predecessor/successor) via binary lifting. Updates only affect peak status at indices `idx-1, idx, idx+1` and the `c` value of the successor peak, all in `O(log n)`. Total complexity: `O((n + q) log n)`.
+[finish_reason: stop | provider: Wafer | reasoning chars: 0 | usage: {'prompt_tokens': 1399, 'completion_tokens': 6612, 'total_tokens': 8011, 'cost': 0.07918644, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.07918644, 'upstream_inference_prompt_cost': 0.00050364, 'upstream_inference_completions_cost': 0.0786828}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

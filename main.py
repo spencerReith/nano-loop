@@ -66,12 +66,20 @@ class NanoLoop:
         ASK_INPUT = True
         if self.HEADLESS: ASK_INPUT = False
 
+        turns = 0
+        empty_calls = 0
         while LOOPING:
             if ASK_INPUT:
                 user_msg = input("\nUser: ")
                 self.msg_history.append({"role": "user", "content": user_msg})
             response_block, tool_calls = self.model_invoker.invoke(self.msg_history, self.tool_catologue)
             self.msg_history.append(response_block)
+            turns += 1
+            empty_calls = empty_calls + 1 if not tool_calls and not response_block["content"].strip() else 0
+            if self.HEADLESS and empty_calls == 3:
+                return ""
+            if self.HEADLESS and turns == 50:
+                return response_block["content"]
             if tool_calls:
                 for idx in tool_calls.keys():
                     try:

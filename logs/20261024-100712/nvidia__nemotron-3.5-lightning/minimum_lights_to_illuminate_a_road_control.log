@@ -1,0 +1,646 @@
+
+Assistant: We need to parse problem statement carefully.
+
+Problem restatement:
+
+We have a road of length n positions 0..n-1.
+
+Given array lights of length n. For each i: if lights[i] = v > 0, there is a working bulb at position i that illuminates positions from max(0, i - v) to min(n-1, i + v) inclusive. If lights[i] = 0, there is no working bulb at position i.
+
+A position is visible if illuminated by at least one working bulb.
+
+We may install additional bulbs at any positions. Each additional bulb installed at position j illuminates positions from max(0, j - 1) to min(n-1, j + 1), inclusive (i.e., radius 1 coverage). So each extra bulb covers 3 positions (or less at edges).
+
+Goal: return minimum number of additional bulbs required to make every position on the road visible.
+
+We have to output the method minLights(self, lights: list[int]) -> int in class Solution.
+
+Constraints: n up to 1e5.
+
+We need an algorithm O(n) or O(n log n).
+
+Let's understand the problem. We have initial coverage from existing bulbs. We can add bulbs with radius 1 (i.e., each covers j-1, j, j+1). We want minimum number of additional bulbs so that every position 0..n-1 is covered.
+
+Essentially we have some intervals covered already. We need to cover all points 0..n-1 with extra intervals of length 3 (centered at integer positions). Minimum number of intervals of length 3 to cover remaining uncovered points.
+
+But existing bulbs have variable radii. We first need to compute the union of all intervals covered by existing bulbs. Then find the uncovered segments, and then compute minimum number of radius-1 bulbs to cover those segments.
+
+But careful: The extra bulbs can be placed anywhere, including at positions where there are existing bulbs? It says "You may install additional bulbs at any positions." So yes.
+
+We need to find minimum number of radius-1 bulbs to cover all positions not already covered. Since radius-1 bulbs cover 3 consecutive positions, the problem reduces to: given a set of covered positions (union of intervals), find minimum number of length-3 intervals (with integer centers) needed to cover the complement.
+
+This is a classic greedy interval covering problem: We have uncovered positions. We can process from left to right. At each uncovered position, we must place a bulb to cover it. To minimize number, we should place the bulb as far right as possible while still covering the current leftmost uncovered position. Since each bulb covers [pos-1, pos, pos+1], if the leftmost uncovered is idx, we can place bulb at idx+1 (covers idx, idx+1, idx+2) or at idx (covers idx-1, idx, idx+1). To maximize coverage to the right, we place at idx+1 (since then it covers idx, idx+1, idx+2). But careful: The leftmost uncovered might be 0; placing at 1 covers 0,1,2. If idx is n-1, placing at n-2 covers n-3,n-2,n-1; placing at n-1 covers n-2,n-1. To minimize, standard greedy: find first uncovered position x. Place bulb at x+1 (if x+1 < n) else at x. Then mark covered positions x, x+1, x+2 as covered, and continue from x+3.
+
+But we need to consider that existing bulbs already cover some positions. The union of intervals may be complex but we can compute covered boolean array of size n, initially False. For each i with lights[i] = v > 0, cover interval [max(0, i-v), min(n-1, i+v)] mark True. n up to 1e5, total intervals O(n) so O(n) marking is fine.
+
+Then after marking covered, we have array covered[0..n-1] booleans. Then greedy covering with radius-1 bulbs.
+
+But wait: Is there any interaction? Could placing extra bulbs affect existing coverage? No, we just need total coverage.
+
+However, there's a nuance: The existing bulbs have variable radii, but they are fixed. The extra bulbs have fixed radius 1. So yes.
+
+But maybe there is a more efficient way without full boolean array? But n=1e5, O(n) is fine.
+
+Let's test with examples.
+
+Example 1: lights = [0,0,0,0] => n=4, no existing bulbs. covered all False.
+
+Greedy: start idx=0 uncovered. Place bulb at idx+1=1 covers 0,1,2. Mark covered[0..2]=True. Next uncovered idx=3. Place bulb at idx+1=4? But idx=3, n=4. idx+1=4 out of bounds, so place at idx=3 covers 2,3. But 2 already covered, but that's fine. So total 2 bulbs. Output 2. Matches.
+
+Example 2: lights = [0,0,0,2,0] n=5. existing bulb at index 3 with v=2 => illuminates [max(0,3-2)=1, min(4,3+2)=4] => positions 1,2,3,4 covered. covered: 0 uncovered, 1-4 covered.
+
+Greedy: idx=0 uncovered. Place at idx+1=1 covers 0,1,2. Mark 0,1,2 covered. Next uncovered idx=3 (since 3 already covered). Actually after marking 0,1,2, covered positions: 1,2 already were covered; 0 now covered. So all positions 0..4 covered? 3,4 already covered. So only 1 bulb needed. Output 1. Matches.
+
+But wait: In example 2, placing at position 1 covers 0,1,2. Since positions 3,4 already covered, total 1 bulb. Works.
+
+Edge cases: What if there's a gap? Eg lights = [1,0,0,0] n=4. Existing bulb at 0 v=1 covers [max(0,-1)=0, min(3,1)=1] => positions 0,1 covered. uncovered: 2,3. Greedy: idx=2 uncovered. Place at idx+1=3 covers 2,3 (since 3+1=4 out of bounds, but covers 2,3). So 1 bulb. Check: placing at 3 covers 2,3 (since radius 1 => 2,3,4 but 4 out, so 2,3). Good.
+
+Another case: lights = [0,2,0] n=3. Existing at 1 v=2 covers [max(0,-1)=0, min(2,3)=2] => all covered. extra 0.
+
+Another: lights = [0,0,1,0] n=4. existing at 2 v=1 covers [1,3] => positions 1,2,3 covered. uncovered: 0. Greedy: idx=0 uncovered. Place at idx+1=1 covers 0,1,2. Already 1,2 covered, but 0 covered. So 1 bulb. Is that minimal? Could we place at 0? That would also cover 0,1. Same count 1. Good.
+
+Now consider scenario where greedy choice matters: Suppose uncovered positions are 0 and 3 (gap of 1 covered?). But we process left to right; after placing at idx+1, we cover up to idx+2. Then we start from idx+3. This is standard for covering points with intervals of fixed length, where we can place interval start anywhere. But here intervals are centered at integer positions, covering [c-1, c, c+1]. If we have uncovered position x, the optimal placement to cover x and as many right as possible is at x+1 (covers x, x+1, x+2). If x is the last position (x = n-1), we place at n-1 (covers n-2, n-1) or n-2? Actually if x=n-1 uncovered, placing at n-1 covers n-2,n-1; placing at n-2 covers n-3,n-2,n-1. Both cover n-1, but placing at n-2 might also cover n-3 if needed. But since we are at the rightmost uncovered, we might as well place at n-1 or n-2. The greedy as described: if idx+1 < n, place at idx+1; else place at idx. For idx=n-1, idx+1 = n out of bounds, so place at idx=n-1. That covers n-2,n-1. That's fine.
+
+But what if there are multiple uncovered positions? Standard greedy for covering a set of points with intervals of fixed length where intervals can be placed anywhere (centers integer) is: sort uncovered points; while there are uncovered, pick the leftmost uncovered x, place interval to cover x and extend as far right as possible: center = x+1 (if x+1 <= n-1 else x). Then mark x, x+1, x+2 as covered (or up to n-1). Increment count. This yields optimal minimal number because each interval covers at most 3 consecutive positions, and placing it as far right as possible while covering the leftmost uncovered point is optimal. This is analogous to covering a line with unit-length intervals? Actually length-3 intervals centered at integers. Known problem: "minimum number of radius-1 bulbs to cover all positions" when some already covered.
+
+But we must ensure that the intervals from existing bulbs don't interfere with the greedy choice in a way that maybe we could place extra bulbs overlapping existing coverage to reduce count? The greedy only cares about uncovered positions. Since extra bulbs can overlap with existing coverage, it's always optimal to just cover the uncovered positions with minimum extra bulbs, because any extra bulb covering some already-covered positions doesn't hurt, and we can always shift placements to cover uncovered without increasing count. The greedy on uncovered positions yields minimal extra bulbs.
+
+Thus algorithm:
+
+1. n = len(lights)
+2. covered = [False] * n
+3. For i, v in enumerate(lights):
+    if v > 0:
+        left = max(0, i - v)
+        right = min(n - 1, i + v)
+        for j in range(left, right + 1):
+            covered[j] = True
+But this loop could be O(n * max_v) worst-case if many large v. But total n is 1e5, and sum of interval lengths could be O(n^2) if v large (e.g., v=n for many). However, we can optimize marking intervals using difference array or just clamp and mark, but worst-case if one bulb has v=n, interval length O(n) ok. If many bulbs with large v, total could be O(n^2) = 1e10 too large. Need efficient way to compute union of intervals.
+
+We need to compute covered array efficiently in O(n) time.
+
+Since we have intervals [L_i, R_i] for each existing bulb, we can use a sweep line / difference array.
+
+Approach: Initialize diff array of size n+1 with zeros. For each bulb i with v>0: L = max(0, i - v), R = min(n-1, i + v). diff[L] += 1; diff[R+1] -= 1 (if R+1 < n). Then compute prefix sum: cur = 0; for j in 0..n-1: cur += diff[j]; covered[j] = (cur > 0). This is O(n) total.
+
+But careful: If multiple bulbs overlap, diff handles correctly. So we can compute covered in O(n).
+
+4. After we have covered boolean array, we need to compute min extra bulbs.
+
+We can iterate i from 0 to n-1:
+
+But we need to skip covered positions. Standard greedy:
+
+count = 0
+i = 0
+while i < n:
+    if covered[i]:
+        i += 1
+        continue
+    # i is uncovered
+    # we need to place a bulb to cover i
+    # optimal placement: at i+1 if i+1 < n else at i
+    # but we must ensure placement covers i and as far right as possible.
+    # Place at pos = i+1 if i+1 < n else i
+    pos = i + 1 if i + 1 < n else i
+    # this bulb covers [pos-1, pos, pos+1] intersected with [0, n-1]
+    # mark those as covered
+    # we can just set covered[j] = True for j in range(max(0, pos-1), min(n, pos+2))
+    # but we don't necessarily need to update covered array if we just advance i.
+    # However, to correctly skip already covered, we should update or just advance i by 3?
+    # Since we place bulb at pos, it covers pos-1, pos, pos+1. The leftmost uncovered was i.
+    # After placing, the positions i, i+1, i+2 (up to n-1) become covered (or partially).
+    # We can set i = pos + 2 + 1? Let's think.
+    # If we place at pos = i+1, it covers i, i+1, i+2. So next uncovered could be i+3.
+    # If i is last position, pos = i, covers i-1, i (but i-1 maybe already covered). Next uncovered would be i+1 (out of bounds).
+    # So we can just set i = i + 3 (or i+2? Let's be precise).
+    # Actually after placing bulb at pos, the covered range from i to pos+1 is covered. Since i is the first uncovered, and pos >= i, the newly covered positions are from i to min(n-1, pos+1). Since pos is either i+1 or i, pos+1 is i+2 or i+1.
+    # So the next index that might be uncovered is pos+2? Let's check.
+    # If pos = i+1: covers i, i+1, i+2. Next i should be i+3.
+    # If pos = i: covers i-1, i, i+1. But i was uncovered, i+1 might have been covered already? Actually if i was uncovered, i+1 could be covered or not. But since we are processing left to right and i is the first uncovered, all positions < i are covered. i+1 could be covered or not? Wait, if i is the first uncovered, then i-1 is covered, but i+1 might be uncovered or covered? Actually if i is the first uncovered, then all positions < i are covered. But i+1 could be anything; however, since we process left to right, we haven't processed i+1 yet. But if i+1 was already covered by existing bulbs, then i+1 would be marked covered in our covered array. In our algorithm, we have the covered array from existing bulbs. But when we place extra bulbs, we conceptually cover new positions. To avoid re-scanning, we can just advance i by 3 after placing at i+1, but we must be careful if some of those positions were already covered by existing bulbs. However, since we only care about uncovered positions, we can just set i = i + 3 after placing at i+1, but if i+2 was already covered, i+3 might be covered too? Actually if i+2 was already covered by existing bulbs, then i+3 might also be covered. But our i advancement should skip already covered positions. The simplest and safe way: after placing a bulb, we can just loop i from current i+1 until we find an uncovered position, but that could be O(n) overall if we just increment i by 1 each time and check covered[i]. Since we have the covered array, we can just do:
+
+count = 0
+i = 0
+while i < n:
+    if covered[i]:
+        i += 1
+        continue
+    # place bulb
+    pos = i + 1 if i + 1 < n else i
+    # mark covered positions for this bulb
+    left = max(0, pos - 1)
+    right = min(n - 1, pos + 1)
+    for j in range(left, right + 1):
+        covered[j] = True
+    count += 1
+    # now i will be incremented in next iteration; but we can just let the while loop continue; it will skip covered positions.
+    # But we might re-evaluate i many times? Actually after marking, the next i might be covered, so the while loop will just increment i until uncovered. This is O(n) total because each position becomes covered at most once, and we only increment i when covered[i] is True, and we only place bulb when uncovered. The inner for loop marks positions, each position marked True at most once (since once True, we skip). So total operations O(n). This is simple and safe.
+
+Let's test this logic with examples.
+
+Example 1: covered = [F,F,F,F]
+i=0: not covered. pos = 1 (since 0+1<4). left = max(0,0)=0, right = min(3,2)=2. mark 0,1,2 True. count=1. i increments? The while loop will check i=0 next iteration? Actually after marking, the while loop will continue from i=0? Wait structure:
+
+while i < n:
+    if covered[i]:
+        i += 1
+        continue
+    # place bulb
+    ...
+    count += 1
+    # no i increment here, so next iteration i is still 0, but covered[0] is now True, so it will go to i+=1, i=1.
+    # then i=1 covered True -> i=2 covered True -> i=3 uncovered? Actually after marking 0,1,2, covered[3] is still False. So i=3 will be processed. Good.
+
+But careful: After placing bulb, we don't increment i, so the loop will check covered[0] again, which is now True, so i becomes 1, then 2, then 3. That's fine, each position processed once.
+
+But what if we place bulb at pos = i (when i+1 >= n). E.g., n=1, lights=[0]. covered=[F]. i=0: uncovered. pos = 0 (since i+1=1 >= n). left = max(0,-1)=0, right = min(0,1)=0. mark 0 True. count=1. Next iteration i=0 covered True -> i=1 loop ends. Output 1. Correct: one bulb at position 0 covers position 0.
+
+Example 2: covered initially [F,T,T,T,T] (n=5). i=0: uncovered. pos=1. left=0, right=2. mark 0,1,2 True. covered becomes [T,T,T,T,T]. count=1. Next iteration i=0 covered True -> i=1 covered -> i=2 covered -> i=3 covered -> i=4 covered -> i=5 end. Output 1. Good.
+
+Another test: lights = [0,0,0] n=3. covered all F. i=0: uncovered, pos=1, left=0 right=2 mark all True. count=1. i then goes to 3 end. Output 1. But is 1 enough for n=3? One bulb at position 1 covers 0,1,2. Yes.
+
+Another: lights = [0] n=1. Output 1.
+
+Another: lights = [1] n=1. covered: bulb at 0 v=1 covers [0,0] => covered=[T]. i=0 covered True -> i=1 end. count=0. Output 0. Correct.
+
+Another: lights = [2,0,0] n=3. existing bulb at 0 v=2 covers [0,2] all covered. count=0.
+
+Another: lights = [0,1,0] n=3. existing at 1 v=1 covers [0,2] all covered. count=0.
+
+Another: lights = [0,0,2] n=3. existing at 2 v=2 covers [0, min(2,4)=2] all covered. count=0.
+
+What about a case where greedy placement might need to consider that placing at i+1 might go out of bounds and we place at i, but maybe placing at i-1 could be better? But we only have left to right. Standard algorithm for covering with radius 1 bulbs: The greedy of placing at leftmost uncovered + 1 is optimal. Let's prove or test edge cases.
+
+Consider n=5, uncovered positions: 0 and 4 only, with 1,2,3 covered initially. covered = [F,T,T,T,F]. i=0 uncovered. pos = 1 (since 1<5). left=0 right=2 mark 0,1,2 covered. Now covered all True. count=1. Output 1. Could we do with 1? Placing at 1 covers 0,1,2. Position 4 already covered? 4 was uncovered initially, but after placing at 1, 4 still uncovered? Wait initial covered: 1,2,3 covered, 0 and 4 uncovered. After placing at 1, we cover 0,1,2. 4 still uncovered! But our algorithm above marked 0,1,2 as covered, but 4 remains uncovered. Then next iteration i=4 uncovered. pos = 4? i=4, i+1=5 >= n, so pos=4. left=3 right=4 mark 3,4 covered. count becomes 2. So total 2 bulbs. Is that minimal? Let's see: we have positions 0 and 4 uncovered, with 1,2,3 already covered. Can we cover both 0 and 4 with one bulb? A bulb covers at most 3 consecutive positions. To cover 0 and 4, we would need a bulb covering 0,1,2 and another covering 2,3,4? But one bulb can't cover both 0 and 4 because max distance covered is 2 (from center). If center at 2, covers 1,2,3. If center at 1, covers 0,1,2. If center at 3, covers 2,3,4. So to cover 0 and 4, we need at least two bulbs (e.g., at 1 and 3). So minimal is 2. Our algorithm gives 2. Good.
+
+But wait, in this scenario, initial covered was 1,2,3. Our algorithm first placed at 1 covering 0,1,2. Then placed at 4 covering 3,4. Total 2. Could we have placed at 3 first? If we placed at 3, it covers 2,3,4, leaving 0 uncovered, then place at 1 covering 0,1,2. Also 2. So optimal.
+
+Now consider a case where placing at i+1 might skip some already covered positions but maybe we could place at i to cover i and i+1, and then maybe next uncovered is i+2, etc. But the greedy of always placing at i+1 (if possible) is optimal for covering a set of points with intervals of fixed length where intervals can be placed anywhere. This is a known result: to cover points on a line with intervals of length L (here L=3, centers at integers), the greedy that picks the leftmost uncovered point x and places an interval starting at x (or covering x with rightmost possible) is optimal. Actually for intervals of fixed length that can be placed anywhere (not necessarily integer centers?), but here centers are integers, intervals are [c-1, c, c+1]. This is equivalent to covering points with intervals of length 2 (from c-1 to c+1 inclusive is length 3, span 2). The greedy: sort points, while uncovered, pick leftmost x, place interval with left endpoint at x (or center at x+1). This yields optimal minimum number. I'm pretty confident.
+
+But let's test another tricky case: n=6, uncovered: 0, 3, 5? Actually we need to test with initial coverage.
+
+Suppose initial covered none. n=6 all uncovered. Greedy:
+i=0 uncovered, pos=1 covers 0,1,2. count=1.
+Next uncovered i=3 (since 0,1,2 covered). pos=4 covers 3,4,5. count=2. Total 2 bulbs. Can we cover n=6 with 2 bulbs? Bulb at 1 covers 0,1,2; bulb at 4 covers 3,4,5. Yes 2. Could we do 1? No, max coverage 3 positions. So 2 is optimal.
+
+What about n=7 all uncovered: i=0 pos=1 covers 0,1,2. i=3 pos=4 covers 3,4,5. i=6 uncovered (since 6 left). pos=6 (i+1=7>=7) covers 5,6? Actually pos=6 covers 5,6 (since left=5, right=6). But 5 already covered. count=3. Can we do better? n=7, bulb coverage 3. Minimum bulbs ceil(7/3)=3. So 3 is optimal.
+
+What about n=8 all uncovered: i=0 pos=1 covers 0,1,2. i=3 pos=4 covers 3,4,5. i=6 pos=7 covers 6,7? pos=7 covers 6,7 (since 7+1=8 out). count=3. ceil(8/3)=3. Could we do 3? Bulb at 1: 0,1,2; bulb at 4: 3,4,5; bulb at 7: 6,7. Yes 3. So greedy works.
+
+Now consider scenario where some positions already covered by existing bulbs, and the uncovered positions are not contiguous. The greedy with covered array and marking will handle.
+
+One more edge case: What if after placing a bulb, the marked covered positions include some that were already covered, but we might have skipped some uncovered positions because we advanced i by checking covered[i] incrementally. The while loop structure:
+
+i = 0
+while i < n:
+    if covered[i]:
+        i += 1
+        continue
+    # place bulb
+    pos = i + 1 if i + 1 < n else i
+    left = max(0, pos - 1)
+    right = min(n - 1, pos + 1)
+    for j in range(left, right + 1):
+        covered[j] = True
+    count += 1
+    # loop continues, i unchanged, next iteration will check covered[i] which is now True (since we just marked i as covered), so i increments.
+
+This will correctly process all positions. The inner for loop marks positions, each position set to True at most once. The while loop increments i at most n times. So total O(n).
+
+But wait: Is it possible that after placing a bulb at pos = i+1, the positions i+1 and i+2 were already True, and we mark them again (no problem). The loop will then increment i past them. But what if i was uncovered, and we place bulb, but i+1 was already covered, i+2 also covered? Then after marking, covered[i] becomes True (it was False, now True). The while loop will then i+=1, check covered[i+1] (already True), i+=1, check covered[i+2] (already True), i+=1, check covered[i+3] (maybe uncovered). This is fine.
+
+But is there a scenario where placing at i+1 is suboptimal because i+1 might be out of bounds or maybe placing at i is better? We already handle i+1 >= n by placing at i.
+
+But what if i+1 < n, but placing at i+1 covers i, i+1, i+2. Could it be better to place at i-1? No, because i is the leftmost uncovered, so i-1 is already covered (or out of bounds). Placing at i-1 would not cover i (since i-1 covers i-2, i-1, i; wait! Actually if we place at i-1, it covers i-2, i-1, i. That would cover i! But i-1 might be already covered, but placing there would cover i and also i-1 and i-2. However, i-1 is to the left of i, and since i is the leftmost uncovered, all positions < i are already covered. So placing at i-1 would cover i, but also cover positions left of i which are already covered. Would that allow covering more to the right? i-1 covers up to i (since radius 1: i-1, i, i+1? Wait: bulb at position j covers j-1, j, j+1. So if j = i-1, it covers i-2, i-1, i. It does NOT cover i+1. So it only covers up to i, whereas placing at i+1 covers i, i+1, i+2. So placing at i+1 is strictly better for covering rightwards. Since i-1 is left of i, and i is the first uncovered, i-1 is already covered, but placing there wouldn't help cover i+1. So optimal is indeed to place at i+1 (or i if at edge).
+
+What if i is such that i+1 is already covered by existing bulbs, but i is uncovered? That's possible. Example: existing bulb covers 1,2 but not 0. covered = [F,T,T,...]. i=0 uncovered. i+1=1 is already covered. Our algorithm places at pos=1. It marks 0,1,2 as covered (1,2 already True, 0 becomes True). That's fine. Could we place at pos=0? That would cover 0 only (and maybe -1 out). Placing at 1 covers 0,1,2, which is better. So even if i+1 already covered, placing there is good because it extends coverage to the right.
+
+What if i+1 is the last position? n=2, covered=[F,F]. i=0 uncovered. pos = i+1 = 1 (<2). left=0 right=2? right = min(1, 1+1=2) => 1. So marks 0,1 covered. count=1. Output 1. Could we do better? n=2, one bulb at 1 covers 0,1. Yes.
+
+Now, is there any case where the greedy choice of pos = i+1 if i+1 < n else i might not be optimal because of existing coverage that could allow a different placement to cover more? But we are only concerned with covering the uncovered positions. The greedy on the complement of existing coverage is optimal because the problem reduces to: given a set of uncovered points (which are a subset of {0..n-1}), cover them with minimum number of intervals of length 3 (centered at integers). This is a classic interval covering problem where intervals can be placed anywhere (centers integer). The optimal strategy is indeed to process left to right, at each uncovered point x, place an interval that covers x and extends as far right as possible. The interval that extends farthest right while covering x is the one centered at x+1 (covers x, x+1, x+2). If x is the last point (x = n-1), center at n-1 covers n-2, n-1. This yields optimal minimum number. This is analogous to covering a set of points on a line with unit-length intervals? Actually with intervals of length 3 (span 2), the greedy is optimal. I'm confident.
+
+But let's double-check with a potential counterexample. Suppose uncovered points are {0, 2, 4} and n=5, no existing coverage. Greedy:
+i=0 uncovered, pos=1 covers 0,1,2. Now covered 0,1,2. Next uncovered i=3? Wait after marking 0,1,2, covered 3 is still uncovered? Initially uncovered 0,2,4. After covering 0,1,2, position 2 was already uncovered but now covered. Position 3 was not in initial uncovered set? Actually initial uncovered were 0,2,4. After marking 0,1,2, positions 0,1,2 covered. Position 3 was not initially uncovered (but it wasn't covered either? Wait initially all uncovered means all positions 0..4 uncovered. So initial uncovered = {0,1,2,3,4}. But if we only have uncovered points {0,2,4} that means some positions are already covered? But in our algorithm, we start with covered array from existing bulbs. If there are no existing bulbs, covered all False, so all positions uncovered. So the set of uncovered positions is all 0..n-1. The greedy will cover them in order. So the scenario of uncovered set {0,2,4} only occurs if some positions are already covered. But our algorithm handles any covered array.
+
+Let's test a custom case: n=5, existing covered: position 1 only? Actually we can set covered = [F,T,F,F,F] (only position 1 covered). Then uncovered = {0,2,3,4}. Greedy:
+i=0 uncovered. pos=1 (i+1=1). left=0 right=2 mark 0,1,2 covered. Now covered: 0,1,2 True. uncovered: 3,4.
+Next i=3 (since 0,1,2 covered). i=3 uncovered. pos=4 (i+1=4<5). left=3 right=4 mark 3,4 covered. count=2. Total 2 bulbs. Could we do 1? We have uncovered 0,2,3,4. Can one bulb cover all? Bulb at 2 covers 1,2,3. That covers 2,3 but not 0,4. Bulb at 3 covers 2,3,4. Bulb at 1 covers 0,1,2. So need at least 2. So 2 optimal.
+
+What if covered = [F,F,T,F,F] (position 2 covered). Uncovered = {0,1,3,4}. Greedy:
+i=0 uncovered. pos=1 covers 0,1,2. Now covered 0,1,2. uncovered 3,4.
+i=3 uncovered. pos=4 covers 3,4. count=2. Could we do 1? Bulb at 2 covers 1,2,3 -> covers 1,3 but not 0,4. Bulb at 1 covers 0,1,2 -> covers 0,1 but not 3,4. So 2 optimal.
+
+What if covered = [F,T,F,T,F] (positions 1,3 covered). Uncovered = {0,2,4}. Greedy:
+i=0 uncovered. pos=1 covers 0,1,2. covered now 0,1,2. uncovered 3,4? Actually 3 was covered initially, 4 uncovered. Next i=3 covered, i=4 uncovered. pos=4 (i+1=5>=5) covers 3,4. count=2. Could we do 1? Bulb at 2 covers 1,2,3 -> covers 2 but not 0,4. Bulb at 1 covers 0,1,2 -> covers 0,2 but not 4. Bulb at 3 covers 2,3,4 -> covers 4,2 but not 0. So 2 optimal.
+
+What if covered = [F,T,T,F,F] (1,2 covered). Uncovered = {0,3,4}. Greedy:
+i=0 uncovered. pos=1 covers 0,1,2. covered 0,1,2. uncovered 3,4. i=3 uncovered. pos=4 covers 3,4. count=2. Could we do 1? Bulb at 3 covers 2,3,4 -> covers 3,4 but not 0. Bulb at 1 covers 0,1,2 -> covers 0 but not 3,4. So 2 optimal.
+
+Seems consistent.
+
+Now, is there any case where placing at i+1 might cause us to need more bulbs than optimal because we "waste" coverage on already covered positions? But since we only care about covering uncovered, and we always extend as far right as possible from the leftmost uncovered, it's optimal. This is a standard result for covering points with intervals of fixed length where intervals can be placed continuously, but here centers are integers. However, the intervals are discrete and centered at integers. The greedy still works because the set of possible intervals is just those with integer centers. The optimal solution can be assumed to have intervals centered at some positions, and the greedy choice of centering at x+1 is always safe.
+
+But let's think if there is any case where centering at x might be better than x+1 when x+1 is already covered? But we already placed at x+1 even if covered, which is fine. What if we center at x-1? That would not cover x+1. So x+1 is best.
+
+One more check: What if i+1 is out of bounds? We place at i. That covers i-1, i, i+1 (but i+1 out). Actually if i = n-1, pos = n-1 covers n-2, n-1. That's correct.
+
+Now, what about the initial covered array computation using difference array?
+
+We have lights array of length n. For each i from 0 to n-1:
+    v = lights[i]
+    if v > 0:
+        L = max(0, i - v)
+        R = min(n - 1, i + v)
+        diff[L] += 1
+        if R + 1 < n:
+            diff[R + 1] -= 1
+
+Then compute prefix sum to get covered boolean.
+
+But wait: The problem says: "If lights[i] = v, where v > 0, there is a working bulb at position i that illuminates every position from max(0, i - v) to min(n - 1, i + v), inclusive." So yes, interval [L, R] inclusive.
+
+But note: The bulb at position i illuminates from i - v to i + v. However, the positions are 0 to n-1. So we clamp.
+
+Now, is there any nuance about "working bulb" vs "additional bulb"? Additional bulbs have radius 1, i.e., illuminate from max(0, j-1) to min(n-1, j+1). So our extra bulb coverage is exactly radius 1.
+
+Now, the problem asks: "Return the minimum number of additional bulbs required to make every position on the road visible."
+
+Our approach: compute covered from existing bulbs, then greedy extra bulbs.
+
+Let's test with some random small cases by mental or systematic.
+
+But before finalizing, consider potential pitfalls.
+
+Pitfall 1: The existing bulbs might have v > n? Constraints: 0 <= lights[i] <= n. So v up to n. That's fine, interval could cover whole road.
+
+Pitfall 2: The difference array approach: We have diff array of size n+1 initialized to 0. For each bulb, L = max(0, i - v), R = min(n-1, i + v). diff[L] += 1; if R+1 < n: diff[R+1] -= 1. Then prefix sum cur = 0; for j in 0..n-1: cur += diff[j]; covered[j] = cur > 0. This correctly computes union of intervals. However, note that if multiple bulbs have overlapping intervals, the diff array handles it. But what if a bulb has v = 0? We skip because v > 0 condition.
+
+Pitfall 3: The greedy loop:
+
+i = 0
+count = 0
+while i < n:
+    if covered[i]:
+        i += 1
+        continue
+    # place bulb
+    pos = i + 1 if i + 1 < n else i
+    left = max(0, pos - 1)
+    right = min(n - 1, pos + 1)
+    for j in range(left, right + 1):
+        covered[j] = True
+    count += 1
+    # no i increment here, loop will check covered[i] again
+
+But wait: After placing bulb, we mark covered positions. However, what if i was uncovered, and we place bulb at pos = i+1, marking i, i+1, i+2 as covered. Then the while loop checks covered[i] which is now True, so i becomes i+1. Then it checks covered[i+1] (which is now True), i becomes i+2. Then checks covered[i+2] (now True), i becomes i+3. Then checks covered[i+3] which might be uncovered or covered. This is correct.
+
+But consider scenario: i is uncovered, we place bulb at pos = i+1. But what if i+1 was already True, and i+2 was already True? Then marking i makes i True. The loop will increment i past i, i+1, i+2, landing on i+3. That's correct.
+
+But what if i+1 < n, but i+2 >= n? E.g., n=3, i=1 uncovered. i+1=2 <3, pos=2. left = max(0,1)=1, right = min(2, 3)=2. marks 1,2 covered. covered[1] was maybe True or False. The loop: i=1 covered True -> i=2 covered True -> i=3 loop ends. Good.
+
+Now, is there any case where we might need to place a bulb at a position that is not i+1 or i to get optimal? Let's try to construct a counterexample.
+
+Suppose n=6, initial covered: none. uncovered all 0..5. Our greedy:
+i=0: pos=1 covers 0,1,2. count=1.
+i=3: pos=4 covers 3,4,5. count=2. Total 2. Optimal.
+
+What if n=7, initial covered: position 3 only? covered = [F,F,F,T,F,F,F]. uncovered = {0,1,2,4,5,6}. Greedy:
+i=0 uncovered. pos=1 covers 0,1,2. Now covered 0,1,2,3. uncovered 4,5,6.
+i=4 uncovered. pos=5 covers 4,5,6. count=2. Total 2. Can we do 1? One bulb covers at most 3 positions. We have 6 uncovered positions (but some overlap with existing). Actually uncovered positions are 0,1,2,4,5,6 (6 positions). One bulb covers 3 positions, so need at least 2. So 2 optimal.
+
+What if initial covered: positions 1 and 4? covered = [F,T,F,F,T,F]. uncovered = {0,2,3,5,6} n=7? Wait n=7: indices 0..6. covered = [F,T,F,F,T,F,F]? Let's set n=7, covered: 1 and 4 True. So covered = [F,T,F,F,T,F,F]. uncovered = {0,2,3,5,6}. Greedy:
+i=0 uncovered. pos=1 covers 0,1,2. Now covered 0,1,2,4. uncovered 3,5,6.
+i=3 uncovered. pos=4 (i+1=4<7) covers 3,4,5. But 4 already covered, marks 3,5 covered. Now covered 0,1,2,3,4,5. uncovered 6.
+i=6 uncovered. pos=6 (i+1=7>=7) covers 5,6? Actually pos=6 covers left=5 right=6. 5 already covered, marks 6 covered. count=3. Total 3 bulbs.
+
+Can we do 2? Let's see: We need to cover 0,3,6 and maybe others. Existing covered 1,4. Can we cover all with 2 extra bulbs? Positions: 0,2,3,5,6 to cover. Two bulbs cover at most 6 positions (3 each). We have 5 positions to cover, so maybe possible. Let's try to find placement: Bulb at 0? covers 0 only (and -1 out). Bulb at 1 covers 0,1,2 -> covers 0,2 but 1 already covered. Bulb at 2 covers 1,2,3 -> covers 2,3. Bulb at 3 covers 2,3,4 -> covers 3. Bulb at 5 covers 4,5,6 -> covers 5,6. Bulb at 6 covers 5,6. To cover 0, we need bulb at 0 or 1. If we place at 1, covers 0,2. Then we need to cover 3,5,6. One more bulb can cover at most 3 positions. If we place at 5, covers 4,5,6 -> covers 5,6. Then 3 still uncovered. If we place at 3, covers 2,3,4 -> covers 3 but not 5,6. If we place at 4, covers 3,4,5 -> covers 3,5 but not 6. So maybe place at 1 and 6? 1 covers 0,2; 6 covers 5,6. Then 3 uncovered. Place at 2 and 5? 2 covers 1,2,3 -> covers 3; 5 covers 4,5,6 -> covers 5,6; 0 uncovered. Place at 0 and 5? 0 covers 0; 5 covers 4,5,6 -> 2,3 uncovered. Place at 1 and 4? 1 covers 0,2; 4 covers 3,4,5 -> covers 3,5 but not 6. So seems 3 might be minimal. Our greedy gave 3. So optimal.
+
+Now, consider a case where greedy might fail because we place at i+1, but maybe placing at i-1 could cover i and also some right positions? But i-1 covers i-2,i-1,i, not i+1. So no.
+
+What if i is such that i+1 is out of bounds, we place at i. Could placing at i-1 be better? If i = n-1, placing at n-1 covers n-2,n-1. Placing at n-2 covers n-3,n-2,n-1. Both cover n-1. But if n-3 is also uncovered, placing at n-2 might cover it, reducing count. However, in our greedy, when i = n-1 (the last position), we place at n-1. But what if n-2 was also uncovered? But i is the leftmost uncovered. If i = n-1, that means all positions 0..n-2 are already covered! Because we process left to right, and i is the first uncovered. So if i = n-1, then positions 0..n-2 are all covered. So placing at n-1 is sufficient, and placing at n-2 would also cover n-3 which is already covered, but wouldn't help since n-3 is covered. So it's fine.
+
+But wait: Is it guaranteed that when i = n-1, all positions 0..n-2 are covered? In our while loop, i increments only when covered[i] is True. So when i becomes n-1, it means we have checked all previous positions and they were covered. So yes, 0..n-2 are covered. So placing at n-1 is correct.
+
+Now, what about the case where we have a gap: n=5, covered initially: [T,F,F,T,T]? Let's test: n=5, existing covered 0 and 3,4. So covered = [T,F,F,T,T]. uncovered = {1,2}. Greedy:
+i=0 covered True -> i=1 uncovered. pos = i+1 = 2 (<5). left = max(0,1)=1, right = min(4,3)=3. marks 1,2,3 covered. But 3 already covered, marks 1,2 covered. count=1. Next i=1 covered True -> i=2 covered True -> i=3 covered -> i=4 covered -> end. Total 1 bulb. Indeed, placing at 2 covers 1,2,3, which covers both 1 and 2. Optimal.
+
+Now, what if covered = [F,F,T,F,F] n=5, uncovered = {0,1,3,4}. Greedy:
+i=0 uncovered. pos=1 covers 0,1,2. Now covered 0,1,2. uncovered 3,4.
+i=3 uncovered. pos=4 covers 3,4. count=2. Could we do 1? One bulb covers 3 positions. Uncovered 0,1,3,4 (4 positions). So need at least 2. Optimal.
+
+Now, consider a tricky case: existing bulbs might have intervals that are not contiguous, and the greedy might place a bulb that covers some already covered positions, but maybe we could have placed it elsewhere to cover more uncovered? But since we always pick the leftmost uncovered and place as far right as possible, it's optimal.
+
+Let's try to think of a potential counterexample from similar problems. This problem is "Minimum Lights to Illuminate a Road" from LeetCode (probably 3964). I recall seeing this problem. The solution typically involves computing the covered intervals from existing bulbs, then greedily placing radius-1 bulbs. I think the approach is correct.
+
+But let's double-check the problem statement: "You may install additional bulbs at any positions. Each additional bulb installed at position j illuminates positions from max(0, j - 1) to min(n - 1, j + 1), inclusive." So radius 1.
+
+Also: "A position is visible if it is illuminated by at least one working bulb." Working bulbs are the given ones. Additional bulbs are also working? "You may install additional bulbs at any positions." Yes, they become working bulbs with radius 1.
+
+Now, is there any nuance about "every position on the road visible"? Yes, all 0..n-1.
+
+Now, let's think about the difference array computation again. We have to be careful: The existing bulbs have variable v. The interval is [max(0, i - v), min(n-1, i + v)]. Using diff array is O(n). But note that if v is very large, say v = n, then L = max(0, i - n) = 0, R = min(n-1, i + n) = n-1. So diff[0] += 1, diff[n] -= 1 (but diff size n+1, so diff[n] is allowed). That's fine.
+
+Now, the greedy algorithm: We have covered boolean array. Then we iterate i from 0 to n-1. But our while loop modifies covered as we go. That's fine.
+
+But there's a subtle point: When we place an extra bulb, we mark covered positions. However, what if the extra bulb we place overlaps with existing coverage in a way that we might have already "skipped" some positions? The while loop structure ensures we only process each position once.
+
+Let's write out the algorithm steps clearly:
+
+1. n = len(lights)
+2. diff = [0] * (n + 1)
+3. For i, v in enumerate(lights):
+       if v > 0:
+           L = max(0, i - v)
+           R = min(n - 1, i + v)
+           diff[L] += 1
+           if R + 1 < n:
+               diff[R + 1] -= 1
+4. covered = [False] * n
+   cur = 0
+   for j in range(n):
+       cur += diff[j]
+       covered[j] = (cur > 0)
+5. count = 0
+   i = 0
+   while i < n:
+       if covered[i]:
+           i += 1
+           continue
+       # place extra bulb
+       pos = i + 1 if i + 1 < n else i
+       left = max(0, pos - 1)
+       right = min(n - 1, pos + 1)
+       for j in range(left, right + 1):
+           covered[j] = True
+       count += 1
+       # loop continues, i will be incremented in next iteration when covered[i] checked
+6. return count
+
+Let's test with the examples.
+
+Example 1: lights = [0,0,0,0] n=4.
+diff all zero. covered all False.
+i=0: uncovered. pos = 1 (0+1<4). left = max(0,0)=0, right = min(3,2)=2. mark 0,1,2 True. count=1.
+i=0 next iteration: covered[0] True -> i=1 covered True -> i=2 covered True -> i=3 uncovered.
+i=3: uncovered. pos = i+1=4 >=4 so pos=3. left = max(0,2)=2, right = min(3,4)=3. mark 2,3 True. count=2.
+i=3 next: covered[3] True -> i=4 end. Output 2. Correct.
+
+Example 2: lights = [0,0,0,2,0] n=5.
+i=3 v=2 => L = max(0,3-2)=1, R = min(4,3+2)=4. diff[1]+=1, diff[5]? R+1=5 <5? 5<5 false, so no subtract. diff = [0,1,0,0,0,0] (size 6). prefix: j=0: cur=0 -> covered[0]=F. j=1: cur=1 -> T. j=2: cur=1 -> T. j=3: cur=1 -> T. j=4: cur=1 -> T. covered = [F,T,T,T,T].
+i=0: uncovered. pos=1. left=0 right=2 mark 0,1,2 True. covered becomes [T,T,T,T,T]. count=1.
+i=0 next: covered True -> i=1 covered -> i=2 covered -> i=3 covered -> i=4 covered -> i=5 end. Output 1. Correct.
+
+Now test edge: lights = [1] n=1. diff: i=0 v=1 => L=max(0,-1)=0, R=min(0,1)=0. diff[0]+=1, R+1=1 <1? false. diff=[0,1] size 2. prefix j=0: cur=1 -> covered[0]=T. i=0 covered True -> i=1 end. count=0. Correct.
+
+lights = [0] n=1. diff all zero. covered=[F]. i=0 uncovered. pos = i+1=1 >=1 so pos=0. left = max(0,-1)=0, right = min(0,1)=0. mark 0 True. count=1. Output 1. Correct.
+
+lights = [2,0] n=2. existing at 0 v=2 => L=max(0,-2)=0, R=min(1,2)=1. diff[0]+=1, R+1=2<2 false. covered: j=0 cur=1 T, j=1 cur=1 T. covered=[T,T]. i=0 covered -> i=1 covered -> end. count=0. Correct.
+
+lights = [0,2] n=2. existing at 1 v=2 => L=max(0,-1)=0, R=min(1,3)=1. diff[0]+=1, R+1=2<2 false. covered=[T,T]. count=0. Correct.
+
+lights = [1,0] n=2. existing at 0 v=1 => L=0, R=1. covered=[T,T]. count=0.
+
+lights = [0,1] n=2. existing at 1 v=1 => L=0, R=1. covered=[T,T]. count=0.
+
+What about lights = [0,0,1] n=3. existing at 2 v=1 => L=max(0,1)=1, R=min(2,3)=2. diff[1]+=1, R+1=3<3 false. prefix: j=0 cur=0 F, j=1 cur=1 T, j=2 cur=1 T. covered=[F,T,T]. i=0 uncovered. pos=1 (0+1<3) covers 0,1,2. marks all True. count=1. Output 1. Check: existing bulb at 2 covers 1,2. Place extra at 1 covers 0,1,2. So all covered with 1 extra. Correct.
+
+lights = [1,0,0] n=3. existing at 0 v=1 => L=0,R=1 => covered=[T,T,F]. uncovered 2. i=0 covered -> i=1 covered -> i=2 uncovered. pos = i+1=3>=3 so pos=2. left=max(0,1)=1 right=min(2,3)=2 marks 1,2 True. count=1. Output 1. Check: extra bulb at 2 covers 1,2. Position 0 already covered. So 1 extra. Could we do 0? No, position 2 uncovered. Correct.
+
+lights = [0,1,0] n=3. existing at 1 v=1 => L=0,R=2 => covered all True. count=0.
+
+lights = [0,0,2] n=3. existing at 2 v=2 => L=0,R=2 => covered all True.
+
+Now, consider a case where the greedy might place a bulb that covers beyond n-1? We clamp with min(n-1, pos+1). Good.
+
+Now, think about possible off-by-one in the while loop: After marking covered positions, we don't increment i, so the loop checks covered[i] again. But what if the bulb we placed covers i, but also covers i+1, i+2. The loop will then i+=1, check i+1 (now True), i+=1, check i+2 (now True), i+=1, check i+3. This is fine. However, what if the bulb we placed covers i, but i+1 was already True, and i+2 was already True? Then after marking i True, the loop will increment i to i+1 (already True), i+2 (already True), i+3 (maybe uncovered). That's correct.
+
+But wait: Is it possible that after placing a bulb, the position i is marked True, but the next uncovered position is actually i+1? No, because we just marked i+1 as True as well (since bulb covers i, i+1, i+2). So i+1 is covered. So the next uncovered will be at least i+3 or later. So the loop will skip i+1 and i+2. That's intended.
+
+Now, is there any scenario where placing at i+1 might be suboptimal because i+1 is already covered and we could place at i to save a bulb? But we already argued placing at i+1 covers i, i+1, i+2, which is at least as good as placing at i (which covers i-1, i, i+1). Since i-1 is already covered (or out of bounds), placing at i+1 extends coverage further right. So it's always better or equal.
+
+But let's test a case where i+1 is already covered, and i+2 is also already covered, and i is uncovered. Example: n=5, covered initially: [F,T,T,T,F] (positions 1,2,3 covered, 0 and 4 uncovered). We already tested this: i=0 uncovered, pos=1 covers 0,1,2. Then i=4 uncovered, pos=4 covers 3,4. Total 2. Could we do 1? No. What if we placed at 0? That would cover 0 only. Worse. What if we placed at 3? Covers 2,3,4 -> covers 4 but not 0. So 2 is minimal.
+
+Now, consider a case where placing at i+1 might "skip" an uncovered position that could have been covered by the same bulb if placed differently? But the bulb covers three consecutive positions. If i is the leftmost uncovered, any interval covering i must include i. The intervals that cover i and extend farthest right are those with center at i+1 (covers i, i+1, i+2). If we center at i, it covers i-1, i, i+1 (extends to i+1, which is less right). If we center at i-1, it covers i-2, i-1, i (extends to i, even less right). So i+1 is optimal for rightward extension. Since we process left to right, extending right as much as possible is optimal for minimizing total intervals. This is a standard exchange argument.
+
+Thus the algorithm seems solid.
+
+Now, let's consider time complexity: O(n) for diff array, O(n) for prefix sum, O(n) for greedy (each position marked True at most once, while loop increments i at most n times). So overall O(n) time, O(n) space. n up to 1e5, well within 2s.
+
+Now, check constraints: 1 <= n == lights.length <= 10^5. lights[i] up to n. So O(n) is perfect.
+
+Now, let's think if there's any case where the greedy might fail due to the fact that extra bulbs have radius 1, but existing bulbs have variable radii. We already accounted for that.
+
+But wait: The problem says: "You may install additional bulbs at any positions. Each additional bulb installed at position j illuminates positions from max(0, j - 1) to min(n - 1, j + 1), inclusive." So the additional bulb's coverage is fixed radius 1. Our greedy places extra bulbs at integer positions. That's allowed.
+
+Now, is there any interaction where placing an extra bulb could "illuminate" a position that was already illuminated, but maybe we could have placed it at a different position to cover more uncovered? Our greedy only cares about uncovered positions, and we proved it's optimal.
+
+But let's test a more complex scenario manually or think of potential counterexample from known problems. I recall LeetCode 3964 "Minimum Lights to Illuminate a Road". The solution often involves computing the covered segments from existing bulbs, then greedily placing radius-1 bulbs. I think the approach is correct.
+
+However, I want to be absolutely sure about the greedy choice of `pos = i + 1 if i + 1 < n else i`. What if i is such that i+1 is within bounds, but placing at i+1 covers i, i+1, i+2. But what if i+2 is already covered by existing bulbs, and i+3 is also uncovered? That's fine. But what if i+1 is within bounds, but placing at i+1 might cause us to need an extra bulb later because we "wasted" the coverage on i+1 which was already covered, and maybe placing at i would have allowed a different placement later? But since we only care about covering the uncovered positions, and we always cover the leftmost uncovered, it's optimal. Let's try to find a counterexample by writing a small brute-force in mind for small n.
+
+We can try n=4, all uncovered. We did: 2 bulbs. n=5 all uncovered: 2 bulbs (at 1 and 4? Actually n=5 all uncovered: i=0 pos=1 covers 0,1,2; i=3 pos=4 covers 3,4. total 2. Could we do 1? No, max coverage 3. n=6 all uncovered: 2 bulbs (1 and 4). n=7 all uncovered: 3 bulbs (1,4,7? wait n=7: i=0 pos=1 covers 0,1,2; i=3 pos=4 covers 3,4,5; i=6 pos=6 covers 5,6? Actually i=6 uncovered after 0,1,2,3,4,5 covered. i=6 pos=6 covers 5,6. count=3. Could we do 2? 2 bulbs cover 6 positions, but n=7, so need 3. So optimal.
+
+Now consider n=8 all uncovered: greedy gives 3 bulbs (1,4,7). Covers: 1:0,1,2; 4:3,4,5; 7:6,7. total 3. ceil(8/3)=3. Optimal.
+
+Now consider n=9 all uncovered: greedy: i=0 pos=1 covers 0,1,2; i=3 pos=4 covers 3,4,5; i=6 pos=7 covers 6,7,8. count=3. ceil(9/3)=3. Optimal.
+
+Now consider n=10 all uncovered: greedy: 0->1 covers 0,1,2; 3->4 covers 3,4,5; 6->7 covers 6,7,8; i=9 uncovered. pos=9 (i+1=10>=10) covers 8,9? Actually pos=9 covers left=8 right=9. But 8 already covered. count=4. ceil(10/3)=4. Optimal.
+
+Now consider a case with some existing coverage that might make greedy suboptimal? Let's try to construct a case where placing at i+1 uses a bulb that could have been placed at i to cover the same leftmost uncovered and also some other uncovered, but maybe the greedy choice forces a later bulb that could be avoided. Since the problem is equivalent to covering a set of points with intervals of length 3 (centered at integers), the greedy is known to be optimal for this specific problem. I'm pretty confident.
+
+But let's think about the difference between "covering points with intervals of fixed length where intervals can start at any real number" vs "integer centers". Here intervals are [c-1, c, c+1] with c integer. This is equivalent to covering points with intervals of length 2 (from c-1 to c+1) where the left endpoint is c-1, which is integer. So we are covering points on a line with intervals of length 2 (inclusive of both ends, so 3 points) where intervals must have integer left endpoints? Actually left endpoint is c-1, which can be any integer from -1 to n-2. But since positions are 0..n-1, left endpoint can be -1? But we clamp to 0. So effectively intervals can start at any integer from 0 to n-3? Actually center c from 1 to n-2 gives left endpoint c-1 from 0 to n-3. Center at 0 gives left endpoint -1 clamped to 0, covering 0,1. Center at n-1 gives left endpoint n-2, covering n-2,n-1. So the set of possible intervals is: for each center c in 0..n-1, interval is [max(0, c-1), min(n-1, c+1)]. So intervals can start at 0 or 1 or ... up to n-2? Actually c=0 gives [0,1]; c=1 gives [0,2]; c=2 gives [1,3]; ... c=n-2 gives [n-3, n-1]; c=n-1 gives [n-2, n-1]. So the possible intervals are all contiguous segments of length 3 (or less at edges) that can be formed by centering at any integer position. This is exactly the set of all intervals of length 3 (with possible truncation at ends) that are centered at integers. The greedy algorithm that picks the leftmost uncovered x and places an interval starting at x (or centered at x+1) is optimal for covering a set of points with such intervals? I think yes, because it's equivalent to the classic "minimum number of intervals of length L to cover points" where intervals can be placed anywhere, and the optimal strategy is to sort points and place interval starting at the leftmost uncovered point. Here intervals have fixed set of possible positions, but since we can always shift the interval to start at the leftmost uncovered point (by centering at x+1), and that interval is always available (since x+1 is a valid center as long as x+1 <= n-1; if x = n-1, we center at n-1), the greedy works.
+
+But wait: What if the leftmost uncovered is x, and we center at x+1, but x+1 might be > n-1? We handle that by centering at x. So it's fine.
+
+Now, is there any case where centering at x+1 is not available because x+1 is out of bounds? We already handle.
+
+What if x+1 is within bounds, but the interval [x, x+2] goes out of bounds on the right? We clamp with min(n-1, pos+1). So it's always valid.
+
+Now, consider a scenario where the leftmost uncovered is x, and centering at x+1 covers x, x+1, x+2. But what if x+2 is already covered by existing bulbs, and x+3 is uncovered. That's fine. But what if x+2 is uncovered, and x+3 is also uncovered, etc.
+
+Now, could there be a case where placing at x+1 covers x, x+1, x+2, but maybe placing at x+2 (center) would cover x+1, x+2, x+3, missing x? So not covering x. So x+1 is the only center that covers x and extends rightmost.
+
+Now, what if we have multiple uncovered points, and the greedy choice of centering at x+1 might "skip" over some uncovered points that could have been covered by a single bulb if we had chosen a different center? But since we always process the leftmost uncovered, any interval covering it will cover some set. The optimal solution must cover the leftmost uncovered point with some interval. The interval that covers it and extends farthest right is the one centered at x+1 (or x if at edge). Any optimal solution can be transformed to use that interval without increasing the number of intervals. This is a standard exchange argument. So I'm confident.
+
+Now, let's consider possible edge case: n=1, lights=[0] -> output 1. Our algorithm gives 1.
+
+n=1, lights=[1] -> output 0.
+
+n=2, lights=[0,0] -> output? According to our algorithm: covered=[F,F]. i=0 uncovered, pos=1 (0+1<2) covers 0,1. count=1. Output 1. Is that minimal? n=2, one bulb at 1 covers 0,1. Yes.
+
+n=2, lights=[1,0] -> existing at 0 v=1 covers 0,1 -> output 0.
+
+n=2, lights=[0,1] -> output 0.
+
+n=3, lights=[0,0,0] -> output 1 (bulb at 1 covers all). Our algorithm: i=0 uncovered, pos=1 covers 0,1,2. count=1. Good.
+
+n=3, lights=[0,1,0] -> output 0.
+
+n=3, lights=[1,0,0] -> existing at 0 v=1 covers 0,1. uncovered 2. i=2 uncovered, pos=2 (since i+1=3>=3) covers 1,2. count=1. Output 1. Could we do 0? No. Could we place extra at 2? Yes. So 1.
+
+n=3, lights=[0,0,1] -> existing at 2 v=1 covers 1,2. uncovered 0. i=0 uncovered, pos=1 covers 0,1,2. count=1. Output 1.
+
+n=4, lights=[0,2,0,0] -> existing at 1 v=2 covers [max(0,-1)=0, min(3,3)=3] => all covered. output 0.
+
+n=4, lights=[0,1,0,0] -> existing at 1 v=1 covers [0,2] => positions 0,1,2 covered, 3 uncovered. i=3 uncovered, pos=3 (i+1=4>=4) covers 2,3. count=1. Output 1. Could we do 0? No.
+
+Now, what about a case where existing bulbs have large v that overlap in complex ways? Our diff array handles.
+
+Now, I want to ensure that the greedy while loop doesn't have an infinite loop or missing positions. Let's trace a case where covered array is modified and i increments correctly.
+
+Pseudo-code:
+
+def minLights(self, lights: list[int]) -> int:
+    n = len(lights)
+    diff = [0] * (n + 1)
+    for i, v in enumerate(lights):
+        if v > 0:
+            L = max(0, i - v)
+            R = min(n - 1, i + v)
+            diff[L] += 1
+            if R + 1 < n:
+                diff[R + 1] -= 1
+    covered = [False] * n
+    cur = 0
+    for j in range(n):
+        cur += diff[j]
+        covered[j] = (cur > 0)
+    count = 0
+    i = 0
+    while i < n:
+        if covered[i]:
+            i += 1
+            continue
+        # place extra bulb
+        pos = i + 1 if i + 1 < n else i
+        left = max(0, pos - 1)
+        right = min(n - 1, pos + 1)
+        for j in range(left, right + 1):
+            covered[j] = True
+        count += 1
+        # loop will check covered[i] again, which is now True, so i will increment
+    return count
+
+Now, test with a tricky case: n=5, covered initially all False. i=0: pos=1, left=0 right=2, mark 0,1,2 True. count=1. Next iteration: i=0 covered True -> i=1 covered True -> i=2 covered True -> i=3 uncovered. i=3: pos=4, left=3 right=4, mark 3,4 True. count=2. Next: i=3 covered True -> i=4 covered True -> i=5 end. Good.
+
+Now, what if we have covered initially some positions, and the extra bulb placement marks some already True positions. The loop still works.
+
+Now, consider if the extra bulb placement might mark positions beyond i+2? No, it marks left to right which is at most pos+1 <= i+2 (since pos <= i+1). So it marks at most i, i+1, i+2. So the while loop will skip at most 3 positions.
+
+Now, is there any case where placing at i+1 might set i+2 to True, but i+2 was already True, and then the loop increments i past i+1 and i+2, landing on i+3. That's correct.
+
+Now, what if i is such that i+1 < n, but pos = i+1, and we mark i, i+1, i+2. But what if i+2 >= n? E.g., n=3, i=1 uncovered. i+1=2 <3, pos=2. left = max(0,1)=1, right = min(2,3)=2. marks 1,2. covered[1] and covered[2] become True. Loop: i=1 covered True -> i=2 covered True -> i=3 end. Good.
+
+Now, what if n=2, i=0 uncovered, pos=1 <2, left=0 right=1 marks 0,1. Loop: i=0 covered True -> i=1 covered True -> i=2 end. Good.
+
+Now, what if i = n-1 uncovered? E.g., n=3, after some steps i becomes 2 uncovered. pos = i+1 = 3 >=3, so pos = i = 2. left = max(0,1)=1, right = min(2,3)=2. marks 1,2. Loop: i=2 covered True -> i=3 end. Good.
+
+Now, what if n=1, i=0 uncovered, pos = i+1=1 >=1 so pos=0. left = max(0,-1)=0, right = min(0,1)=0. marks 0. Loop: i=0 covered True -> i=1 end. Good.
+
+Now, is there any scenario where the while loop might get stuck because after marking, covered[i] is True but i increments and then we skip some uncovered? No, because we only increment i when covered[i] is True, and we only mark positions as True, never False. So the set of uncovered positions only shrinks. The loop will terminate.
+
+Now, I'm thinking about the problem statement: "You may install additional bulbs at any positions. Each additional bulb installed at position j illuminates positions from max(0, j - 1) to min(n - 1, j + 1), inclusive." Note that the additional bulb's illumination range is exactly radius 1. But what if we install an additional bulb at a position that already has a working bulb? The problem says "You may install additional bulbs at any positions." It doesn't say you can't install at positions with existing bulbs. It's allowed. Our algorithm allows placing extra bulbs anywhere, including at positions where there are existing bulbs. The coverage from additional bulb is radius 1, independent of existing. That's fine.
+
+Now, check constraints: 1 <= n <= 10^5. Our algorithm uses O(n) time and O(n) space. Good.
+
+Now, I will produce the final Python code.
+
+But before finalizing, let's double-check if there's any alternative interpretation. "A position is visible if it is illuminated by at least one working bulb." Working bulb means the ones given initially. Additional bulbs are also working? "You may install additional bulbs at any positions." It doesn't explicitly say they become "working bulbs", but the context implies they are additional bulbs that illuminate, so they count as working for visibility. Yes.
+
+Also: "For each position i: If lights[i] = v, where v > 0, there is a working bulb at position i that illuminates every position from max(0, i - v) to min(n - 1, i + v), inclusive. If lights[i] = 0, there is no working bulb at position i." So only those with v>0 are working.
+
+Now, "You may install additional bulbs at any positions. Each additional bulb installed at position j illuminates positions from max(0, j - 1) to min(n - 1, j + 1), inclusive." So additional bulbs have fixed radius 1.
+
+Now, return the minimum number of additional bulbs required to make every position on the road visible.
+
+Our solution seems correct.
+
+But wait: Is there any nuance about the road positions being 0 through n-1, and the additional bulb at position j illuminates from max(0, j-1) to min(n-1, j+1). This means if we place at j=0, it illuminates 0,1. If j=n-1, illuminates n-2, n-1. That's what we used.
+
+Now, one more check: In the greedy, after placing a bulb at pos = i+1, we mark i, i+1, i+2 as covered. But what if i+2 is already covered, and i+3 is also covered? Then the loop will skip to i+4. That's fine.
+
+Now, could there be a situation where placing at i+1 is not optimal because i+1 is already covered, and maybe placing at i-1 would cover i and also some other uncovered? But i-1 is left of i, and since i is the leftmost uncovered, i-1 is already covered. Placing at i-1 would cover i-2, i-1, i. It would cover i, but not i+1. So it would not help cover i+1, which might be uncovered. Since we want to minimize total bulbs, covering i+1 is important. So placing at i+1 is better.
+
+But what if i+1 is already covered, and i+2 is also already covered, and i+3 is uncovered? Then placing at i+1 covers i, i+1, i+2 (all already covered except i). Then we would still need to cover i+3 later. If we instead placed at i, we would cover i-1, i, i+1 (i+1 already covered), and then i+2 and i+3 would still need covering. So same or worse. If we placed at i+2, it would cover i+1, i+2, i+3, but would not cover i. So we must cover i anyway. So placing at i+1 is optimal.
+
+Now, I think the solution is complete.
+
+Let's write the final code with proper class and method.
+
+```python
+class Solution:
+    def minLights(self, lights: list[int]) -> int:
+        n = len(lights)
+        diff = [0] * (n + 1)
+        for i, v in enumerate(lights):
+            if v > 0:
+                L = max(0, i - v)
+                R = min(n - 1, i + v)
+                diff[L] += 1
+                if R + 1 < n:
+                    diff[R + 1] -= 1
+        covered = [False] * n
+        cur = 0
+        for j in range(n):
+            cur += diff[j]
+            covered[j] = (cur > 0)
+        count = 0
+        i = 0
+        while i < n:
+            if covered[i]:
+                i += 1
+                continue
+            # place extra bulb
+            pos = i + 1 if i + 1 < n else i
+            left = max(0, pos - 1)
+            right = min(n - 1, pos + 1)
+            for j in range(left, right + 1):
+                covered[j] = True
+            count += 1
+        return count
+```
+
+Test with examples:
+
+Example 1: lights = [0,0,0,0] => n=4. diff all 0. covered all F. i=0 uncovered, pos=1, left=0 right=2 mark 0,1,2 T. count=1. i=0 covered T -> i=1 covered T -> i=2 covered T -> i=3 uncovered. pos=4>=4 so pos=3, left=2 right=3 mark 2,3 T. count=2. i=3 covered T -> i=4 end. return 2.
+
+Example 2: lights = [0,0,0,2,0] => n=5. diff: i=3 v=2 => L=1,R=4 => diff[1]+=1, R+1=5<5 false. prefix: j=0 cur=0 F, j=1 cur=1 T, j=2 T, j=3 T, j=4 T. covered=[F,T,T,T,T]. i=0 uncovered, pos=1 left=0 right=2 mark 0,1,2 T. covered becomes all T. count=1. i=0 covered T -> i=1 T -> i=2 T -> i=3 T -> i=4 T -> i=5 end. return 1.
+
+All good.
+
+Now, I'll output the code as requested.```python
+class Solution:
+    def minLights(self, lights: list[int]) -> int:
+        n = len(lights)
+        # difference array to compute coverage from existing bulbs
+        diff = [0] * (n + 1)
+        for i, v in enumerate(lights):
+            if v > 0:
+                L = max(0, i - v)
+                R = min(n - 1, i + v)
+                diff[L] += 1
+                if R + 1 < n:
+                    diff[R + 1] -= 1
+        
+        covered = [False] * n
+        cur = 0
+        for j in range(n):
+            cur += diff[j]
+            covered[j] = (cur > 0)
+        
+        count = 0
+        i = 0
+        while i < n:
+            if covered[i]:
+                i += 1
+                continue
+            # place an additional bulb as far right as possible while covering i
+            pos = i + 1 if i + 1 < n else i
+            left = max(0, pos - 1)
+            right = min(n - 1, pos + 1)
+            for j in range(left, right + 1):
+                covered[j] = True
+            count += 1
+        return count
+```
+[finish_reason: stop | provider: DeepInfra | reasoning chars: 0 | usage: {'prompt_tokens': 565, 'completion_tokens': 19055, 'total_tokens': 19620, 'cost': 0.0030827, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0030827, 'upstream_inference_prompt_cost': 3.39e-05, 'upstream_inference_completions_cost': 0.0030488}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

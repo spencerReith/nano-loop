@@ -1,0 +1,354 @@
+
+Assistant: ```python
+class Solution:
+    def countRatioSubarrays(self, nums: list[int], a: int, b: int) -> int:
+        # Reduce fraction a/b to simplest terms to avoid floating point issues
+        # We need to count subarrays where x / y <= a / b, with y > 0.
+        # Equivalent: b * x <= a * y, since b, y are positive (b>=1, y>0)
+        # So condition: b * x <= a * y.
+        # For each subarray ending at index i, we need to count previous start indices j
+        # such that for the subarray nums[j..i], the condition holds.
+        # Let's define a running balance: (a * (#odd) - b * (#even))
+        # Actually condition: b * x <= a * y  ->  a*y - b*x >= 0
+        # Let’s define value for each element:
+        #   if element is odd: contributes +a to the "score" (since y increases)
+        #   if element is even: contributes -b to the "score" (since x increases)
+        # Because for a subarray with total odd count y and even count x, the condition
+        # b*x <= a*y  <=>  a*y - b*x >= 0.
+        # So define for each position i, let prefix[i] = a * (number of odd up to i) - b * (number of even up to i).
+        # But note: even elements contribute -b, odd contribute +a.
+        # For subarray from j+1 to i (inclusive), the score = prefix[i] - prefix[j].
+        # Condition: prefix[i] - prefix[j] >= 0  =>  prefix[j] <= prefix[i].
+        # However, we also require that the subarray contains at least one odd (y>0). 
+        # But note: if y>0, then in the prefix difference, the odd count is positive.
+        # However, the condition prefix[j] <= prefix[i] automatically includes subarrays that might have y=0?
+        # Let's check: if a subarray has y=0 (no odd), then condition b*x <= a*0 = 0 -> only possible if x=0 (empty), but empty not considered and y>0 required. So we must exclude subarrays with no odd.
+        # Therefore, for each i, we need to count j < i such that prefix[j] <= prefix[i] and the subarray nums[j+1..i] has at least one odd.
+        # How to enforce y>0? We can handle it by only considering j that are after the last odd? Actually simpler: we can count all j with prefix[j] <= prefix[i] and then subtract those where the subarray has no odd.
+        # Alternatively, we can process by maintaining the minimum prefix seen so far while ensuring we only include prefixes from indices that are not after the most recent odd? Let's think carefully.
+        # Another approach: iterate through nums and maintain a balanced map of prefix values seen so far for prefixes that end at positions where the next element (i+1) can start? Actually standard technique: for each i, we want to count number of j < i such that prefix[j] <= prefix[i] AND the segment (j+1..i) contains at least one odd.
+        # Let last_odd = last index where nums[index] is odd. Then for subarray ending at i to have at least one odd, the start index must be <= last_odd (i.e., j < last_odd+1). More precisely, if the subarray includes at least one odd, then the start index j+1 must be <= the position of the first odd in the segment. But it's easier: for fixed i, let L = smallest index such that nums[L..i] contains at least one odd. That is L = (last index of odd in 0..i) + 1? Actually if we have last_odd <= i, then any start index <= last_odd+1? Let's define:
+        # Let first_odd_in_suffix[i] = smallest index k <= i such that nums[k] is odd, if exists; otherwise none.
+        # Then for subarray ending at i to have at least one odd, the start index must be <= first_odd_in_suffix[i] (i.e., j+1 <= first_odd_in_suffix[i] => j <= first_odd_in_suffix[i]-1).
+        # So for each i, valid j must satisfy: j <= first_odd_index - 1 (where first_odd_index is the leftmost odd in the current suffix ending at i), and j < i (obviously), and prefix[j] <= prefix[i].
+        # We can maintain a data structure (like Fenwick tree or balanced BST) for prefix values seen so far for indices that are allowed (i.e., j that are before the current first_odd constraint). As we move i forward, we update the set of allowed j: when we encounter an odd at position i, it expands the allowed range (because now any start index can be as far left as 0? Actually first_odd_index for the suffix ending at i might move left if we see an odd earlier). Let's formalize:
+        # Let earliest_odd[i] = smallest index >= 0 such that nums[earliest_odd[i]] is odd and earliest_odd[i] <= i. That is simply the first odd in the prefix up to i. But for subarray ending at i, we need the subarray to contain at least one odd, so the start index must be <= the position of the last odd? No: consider subarray [even, odd, even] ending at i: if we start at the even before the odd, it still contains the odd. So the condition is: the start index must be <= the index of the most recent odd? Actually if we have multiple odds, the subarray will contain an odd as long as start index <= some odd index that is within the segment. More precisely, for a fixed end i, let last_odd[i] = the largest index <= i such that nums[last_odd[i]] is odd (or -1 if none). Then any start index j+1 (i.e., j) such that j+1 <= last_odd[i] (so that the odd at last_odd[i] is included) will include at least that odd. However, if we start after last_odd[i], then we might miss all odds if there is no odd after last_odd[i] up to i. But since last_odd[i] is the last odd up to i, starting after last_odd[i] would exclude that odd, and there might be no odd after last_odd[i] (by definition it's the last), so indeed starting after last_odd[i] yields no odd. Therefore, for subarray ending at i to contain at least one odd, we must have start index <= last_odd[i]. That is, j+1 <= last_odd[i] => j <= last_odd[i] - 1.
+        # But is that sufficient? Yes: if start index <= last_odd[i], then the subarray includes last_odd[i] (since last_odd[i] <= i and >= start), so it contains at least one odd. Conversely, if start index > last_odd[i], then all indices in [start, i] are > last_odd[i], so no odd (because last_odd[i] is the last odd). So the condition for y>0 is simply: start index <= last_odd[i].
+        # Therefore, for each i, valid j (where j is prefix index, meaning subarray starts at j+1) must satisfy:
+        #   j < i (since subarray non-empty),
+        #   j <= last_odd[i] - 1 (i.e., start <= last_odd[i]),
+        #   prefix[j] <= prefix[i].
+        # Note: we define prefix[0] = 0 for empty prefix before index 0. Let's set prefix[-1]? Standard: let prefix[0] = 0 corresponding to no elements. Then for subarray from l to r (0-indexed), the score = prefix[r+1] - prefix[l], where prefix[k] = sum_{t=0}^{k-1} contribution of nums[t]. We'll adopt 0-based with prefix array of length n+1: prefix[0] = 0; for t from 0 to n-1, prefix[t+1] = prefix[t] + (a if nums[t] odd else -b).
+        # Then subarray nums[l..r] corresponds to prefix[r+1] - prefix[l]. Condition: prefix[r+1] - prefix[l] >= 0  <=> prefix[l] <= prefix[r+1].
+        # And y>0 condition: the subarray must contain at least one odd. With last_odd[i] defined for index i (0-based), for subarray ending at r (i.e., index r), we need start l <= last_odd[r] (since last_odd[r] is the largest odd index <= r). In terms of prefix indices: l ranges from 0 to r (where l is start index in original array), and prefix index for start is l (since prefix[l] corresponds to sum before l). So valid l must satisfy l <= last_odd[r] (because l can be at most last_odd[r] to include that odd). Also l <= r (obviously). And we count for each r, the number of l such that l <= last_odd[r], l <= r, and prefix[l] <= prefix[r+1].
+        # We can iterate r from 0 to n-1, maintaining a data structure (ordered map) of prefix[l] for all l that are allowed for current r, i.e., l <= last_odd[r]. As r increases, last_odd[r] is non-decreasing (it either stays same or moves forward when we see an odd). When we see an odd at position r, last_odd[r] = r (if r is odd), otherwise it stays previous last_odd. So the set of allowed l expands to include l = r (if r is odd? Actually l can be up to last_odd[r], so when we encounter an odd at r, last_odd[r] = r, so l can be up to r, which includes the new l = r (start at r). So we can insert prefix[r] (which corresponds to l=r) into the data structure when we reach r if nums[r] is odd? But note: for subarray starting at r (l=r), the prefix index l = r, and we have prefix[r] already computed from previous elements. Yes, we have prefix[r] computed at step r (since prefix[r] corresponds to sum up to index r-1). So at step r (processing end index r), we have prefix[0..r] available (prefix[0] to prefix[r]). We need to consider l from 0 to min(r, last_odd[r]). Since last_odd[r] is the last odd index <= r, and l must be <= last_odd[r], we can maintain a pointer or simply when we see an odd, we allow all l up to r.
+        # Implementation: iterate r from 0 to n-1, compute prefix[r+1]. Keep a map (or dictionary with counts) of prefix values seen among allowed l's. Initially, allowed l's start from 0? At r=-1 (no elements), last_odd[-1] = -1, so no l allowed? But we will start with prefix[0] = 0, and when r=0, we need to consider l=0 if nums[0] is odd? Let's do step by step:
+        #   prefix[0] = 0.
+        #   Let last_odd = -1 initially.
+        #   We'll maintain a data structure DS that contains prefix[l] for all l that are allowed for current r. Initially before processing any r, we have l=0 allowed only if last_odd[r] >=0? Actually for r=0, we compute last_odd[0] = 0 if nums[0] odd else -1. Then allowed l are 0..last_odd[0]. So if nums[0] is odd, allowed l includes 0. We need to insert prefix[0] = 0 into DS before processing r=0? Because l=0 is allowed. We can insert prefix[0] at the very beginning (since l=0 is always allowed if there is an odd at or after 0? But if nums[0] is even and no odd yet, then last_odd[0] = -1, so allowed l must be <= -1, meaning none. However, we must not count subarrays with no odd. So for r=0 with even, we should not count any subarray ending at 0 because it would have y=0. So indeed we should not include prefix[0] in DS when last_odd < 0.
+        #   So algorithm:
+        #       prefix[0] = 0
+        #       last_odd = -1
+        #       DS = empty map (default 0)
+        #       ans = 0
+        #       For r from 0 to n-1:
+        #           contribution = a if nums[r] % 2 == 1 else -b
+        #           prefix[r+1] = prefix[r] + contribution
+        #           if nums[r] % 2 == 1:
+        #               last_odd = r
+        #               # Now allowed l are 0..last_odd (i.e., up to r)
+        #               # We need to insert prefix[r] (which corresponds to l=r) into DS? But note: DS currently contains prefix[l] for l that were allowed in previous steps. Previous steps had last_odd < r, so DS contained l up to previous last_odd. Now we need to add all l from previous_last_odd+1 to r (i.e., l = previous_last_odd+1, ..., r) if they are <= last_odd (which they are). However, we don't have all those l's prefix values stored separately? We do: we have computed prefix[0..r] already. So we can insert prefix[r] (l=r) now. But what about l between previous_last_odd+1 and r-1? Those were not in DS because they were not allowed before (since last_odd was smaller). Now they become allowed. So we need to insert all prefix[l] for l from previous_last_odd+1 to r into DS. That could be O(n^2) if we do it naively. But note: last_odd only increases when we see an odd, and each index gets inserted exactly once when it becomes allowed. Since last_odd is non-decreasing, we can maintain a pointer 'allowed_start' that tracks the smallest l that is currently allowed? Actually allowed l are 0..last_odd. As last_odd increases, we add the new l = last_odd (the new odd index) and also all indices between old_last_odd+1 and new_last_odd? Wait: when we see an odd at r, last_odd becomes r. Previously last_odd was some value L < r. The allowed set before was l <= L. Now allowed set becomes l <= r. So the new allowed l's are l = L+1, L+2, ..., r. That's up to r-L new indices. If we add them one by one each time we see an odd, total additions over all r is O(n) because each index is added exactly once when it becomes allowed (i.e., when we reach an odd that is at or after that index). But careful: an index l might become allowed only when last_odd reaches or passes l. Since last_odd is non-decreasing and starts at -1, the first time last_odd >= l, index l becomes allowed. That happens exactly once. So we can maintain a pointer 'next_to_add' that points to the smallest l not yet added to DS. Initially next_to_add = 0, and last_odd = -1. When we process r and nums[r] is odd, we set last_odd = r, and then we need to add all l from next_to_add to r (since all l <= r are now allowed? But wait: before this odd, allowed l were only up to previous last_odd (which was < r). So yes, we need to add all l that were not yet added and satisfy l <= last_odd. Since next_to_add is the smallest l not yet added, we can add from next_to_add to r. However, we must ensure that we only add l that are <= current last_odd. Since last_odd = r, we add up to r. And next_to_add should be <= last_odd+1 initially? Let's design:
+        #           We maintain:
+        #               prefix[0..n] computed as we go.
+        #               last_odd = -1
+        #               next_idx = 0  # smallest l (prefix index) that has not been inserted into DS
+        #               DS: frequency map of prefix[l] for l that are currently allowed.
+        #           At start of loop for r (0-indexed), we have computed prefix[r] (since prefix[0] known, after r-1 we have prefix[r]).
+        #           We then compute contribution for nums[r] and prefix[r+1].
+        #           But we need to ensure that before querying for r (i.e., counting l for subarrays ending at r), the DS contains all allowed l for this r. The allowed l for r are l <= last_odd[r] (which depends on nums[r] possibly odd). So we should update DS to include new allowed l as soon as last_odd is updated.
+        #           So for each r:
+        #               if nums[r] is odd:
+        #                   last_odd = r
+        #                   # now allowed l are 0..last_odd
+        #                   # add all l from next_idx to last_odd (since next_idx <= last_odd) into DS
+        #                   while next_idx <= last_odd:
+        #                       DS[prefix[next_idx]] += 1
+        #                       next_idx += 1
+        #               # Now DS contains prefix[l] for all l <= last_odd (i.e., all l that are allowed for current r)
+        #               # Query: count number of l in DS such that prefix[l] <= prefix[r+1]
+        #               # ans += that count
+        #           However, note: l must also satisfy l <= r (since subarray non-empty, l can be at most r). But our allowed set already includes l up to last_odd, and last_odd <= r (since last_odd is the last odd index <= r), so l <= last_odd <= r automatically. So no extra constraint.
+        #           But what about when nums[r] is even? Then last_odd remains same. Allowed l are still 0..last_odd (which may be < r). DS already contains all allowed l (since we added up to last_odd when last_odd was set). So no new insertions. We just query DS for prefix[r+1].
+        #           However, we must be careful: when we first start, last_odd = -1, so allowed set is empty. next_idx = 0, but we haven't added anything because last_odd < 0, so while next_idx <= last_odd is false (0 <= -1 false). So DS empty. Then for r=0 if nums[0] is even, we query DS (empty) -> 0, correct. If nums[0] is odd, we set last_odd=0, then add l from next_idx=0 to 0: add prefix[0]=0 to DS. Then query for prefix[1] -> count of prefix[l] <= prefix[1]. That counts l=0 if 0 <= prefix[1]. That corresponds to subarray starting at 0 (l=0), which is valid because it includes the odd. Good.
+        #           But we also need to consider that l can be equal to r+1? No, l ranges from 0 to r (since subarray non-empty). In our mapping, l is start index (0-based), and prefix index l corresponds to sum before l. The subarray nums[l..r] uses prefix[l] and prefix[r+1]. So l can be at most r. Since last_odd <= r, allowed l <= last_odd <= r, so l=r is allowed only if nums[r] is odd (since last_odd becomes r). That's correct: if the last element is odd, we can start at r (subarray of length 1). So insertion of prefix[r] when l=r happens when we set last_odd = r (i.e., when nums[r] is odd), and we add l=r (since next_idx will be <= r). Indeed when we add from next_idx to last_odd, and next_idx might be r+1? Let's simulate: suppose after processing r-1, last_odd = L (some value), and next_idx = L+1 (since we added all up to L). Then at r, if nums[r] is odd, we set last_odd = r. Then while next_idx <= r: we add prefix[next_idx] where next_idx starts at L+1 and goes to r. That includes l = r (prefix[r]). Good.
+        #           One more detail: prefix[r] is computed before prefix[r+1]. At iteration r, we have prefix[0..r] already computed (since prefix[r] was computed in previous iteration or initial). We compute prefix[r+1] after possibly updating last_odd. But we need to add prefix[l] for l up to last_odd (which may include l = r) before querying for prefix[r+1]. So the order should be:
+        #               - Compute contribution for nums[r] and set prefix[r+1] = prefix[r] + contribution.
+        #               - If nums[r] is odd, update last_odd = r, and add all new l (from next_idx to r) to DS.
+        #               - Then query DS for count of prefix[l] <= prefix[r+1].
+        #           However, when adding l = r, we need prefix[r] which is already known. That's fine.
+        #           But what about the case where nums[r] is even and last_odd hasn't been updated? Then DS already contains all allowed l (up to L), and we query with prefix[r+1]. That's correct.
+        #           However, we must ensure that we do not add prefix[l] for l that are > r? Since last_odd <= r, the maximum l added is r, so fine.
+        #           Implementation of DS: we need to support insertions and queries of number of elements <= value. Since values (prefix) can be large (up to about a * n + b * n, with a,b up to 1e9, n up to 1e5, so up to 1e14), we cannot use array. We can use a balanced BST or Fenwick tree after coordinate compression. Since we insert values dynamically (online) and query prefix sums of frequencies for values <= current value, we can use a Fenwick tree after compressing all prefix values that will appear. However, we don't know all prefix values in advance because they depend on a and b and the sequence. But we can collect all prefix values in one pass first? We could do two passes: first compute all prefix values, then compress, then second pass use Fenwick. That's acceptable O(n log n). Given time limit 2s, O(n log n) is fine.
+        #           Steps:
+        #               1. Compute prefix[0..n] where prefix[0]=0, and for i in 0..n-1: prefix[i+1] = prefix[i] + (a if nums[i]%2==1 else -b).
+        #               2. Collect all prefix values into a list for compression.
+        #               3. Sort and deduplicate.
+        #               4. Map each prefix value to its index (1-based for Fenwick).
+        #               5. Iterate through nums with the DS logic using Fenwick tree (or ordered map with binary indexed tree). We'll maintain a Fenwick tree over the compressed coordinates.
+        #               6. Initialize last_odd = -1, next_idx = 0, Fenwick empty (all zeros).
+        #               7. For r from 0 to n-1:
+        #                       # Note: we have already computed prefix[0..r+1] in step 1.
+        #                       if nums[r] % 2 == 1:
+        #                           last_odd = r
+        #                           while next_idx <= last_odd:
+        #                               val = prefix[next_idx]
+        #                               idx = compressed[val]
+        #                               fenwick.add(idx, 1)
+        #                               next_idx += 1
+        #                       # Query for prefix[r+1]:
+        #                       val_q = prefix[r+1]
+        #                       idx_q = compressed[val_q]  # need to find greatest index with value <= val_q? Actually we want count of stored prefix[l] <= val_q.
+        #                       Since we compressed all prefix values, we can find the largest index where value <= val_q. Standard: after sorting unique values, we can binary search for the rightmost index where value <= val_q. Let pos = bisect_right(unique, val_q)  # gives number of elements <= val_q. But Fenwick indices are 1..m, where m = len(unique). We can use bisect_left to get first index >= val_q, then count = pos (number of elements < val_q) etc. Simpler: let pos = bisect_right(unique, val_q)  # gives number of unique values <= val_q. Then we query fenwick.sum(pos) if we map each value to its index in sorted order (1-based). We'll map each prefix value to its index in sorted unique list (starting at 1). Then for query, we need the index corresponding to the largest unique value <= val_q. That is: idx_max = bisect_right(unique, val_q)  # this returns count of unique values <= val_q, which is exactly the index of the last such value in 1-based if we use bisect_right? Let unique = [v1, v2, ..., vm] sorted. bisect_right returns the insertion point to the right of equal values, i.e., the index (0-based) where val_q would be inserted to keep order, such that all values <= val_q are before. So the number of unique values <= val_q is bisect_right. So if we use 1-based Fenwick indices, we query sum up to idx = bisect_right. But careful: if we map each value to its 1-based index (i.e., the position in unique list), then for a value v that exactly equals unique[k], its index is k+1. Then for query val_q, we want to include all stored values with value <= val_q. That corresponds to all indices <= idx where idx = bisect_right(unique, val_q). Because bisect_right returns the count of unique values <= val_q? Actually bisect_right returns the insertion point i such that all values < val_q are before i, and all values >= val_q are at i or after. Wait: Python's bisect_right returns the insertion point to the right of any existing entries of val_q. So if unique = [1,3,5], bisect_right(3) returns 2 (since 3 is at index1, right insertion at index2). That means values <=3 are unique[0] and unique[1] (1 and 3), which are indices 1 and 2 in 1-based. So the maximum 1-based index for <= val_q is bisect_right(unique, val_q). Because if val_q = 3, bisect_right = 2, and unique[1]=3 is included. If val_q = 2.5, bisect_right = 1, unique[0]=1 <=2.5, so index1. So yes, we can set idx_limit = bisect_right(unique, val_q) and query fenwick.sum(idx_limit).
+        #                       So ans += fenwick.sum(idx_limit)
+        #               8. Return ans.
+        #           Let's test with examples.
+        #           Example 1: nums=[1,2,1,2], a=3,b=2.
+        #               Contributions: odd: +3, even: -2.
+        #               prefix[0]=0
+        #               r0: nums[0]=1 odd -> prefix[1]=3
+        #               r1: nums[1]=2 even -> prefix[2]=3-2=1
+        #               r2: nums[2]=1 odd -> prefix[3]=1+3=4
+        #               r3: nums[3]=2 even -> prefix[4]=4-2=2
+        #               unique prefixes: [0,1,2,3,4]? Actually compute all prefix[0..4]: 0,3,1,4,2 -> sorted [0,1,2,3,4].
+        #               Iterate:
+        #                   last_odd=-1, next_idx=0, fenwick empty.
+        #                   r=0, nums[0]=1 odd -> last_odd=0, while next_idx<=0: add prefix[0]=0. fenwick add 0->idx of 0. next_idx=1.
+        #                   query for prefix[1]=3: idx_limit = bisect_right([0,1,2,3,4],3)=4 (since 3 present at index3 (0-based index2), right insertion index4? Let's compute: unique=[0,1,2,3,4], bisect_right(3)=4 (0-based insertion at index4), so 1-based idx_limit=4. fenwick.sum(4)=1 (only 0). ans=1.
+        #                   r=1, nums[1]=2 even -> last_odd stays 0. No insertion. query for prefix[2]=1: idx_limit = bisect_right(1)=2 (unique <=1: 0,1). fenwick currently has {0:1}. fenwick.sum(2) counts values <=1: both 0 and 1? But 1 not inserted yet (only prefix[0]=0 inserted). So sum=1. ans=2.
+        #                   r=2, nums[2]=1 odd -> last_odd=2, while next_idx<=2: next_idx=1, add prefix[1]=3; next_idx=2, add prefix[2]=1; next_idx=3 stop? Actually while next_idx <= last_odd (2): next_idx=1 -> add prefix[1]=3; next_idx=2 -> add prefix[2]=1; next_idx=3 >2 stop. So add prefix[1] and prefix[2]. fenwick now has {0,3,1}. query for prefix[3]=4: idx_limit = bisect_right(4)=5. fenwick.sum(5)=3. ans=5.
+        #                   r=3, nums[3]=2 even -> last_odd stays 2. query for prefix[4]=2: idx_limit = bisect_right(2)=3 (unique <=2:0,1,2). fenwick has {0,1,3}? Actually after additions: prefix[0]=0, prefix[1]=3, prefix[2]=1. Values: 0,3,1. Sorted unique includes 2? Yes, 2 is in unique list but not inserted. Query for <=2: values 0 and 1 are <=2, 3 is not. So count should be 2. Let's compute: fenwick indices: map 0->1,1->2,2->3,3->4,4->5. We inserted 0 (idx1), 3 (idx4), 1 (idx2). So fenwick has counts at idx1=1, idx2=1, idx4=1. Query for val=2: bisect_right([0,1,2,3,4],2)=3 (since 2 at index2, right insertion index3). fenwick.sum(3) sums indices1-3: idx1=1, idx2=1, idx3=0 (since 2 not inserted), total 2. ans=5+2=7. matches.
+        #           Example 2: nums=[2,2,1], a=2,b=1 -> contributions: odd +2, even -1.
+        #               prefix:0, -1? Let's compute:
+        #                   nums[0]=2 even -> -1, prefix[1]=-1
+        #                   nums[1]=2 even -> -1, prefix[2]=-2
+        #                   nums[2]=1 odd -> +2, prefix[3]=0
+        #               prefixes: [0,-1,-2,0] unique sorted [-2,-1,0]
+        #               Iterate:
+        #                   r0: nums[0]=2 even -> last_odd=-1, no insertion (since not odd), query prefix[1]=-1. DS empty -> 0. ans=0.
+        #                   r1: nums[1]=2 even -> last_odd=-1, no insertion, query prefix[2]=-2 -> 0. ans=0.
+        #                   r2: nums[2]=1 odd -> last_odd=2, while next_idx<=2: next_idx=0, add prefix[0]=0; next_idx=1, add prefix[1]=-1; next_idx=2, add prefix[2]=-2; next_idx=3 stop. fenwick has 0,-1,-2. query prefix[3]=0: idx_limit = bisect_right([-2,-1,0],0)=3. fenwick.sum(3)=3. ans=3. matches.
+        #           Example 3: nums=[2,2,2], a=1,b=1 -> contributions: odd +1, even -1. No odds, so last_odd remains -1 throughout. DS never gets any insertions (since we only insert when odd encountered, and none). Queries always 0. ans=0. matches.
+        #           Edge case: subarray with only one odd and ratio condition may fail? Our condition uses b*x <= a*y, which is exact rational comparison without floating point. Since we use integers, it's safe. However, note that a and b can be up to 1e9, and n up to 1e5, so prefix values can be as large as a*n ~ 1e14, which fits in Python int.
+        #           Time complexity: O(n log n) due to compression and Fenwick operations.
+        #           Implementation details:
+        #               - We need to compute all prefix values first for compression.
+        #               - Use bisect from built-in module.
+        #               - Fenwick tree class with add and sum.
+        #           Let's code accordingly.
+        #       Note: we must ensure that we only insert prefix[l] for l <= last_odd at the time of insertion. Our while loop adds from next_idx to last_odd, where next_idx is the smallest l not yet inserted. Since last_odd is non-decreasing, this works.
+        #       One more check: when we have multiple odds, say nums = [1,3,2], a=1,b=1. Then contributions: +1,+1,-1. prefix:0,1,2,1. last_odd at r0=0, insert l=0. r1 odd, last_odd=1, insert l=1 (prefix[1]=1). r2 even, no insertion. Queries should work.
+        #       Let's simulate quickly: 
+        #           r0: insert prefix[0]=0, query prefix[1]=1 -> count <=1 among {0} =1 -> ans=1 (subarray [1])
+        #           r1: insert prefix[1]=1, query prefix[2]=2 -> count <=2 among {0,1}=2 -> ans=3 (subarrays [1], [1,3], [3]? Wait [3] starts at l=1? l=1 corresponds to start index1, subarray [3] has prefix[1]=1 and prefix[2]=2? Actually subarray [3] is nums[1..1], uses prefix[1] and prefix[2]. Our query at r1 counts l with prefix[l] <= prefix[2]=2, l<=last_odd=1. l can be 0 or 1. That includes subarrays [1..1] and [0..1] and [1..1]? l=0 gives subarray [0..1], l=1 gives subarray [1..1]. So yes, two subarrays ending at 1. So ans becomes 1+2=3? Actually initial ans=1, then r1 adds 2 -> total 3. But we also have subarray [1] already counted at r0. So total valid subarrays ending at 0 and 1 are 1 and 2, sum 3. That seems correct if all ratios <=1/1? [1] ratio 0/1=0<=1, [3] 0/1=0<=1, [1,3] 0/2=0<=1. So 3 subarrays ending at 0 or 1? Actually [1] and [1,3] and [3] are valid. That's 3. Good.
+        #           r2 even: query prefix[3]=1 -> count <=1 among {0,1} (since last_odd=1, l allowed up to1) = both 0 and1 are <=1? 1<=1 yes, 0<=1 yes, count=2. That corresponds to subarrays ending at 2: [2] ratio? [2] has y=0 invalid? Wait [2] is even only, y=0, should be invalid. But our query counts l where l<=last_odd=1. For l=2 (start index2), that would be subarray [2] but l=2 is not allowed because last_odd=1 <2, so l max is1. So only l=0 or1. Subarray starting at 0: [1,3,2] ratio x=1 (even at index2), y=2 -> 1/2=0.5<=1, valid. Subarray starting at1: [3,2] ratio x=1,y=1 ->1<=1 valid. Subarray starting at2: [2] would be invalid but not counted because l=2 not inserted (and last_odd=1). So query returns 2, correct. So total ans=3+2=5. Let's enumerate all valid subarrays for [1,3,2] with a=1,b=1: 
+        #               [1] yes, [1,3] yes, [1,3,2] yes, [3] yes, [3,2] yes, [2] no. That's 5. Good.
+        #       So algorithm seems correct.
+        #   Let's implement Fenwick tree:
+        #       class Fenwick:
+        #           def __init__(self, n):
+        #               self.n = n
+        #               self.bit = [0]*(n+1)
+        #           def add(self, i, delta):  # i is 1-based
+        #               while i <= self.n:
+        #                   self.bit[i] += delta
+        #                   i += i & -i
+        #           def sum(self, i):  # prefix sum 1..i
+        #               s = 0
+        #               while i > 0:
+        #                   s += self.bit[i]
+        #                   i -= i & -i
+        #               return s
+        #   Compression:
+        #       all_vals = list(set(prefix))  # but prefix length n+1
+        #       sort all_vals
+        #       unique = sorted(all_vals)
+        #       Then for a value v, idx = bisect_left(unique, v) + 1  (since bisect_left returns 0-based index of first >= v). But we need mapping that ensures if v is in unique, we get its 1-based index. Using bisect_left works because v is guaranteed to be in unique (since we collected all prefixes). So idx = bisect_left(unique, v) + 1.
+        #       However, for query we need idx_limit = bisect_right(unique, val_q). Because bisect_right returns 0-based insertion point, which equals the number of unique values <= val_q. So we can compute pos = bisect_right(unique, val_q) and then call fenwick.sum(pos). Because fenwick indices are 1-based and correspond to unique list in order, the fenwick index for the i-th smallest unique value is i. So the largest i with unique[i-1] <= val_q is pos (since if unique = [v0,...,v_{m-1}], then bisect_right returns an integer between 0 and m. For example, val_q = v_{m-1}, bisect_right returns m, and we want to include all m elements. So fenwick.sum(pos) works.
+        #   Edge: if val_q is less than the smallest unique, bisect_right returns 0, fenwick.sum(0)=0.
+        #   So implementation steps:
+        #       1. n = len(nums)
+        #       2. prefix = [0]*(n+1)
+        #          for i in range(n):
+        #              if nums[i] % 2 == 1:
+        #                  prefix[i+1] = prefix[i] + a
+        #              else:
+        #                  prefix[i+1] = prefix[i] - b
+        #       3. unique = sorted(set(prefix))
+        #       4. m = len(unique)
+        #       5. Create fenwick with size m.
+        #       6. last_odd = -1
+        #          next_idx = 0
+        #          ans = 0
+        #       7. For r in range(n):
+        #              # Note: prefix[r] is already computed (since prefix[0]..prefix[r] known), and we have prefix[r+1] computed in step 2.
+        #              if nums[r] % 2 == 1:
+        #                  last_odd = r
+        #                  while next_idx <= last_odd:
+        #                      v = prefix[next_idx]
+        #                      idx = bisect_left(unique, v) + 1
+        #                      fenwick.add(idx, 1)
+        #                      next_idx += 1
+        #              # query for prefix[r+1]
+        #              vq = prefix[r+1]
+        #              pos = bisect_right(unique, vq)  # 0-based count
+        #              ans += fenwick.sum(pos)  # since fenwick indices 1..m, sum up to pos (where pos is number of elements <= vq)
+        #       8. Return ans
+        #   Note: In the while loop, we add prefix[next_idx] for next_idx from current next_idx up to last_odd. But note that next_idx starts at 0, and we only add each prefix[l] once. However, we must ensure that we don't add prefix[l] for l that are > last_odd at later steps? The while condition ensures that.
+        #   Let's test with a small case where there are multiple odds and some evens in between.
+        #   Already tested with examples.
+        #   Complexity: O(n log n) due to binary searches and Fenwick ops.
+        #   Potential pitfalls: 
+        #       - Using %2 to check odd/even: nums[i] are positive integers, so odd if nums[i] % 2 == 1, even if nums[i] % 2 == 0. Works.
+        #       - a and b are integers, b could be 0? Constraint says 1 <= b, so b>=1.
+        #       - When a and b are large, prefix values may be large, but Python int handles.
+        #       - The Fenwick sum(pos) where pos is computed as bisect_right returns an integer between 0 and m. Since fenwick indices are 1..m, calling sum(pos) with pos possibly 0 works (loop doesn't run). We'll implement sum(i) with while i>0.
+        #       - Need to import bisect.
+        #   Let's write the code accordingly.
+        #   However, note: In the query step, we are counting l such that prefix[l] <= prefix[r+1]. But we also need to ensure that l <= r? As argued, since last_odd <= r, and we only inserted l <= last_odd, l <= r automatically. But what about the case where last_odd < r and we have inserted all l <= last_odd, that's fine. However, could there be a scenario where last_odd < r but we still have l = r not inserted (which is correct because if nums[r] is even and last_odd < r, then starting at r would give subarray with no odd (since last_odd < r), so invalid). So not counting l=r is correct.
+        #   Therefore, the algorithm is sound.
+        #   Let's code it.
+        import bisect
+        class Fenwick:
+            def __init__(self, n):
+                self.n = n
+                self.bit = [0] * (n+1)
+            def add(self, i, delta):
+                # i is 1-based
+                while i <= self.n:
+                    self.bit[i] += delta
+                    i += i & -i
+            def sum(self, i):
+                # prefix sum 1..i, i can be 0
+                s = 0
+                while i > 0:
+                    s += self.bit[i]
+                    i -= i & -i
+                return s
+
+        def countRatioSubarrays(self, nums: list[int], a: int, b: int) -> int:
+            n = len(nums)
+            prefix = [0] * (n+1)
+            for i in range(n):
+                if nums[i] % 2 == 1:
+                    prefix[i+1] = prefix[i] + a
+                else:
+                    prefix[i+1] = prefix[i] - b
+            # compress
+            unique = sorted(set(prefix))
+            m = len(unique)
+            # mapping function using bisect_left
+            def get_idx(v):
+                # returns 1-based index
+                return bisect.bisect_left(unique, v) + 1
+            fenwick = Fenwick(m)
+            last_odd = -1
+            next_idx = 0
+            ans = 0
+            for r in range(n):
+                if nums[r] % 2 == 1:
+                    last_odd = r
+                    # insert all new l from next_idx to last_odd
+                    while next_idx <= last_odd:
+                        v = prefix[next_idx]
+                        idx = get_idx(v)
+                        fenwick.add(idx, 1)
+                        next_idx += 1
+                # query for prefix[r+1]
+                vq = prefix[r+1]
+                pos = bisect.bisect_right(unique, vq)  # number of unique values <= vq, 0-based count
+                ans += fenwick.sum(pos)  # since fenwick indices 1..m, sum up to pos works because pos <= m
+            return ans
+        #   However, note: in query we use fenwick.sum(pos) where pos is the count (0..m). But our fenwick.sum expects 1-based index i. If pos = 0, fenwick.sum(0) returns 0 (since while i>0 not executed). If pos = m, fenwick.sum(m) works. But careful: pos from bisect_right is an integer between 0 and m inclusive. For example, unique = [0,1,2], m=3. If vq=1, bisect_right returns 2 (since indices 0 and1 are <=1? Actually unique[0]=0<=1, unique[1]=1<=1, unique[2]=2>1, so bisect_right returns 2). That means there are 2 unique values <=1. Our fenwick indices: 1->0, 2->1, 3->2. To sum all values <=1, we need to sum indices 1 and 2, i.e., fenwick.sum(2). So pos=2 works. If vq=0, bisect_right returns 1 (since unique[0]=0<=0, unique[1]=1>0), pos=1 -> sum indices1. Good. If vq < smallest unique, bisect_right returns 0 -> sum(0)=0. So it's correct.
+        #   But we must ensure that when we add a value v, we get its index via get_idx(v) which uses bisect_left. For v that is in unique, bisect_left returns the first index where unique[i] >= v. Since v is in unique, it returns the exact position (0-based). So idx = that +1 is correct.
+        #   Let's test with the examples mentally already did.
+        #   One more edge: if there are duplicate prefix values, our compression set removes duplicates, but Fenwick stores counts per unique value. That's fine because we only need counts of prefix[l] values; duplicates map to same index, and fenwick.add increments count at that index. Query sums counts over indices corresponding to values <= vq.
+        #   So implementation should work.
+        #   However, note: In the while loop, we insert prefix[next_idx] for next_idx up to last_odd. But prefix[next_idx] for next_idx > r? No, because last_odd <= r, and next_idx starts at 0 and increases, so next_idx <= r+1 eventually. At iteration r, we insert up to last_odd which is <= r, so we only insert prefix indices up to r. That's fine because prefix[r] is known.
+        #   Let's run through a quick test with nums=[1], a=1,b=1:
+        #       prefix=[0,1], unique=[0,1], m=2.
+        #       r=0, nums[0]=1 odd -> last_odd=0, while next_idx<=0: add prefix[0]=0 idx1, next_idx=1.
+        #       query vq=prefix[1]=1, pos = bisect_right([0,1],1)=2, fenwick.sum(2)=1 -> ans=1. Correct.
+        #   nums=[2], a=1,b=1: prefix=[0,-1], unique=[-1,0]. r=0 even -> no insertion, query vq=-1, pos = bisect_right([-1,0],-1)=1 (since -1 <= -1, 0 > -1), fenwick.sum(1)=0 -> ans=0. Correct.
+        #   Good.
+        #   We'll return the function as required.
+        #   Note: The method signature is exactly as given: def countRatioSubarrays(self, nums: list[int], a: int, b: int) -> int:
+        #   We'll include the Fenwick class inside the method or outside? Since we need to output only the Solution class, we can define Fenwick inside the method or as nested? Better to define inside the method to avoid extra top-level code. But for clarity, we can define it inside the method or outside the class. Since the output should be only the Solution class with the method, we can define Fenwick inside the method or as a local class. Let's define it inside the method to keep everything self-contained.
+        #   However, we must ensure that we import bisect. We can import at top of method or outside. We'll put import bisect at the top of the class or method? Since the environment may already have imports, but to be safe, we can import inside the method. But it's fine to import at top of the code block. We'll write:
+        #       import bisect
+        #       class Fenwick: ...
+        #       class Solution: ...
+        #   But the instruction says output only the class Solution with the exact method header. It doesn't forbid imports or helper classes inside the method. We'll include necessary imports inside the method or at top of the code block. Since we are writing a single code block containing the class Solution, we can put import bisect at the top of the block.
+        #   Let's produce the final code.
+        #   One more optimization: we can avoid storing prefix array of size n+1 if we compute on the fly, but we need all prefix values for compression, so we need them anyway.
+        #   We'll implement as described.
+        #   Note: The problem says "Time limit: 2s", O(n log n) should pass.
+        #   Let's write the final answer.
+```python
+import bisect
+
+class Fenwick:
+    def __init__(self, n):
+        self.n = n
+        self.bit = [0] * (n + 1)
+    
+    def add(self, i, delta):
+        # i is 1-based
+        while i <= self.n:
+            self.bit[i] += delta
+            i += i & -i
+    
+    def sum(self, i):
+        # prefix sum 1..i, i can be 0
+        s = 0
+        while i > 0:
+            s += self.bit[i]
+            i -= i & -i
+        return s
+
+class Solution:
+    def countRatioSubarrays(self, nums: list[int], a: int, b: int) -> int:
+        n = len(nums)
+        prefix = [0] * (n + 1)
+        for i in range(n):
+            if nums[i] % 2 == 1:
+                prefix[i+1] = prefix[i] + a
+            else:
+                prefix[i+1] = prefix[i] - b
+        
+        unique = sorted(set(prefix))
+        m = len(unique)
+        
+        def get_idx(v):
+            # 1-based index
+            return bisect.bisect_left(unique, v) + 1
+        
+        fenwick = Fenwick(m)
+        last_odd = -1
+        next_idx = 0
+        ans = 0
+        
+        for r in range(n):
+            if nums[r] % 2 == 1:
+                last_odd = r
+                while next_idx <= last_odd:
+                    v = prefix[next_idx]
+                    idx = get_idx(v)
+                    fenwick.add(idx, 1)
+                    next_idx += 1
+            vq = prefix[r+1]
+            pos = bisect.bisect_right(unique, vq)   # number of unique values <= vq
+            ans += fenwick.sum(pos)
+        
+        return ans
+```
+[finish_reason: stop | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 917, 'completion_tokens': 12822, 'total_tokens': 13739, 'cost': 0.002011, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 80, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.002011, 'upstream_inference_prompt_cost': 8.77e-05, 'upstream_inference_completions_cost': 0.0019233}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

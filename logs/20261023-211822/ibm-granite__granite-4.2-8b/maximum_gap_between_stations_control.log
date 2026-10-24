@@ -1,0 +1,240 @@
+
+Assistant: ```python
+class Solution:
+    def maximumGap(self, skill: str, station: str) -> int:
+        from collections import defaultdict
+
+        # Map each skill to list of station indices where it appears
+        stations_by_skill = defaultdict(list)
+        for idx, ch in enumerate(station):
+            stations_by_skill[ch].append(idx)
+
+        # For each worker, we have a list of possible station indices (sorted)
+        # We need to pick one index per worker in increasing order of worker index
+        # and maximize the maximum gap between consecutive picks.
+
+        # DP with binary search optimization:
+        # Let dp[i] = the minimum possible last index (station index) we can assign to worker i
+        # while achieving a certain maximum gap? That's tricky because we want maximize the max gap.
+
+        # Alternative: Since we need the maximum possible gap among all valid assignments,
+        # we can binary search on the answer G (the gap). Check if there exists a valid assignment
+        # such that every consecutive difference <= G? No, we want at least one gap >= G? Actually
+        # we want the maximum possible maximum gap. So we want to know if we can achieve a gap >= G.
+        # We can binary search on G (0..m-1) and check feasibility of having at least one gap >= G?
+        # But we need existence of assignment with max gap >= G. That is equivalent to: there exists
+        # assignment where for some consecutive workers i-1,i, j_i - j_{i-1} >= G.
+        # Hard to directly check.
+
+        # Instead, we can think greedily: to maximize the maximum gap, we want to push some consecutive
+        # pair as far apart as possible, while still being able to assign all workers in increasing order.
+        # Observation: The maximum gap will be the maximum over all feasible consecutive gaps we can achieve.
+        # We can try to assign workers as early as possible for all but one gap that we try to maximize.
+
+        # Known technique: For problems like "maximum minimum gap" or "maximize maximum gap" with increasing indices,
+        # we can use DP with binary lifting or greedy with pointers.
+
+        # Given constraints up to 1e5, we need O(n log m) or similar.
+
+        # Let's think differently: The assignment must pick for each worker a station index where station char equals skill.
+        # and indices strictly increasing.
+
+        # We want to maximize max(j_i - j_{i-1}). So we want to make one big jump somewhere.
+
+        # We can attempt to iterate over all possible positions where the big jump occurs? But n up to 1e5.
+
+        # Another idea: For each worker i, we have a set of possible station indices. We need to pick one per worker in order.
+        # The classic problem of "select increasing indices" can be solved greedily by picking the smallest possible index for each worker.
+        # That gives the earliest feasible assignment. Similarly, picking the largest possible index for each worker (while maintaining feasibility) gives the latest feasible assignment.
+
+        # Let L[i] = smallest station index we can assign to worker i while still being able to assign workers i+1..n-1 (with increasing indices).
+        # Similarly, R[i] = largest station index we can assign to worker i while still being able to assign workers 0..i-1 (with increasing indices) — but careful.
+
+        # Actually, we can compute for each worker the earliest possible assignment by scanning forward:
+        #   Let pos[i] = smallest index >= (previous pos) in stations_by_skill[skill[i]]
+        #   Greedy forward: for i from 0 to n-1:
+        #       in list stations_by_skill[skill[i]], find the first element > prev_index (for i=0, prev=-1)
+        #       assign that, set prev = that index.
+        # This gives the lexicographically smallest assignment (earliest possible).
+
+        # Similarly, greedy backward: for i from n-1 downto 0:
+        #       in list stations_by_skill[skill[i]], find the largest element < next_index (for i=n-1, next=m)
+        #       assign that, set next = that index.
+        # This gives the lexicographically largest assignment (latest possible), but in decreasing order we pick the largest possible that is < next.
+
+        # With earliest assignment and latest assignment, we have bounds.
+
+        # Now, the maximum gap we can achieve is limited by the range between some earliest pick of a worker and the latest pick of the next worker? Not exactly.
+
+        # We can consider each consecutive pair (i-1, i). We want to maximize j_i - j_{i-1} while still being able to assign all workers.
+        # For a fixed pair (i-1, i), we can choose j_{i-1} as small as possible (from earliest assignment) and j_i as large as possible (from latest assignment), but they must be consistent with overall feasibility.
+
+        # However, we can do the following: For each worker i, define:
+        #   left[i] = the smallest possible station index we can assign to worker i in any valid assignment (i.e., the greedy forward result).
+        #   right[i] = the largest possible station index we can assign to worker i in any valid assignment (i.e., the greedy backward result).
+
+        # Then, for consecutive workers i-1 and i, the maximum possible difference j_i - j_{i-1} in any valid assignment is at most right[i] - left[i-1].
+        # But we must ensure that there exists an assignment where j_{i-1} = left[i-1] (or some value <= right[i-1]) and j_i = right[i] (or some value >= left[i]), and the assignment for others is feasible.
+
+        # Actually, it is known that for such increasing selection problems with sorted lists per worker (by skill), the set of feasible assignments forms a lattice. The earliest assignment and latest assignment exist and any value between can be achieved for each worker? Not necessarily for all, but we can use the concept of "feasible interval" for each worker.
+
+        # We can compute for each worker i the interval [L_i, R_i] of possible station indices that can be assigned to worker i in some valid assignment. Then the maximum possible gap between worker i-1 and i is max over feasible j_{i-1} in [L_{i-1}, R_{i-1}] and j_i in [L_i, R_i] with j_{i-1} < j_i of (j_i - j_{i-1}). That would be R_i - L_{i-1} if R_i > L_{i-1}, but we need to ensure that there exists an assignment consistent for all workers that achieves j_{i-1}=L_{i-1} and j_i=R_i. That may not always be possible because the choices interact.
+
+        # However, we can use DP with binary search on answer G: Check if there exists a valid assignment with max gap >= G.
+        # How to check feasibility for a given G? We want to know if we can assign such that at least one consecutive difference >= G.
+        # Equivalent to: there exists an index k (0<=k<n-1) such that j_{k+1} - j_k >= G, and the rest are increasing.
+        # We can try for each k whether we can have the gap at k be >= G.
+        # For a fixed k, we want to assign workers 0..k with increasing indices, workers k+1..n-1 with increasing indices, and ensure j_{k+1} - j_k >= G.
+        # We can compute earliest assignment for prefix up to k and latest assignment for suffix starting from k+1, and check if we can pick j_k and j_{k+1} satisfying the gap.
+
+        # Specifically, for prefix up to k, compute the earliest possible assignment (greedy forward) to get minimal last index for prefix. Let pref_min_end[k] = smallest possible index for worker k in any valid assignment for workers 0..k.
+        # Similarly, for suffix from k+1 to n-1, compute the latest possible assignment (greedy backward) to get largest possible index for worker k+1? Actually, we want the largest possible index for worker k+1 such that workers k+1..n-1 can be assigned with increasing indices. Let suff_max_start[k+1] = largest possible index for worker k+1 in any valid assignment for workers k+1..n-1 (with increasing indices starting at that index).
+
+        # Then for gap at k (between worker k and k+1), we need to find if there exists an assignment where j_k <= some value and j_{k+1} >= j_k + G, with j_k from [L_k, R_k] and j_{k+1} from [L_{k+1}, R_{k+1}], and overall feasibility.
+
+        # We can compute for each worker the earliest assignment (forward) and also the earliest assignment that leaves as much room as possible for later? Actually, we can compute two arrays:
+        #   f[i] = smallest possible station index we can assign to worker i while being able to assign all workers from i to n-1 (forward greedy gives exactly that: at step i, pick the smallest index > prev).
+        #   b[i] = largest possible station index we can assign to worker i while being able to assign all workers from 0 to i (backward greedy gives largest index < next).
+
+        # But for prefix-suffix check:
+        #   Let pref[i] = smallest possible index for worker i when assigning workers 0..i greedily forward. This is deterministic: start with -1, for each worker pick the first station index > prev in its list.
+        #   Let suff[i] = largest possible index for worker i when assigning workers i..n-1 greedily backward: start with m, for each worker from n-1 downto i pick the largest station index < next in its list.
+
+        # Now, for gap at position k (between worker k and k+1), we want to know if there exists an assignment where j_k <= some value and j_{k+1} >= j_k + G.
+        # We can try to assign the prefix up to k as early as possible (using pref) and the suffix from k+1 as late as possible (using suff), and check if suff[k+1] - pref[k] >= G.
+        # But is it sufficient? If suff[k+1] - pref[k] >= G, then we can take the earliest assignment for prefix (which ends at pref[k]) and the latest assignment for suffix (which starts at suff[k+1]), and since pref[k] < suff[k+1] (guaranteed by feasibility) and the gap suff[k+1] - pref[k] >= G, then we have a gap >= G at the boundary? However, the assignment for the prefix using pref might not be compatible with the assignment for the suffix using suff at the boundary because the station index chosen for worker k in the suffix latest assignment might be larger than pref[k], and similarly worker k+1 might be smaller than suff[k+1]. But we can potentially adjust.
+
+        # Actually, we can independently choose any feasible assignment for prefix and suffix as long as the last index of prefix is less than the first index of suffix. So if we take the earliest possible ending of prefix (pref[k]) and the latest possible starting of suffix (suff[k+1]), and pref[k] < suff[k+1], then we can combine them because we can take the prefix assignment that achieves pref[k] (which is minimal ending) and the suffix assignment that achieves suff[k+1] (which is maximal starting). Since pref[k] < suff[k+1] (because overall assignment exists), we have pref[k] < suff[k+1], and then the gap between the chosen j_k (which could be as low as pref[k]) and j_{k+1} (as high as suff[k+1]) can be up to suff[k+1] - pref[k]. If that difference >= G, then we can achieve gap >= G by taking the prefix assignment that ends at pref[k] (or possibly even smaller j_k) and suffix assignment that starts at suff[k+1] (or possibly larger j_{k+1}), ensuring j_k < j_{k+1}. Thus, condition suff[k+1] - pref[k] >= G is sufficient for existence of a gap >= G at position k.
+
+        # Is it necessary? If there exists an assignment with gap >= G at k, then in that assignment j_k <= some value and j_{k+1} >= j_k+G. In the prefix, j_k must be at least pref[k] (since pref[k] is the minimal possible ending of prefix), and in the suffix, j_{k+1} must be at most suff[k+1] (since suff[k+1] is the maximal possible starting of suffix). Therefore, j_{k+1} - j_k <= suff[k+1] - pref[k]. So if j_{k+1} - j_k >= G, then suff[k+1] - pref[k] >= G. Thus the condition is necessary and sufficient.
+
+        # Therefore, for a given G, there exists a valid assignment with max gap >= G iff there exists some k in [0, n-2] such that suff[k+1] - pref[k] >= G.
+
+        # We can compute pref[i] and suff[i] efficiently.
+
+        # Compute pref:
+        #   prev = -1
+        #   for i in range(n):
+        #       list_i = stations_by_skill[skill[i]]
+        #       # find smallest element > prev
+        #       Use binary search (bisect_right) on list_i
+        #       idx = bisect.bisect_right(list_i, prev)
+        #       if idx == len(list_i): assignment impossible (but guaranteed exists)
+        #       pref[i] = list_i[idx]
+        #       prev = pref[i]
+
+        # Compute suff:
+        #   next = m
+        #   for i in range(n-1, -1, -1):
+        #       list_i = stations_by_skill[skill[i]]
+        #       # find largest element < next
+        #       idx = bisect.bisect_left(list_i, next) - 1  # or use bisect_left and then idx-1
+        #       # Actually, find the rightmost element < next: use bisect_left to get first index >= next, then take idx-1
+        #       pos = bisect.bisect_left(list_i, next) - 1
+        #       if pos < 0: impossible
+        #       suff[i] = list_i[pos]
+        #       next = suff[i]
+
+        # Then compute max_diff = max_{k=0..n-2} (suff[k+1] - pref[k])
+        # Then the answer is max_diff.
+
+        # Let's test with examples:
+
+        # Example 1: skill="aa", station="aaaa"
+        # stations_by_skill['a'] = [0,1,2,3]
+        # pref: i0: smallest > -1 -> 0; i1: smallest >0 ->1 => pref=[0,1]
+        # suff: i1: largest <4 ->3; i0: largest <3 ->2? Wait compute backward:
+        #   next=4
+        #   i=1: list=[0,1,2,3], bisect_left([0,1,2,3],4)=4, pos=3 -> suff[1]=3, next=3
+        #   i=0: bisect_left([0,1,2,3],3)=1 (since 3 is at index3? Actually bisect_left returns first index where >=3, that's index3 because 3>=3), so pos=2 -> suff[0]=2? But list[2]=2. So suff=[2,3]
+        # Then max over k=0: suff[1]-pref[0]=3-0=3. Answer 3. Correct.
+
+        # Example 2: skill="xyz", station="xyzz"
+        # stations: x:[0], y:[1], z:[2,3]
+        # pref: i0 x: smallest > -1 ->0; i1 y: smallest >0 ->1; i2 z: smallest >1 ->2 => pref=[0,1,2]
+        # suff: next=4
+        #   i2 z: largest <4 ->3; next=3
+        #   i1 y: largest <3 ->1; next=1
+        #   i0 x: largest <1 ->0; next=0 => suff=[0,1,3]
+        # max over k: k=0: suff[1]-pref[0]=1-0=1; k=1: suff[2]-pref[1]=3-1=2 => max=2. Correct.
+
+        # Example 3: skill="cbc", station="cbcdbc"
+        # station: c: [0,3,4?], let's list: index0:'c',1:'b',2:'c',3:'d',4:'b',5:'c'? Actually "cbcdbc": indices:0:c,1:b,2:c,3:d,4:b,5:c. So c:[0,2,5], b:[1,4], d:[3].
+        # skill: c,b,c
+        # pref: i0 c: smallest >-1 ->0; i1 b: smallest >0 ->1; i2 c: smallest >1 ->2 => pref=[0,1,2]
+        # suff: next=6
+        #   i2 c: largest <6 ->5; next=5
+        #   i1 b: largest <5 ->4; next=4
+        #   i0 c: largest <4 ->2 (since c list [0,2,5], largest <4 is 2); next=2 => suff=[2,4,5]
+        # max over k: k=0: suff[1]-pref[0]=4-0=4; k=1: suff[2]-pref[1]=5-1=4 => max=4. Correct.
+
+        # So the algorithm works for examples.
+
+        # Therefore, the maximum possible gap is simply max_{k=0}^{n-2} (suff[k+1] - pref[k]).
+
+        # Implementation steps:
+        # 1. Build dict mapping skill char to sorted list of station indices.
+        # 2. Compute pref array of length n:
+        #    prev = -1
+        #    for i in range(n):
+        #        lst = stations_by_skill[skill[i]]
+        #        # binary search for first > prev
+        #        idx = bisect.bisect_right(lst, prev)   # because we need > prev, so use bisect_right to get first index > prev (since list sorted)
+        #        # Actually bisect_right returns insertion point after any existing prev, so it gives first index where lst[idx] > prev.
+        #        pref[i] = lst[idx]
+        #        prev = pref[i]
+        # 3. Compute suff array of length n:
+        #    next_idx = m   # stations are 0..m-1, so next initial = m
+        #    for i in range(n-1, -1, -1):
+        #        lst = stations_by_skill[skill[i]]
+        #        # find largest element < next_idx
+        #        # use bisect_left to find first >= next_idx, then index-1
+        #        idx = bisect.bisect_left(lst, next_idx) - 1
+        #        # idx should be >=0
+        #        suff[i] = lst[idx]
+        #        next_idx = suff[i]
+        # 4. Compute ans = max(suff[i+1] - pref[i] for i in range(n-1))
+        # 5. Return ans.
+
+        # Complexity: O(n log L) where L is list length per skill, total O(n log m) since each station appears in one list.
+
+        import bisect
+
+        n = len(skill)
+        m = len(station)
+
+        stations_by_skill = defaultdict(list)
+        for idx, ch in enumerate(station):
+            stations_by_skill[ch].append(idx)
+
+        # No need to sort because indices are increasing as we append in order.
+
+        pref = [0] * n
+        prev = -1
+        for i in range(n):
+            lst = stations_by_skill[skill[i]]
+            # find first index > prev
+            pos = bisect.bisect_right(lst, prev)
+            # guaranteed pos < len(lst)
+            pref[i] = lst[pos]
+            prev = pref[i]
+
+        suff = [0] * n
+        nxt = m
+        for i in range(n-1, -1, -1):
+            lst = stations_by_skill[skill[i]]
+            # find largest index < nxt
+            pos = bisect.bisect_left(lst, nxt) - 1
+            # guaranteed pos >= 0
+            suff[i] = lst[pos]
+            nxt = suff[i]
+
+        ans = 0
+        for i in range(n-1):
+            gap = suff[i+1] - pref[i]
+            if gap > ans:
+                ans = gap
+
+        return ans
+```
+[finish_reason: stop | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 770, 'completion_tokens': 4998, 'total_tokens': 5768, 'cost': 0.0008227, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 80, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0008227, 'upstream_inference_prompt_cost': 7.3e-05, 'upstream_inference_completions_cost': 0.0007497}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

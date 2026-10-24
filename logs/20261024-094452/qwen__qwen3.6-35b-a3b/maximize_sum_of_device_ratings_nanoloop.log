@@ -1,0 +1,2417 @@
+
+Assistant: Let me analyze this problem step by step.
+
+We have `m` devices, each with `n` units. The rating of a device is the minimum capacity among all its units.
+
+We can perform operations where:
+1. Choose a device that hasn't been used as a source before
+2. Remove exactly one unit from it and add it to any different device
+3. Mark that device as used (can't be a source again)
+
+We want to maximize the sum of ratings of all devices.
+
+Key observations:
+1. Each device can be used as a source at most once.
+2. When we transfer a unit from device i to device j, device i loses one unit and device j gains one unit.
+3. The rating of a device is the minimum of all its units.
+
+Let me think about what happens:
+- Initially, each device has n units with some values.
+- After operations, some devices have fewer units (if they were sources), some have more (if they received units).
+- The rating of a device with k units is the minimum of those k units.
+
+Strategy:
+- We want to maximize the sum of minimums.
+- For devices that don't give away units, their rating stays the same (minimum of their original n units).
+- For devices that give away units, we remove one unit. If we remove the minimum unit, the new rating becomes the second smallest unit. If we remove a non-minimum unit, the rating stays the same.
+
+Wait, let me reconsider. When we transfer from device i to device j:
+- Device i loses one unit (it's used as source, so it can't be a source again, but it can still receive).
+- Device j gains one unit.
+
+The key insight: After transferring, device i has n-1 units, and device j has n+1 units.
+
+To maximize the sum:
+- We should try to increase the ratings of some devices while minimizing the loss in others.
+- If we transfer the smallest unit from device i to device j, device i's rating might increase (if the smallest was the minimum), but device j's rating might decrease or stay the same.
+
+Let me think about it differently. Let's sort all units globally and think about which units contribute to ratings.
+
+Actually, let me think about what determines the rating:
+- The rating of a device is its minimum unit.
+- To maximize the sum of ratings, we want as many devices as possible to have high minimum values.
+
+Consider: if we don't do any transfers, the sum is the sum of the minimums of each device.
+
+If we transfer from device i (remove its minimum unit x) to device j:
+- Device i's new rating is the second smallest of its original units (or 0 if n=1, but n>=1 and we need n units initially, after removal n-1 units).
+- Device j's new rating is min(j's original units + x). This could be lower than j's original rating if x is small.
+
+So the net change is: (new rating of i - old rating of i) + (new rating of j - old rating of j).
+
+This is complex. Let me think about a simpler approach.
+
+Since m*n <= 2*10^5, we can afford O(m*n log(m*n)) or similar.
+
+Let me collect all units from all devices. Sort them. 
+
+The idea: we want to form groups (devices) where each group's minimum is as large as possible. But we're constrained by the initial distribution and the transfer rules.
+
+Actually, here's another angle: Each device can be a source at most once. When it is a source, it gives away one unit. The question is which unit to give away and to where.
+
+Let me think about what units can "save" a device's rating. If a device has units sorted as a1 <= a2 <= ... <= an, its rating is a1. If we remove a1, its new rating is a2. If we remove any other unit, its rating stays a1.
+
+So to "upgrade" device i's rating, we should remove its minimum unit. But that unit goes somewhere else, potentially dragging down that device's rating.
+
+Let me think about a greedy approach:
+1. Calculate initial ratings for all devices.
+2. For each device, if we remove its minimum, what's the gain? gain_i = (second_min_i - min_i).
+3. We want to pair devices that gain with devices that lose as little as possible.
+
+When we transfer unit x from device i to device j:
+- Device i's rating changes from min_i to new_min_i (which is min of remaining units).
+- Device j's rating changes from min_j to min(min_j, x) if x < min_j, otherwise min_j.
+
+So the change for device j is: min(min_j, x) - min_j. This is negative or zero if x < min_j, and zero if x >= min_j.
+
+So ideally, we want to transfer units from devices where the gain is high to devices where the loss is low (ideally zero loss).
+
+Loss for device j is 0 if x >= min_j, i.e., the transferred unit is >= device j's current minimum.
+
+So the strategy:
+- Identify devices that can gain by having their minimum removed.
+- For each such device, find a device that can receive that minimum unit without losing its rating (i.e., the receiving device's minimum <= the transferred unit... wait, no. The receiving device's rating is min of all its units. If we add x to it, the new minimum is min(old_min, x). So if x >= old_min, no change. If x < old_min, the rating drops to x.
+
+So loss for receiver = min(0, x - old_min_receiver).
+
+Let me code this up with a greedy approach:
+
+1. For each device, compute min_i and second_min_i (if it exists). Gain from removing min is second_min_i - min_i.
+2. We can potentially upgrade devices. Sort devices by gain (descending).
+3. For each device to upgrade, we need to send its min to another device. To minimize loss, send it to a device where the transferred unit >= that device's minimum (so no loss), or if not possible, to the device where the loss is minimized.
+
+But we also need to consider that a device can receive from multiple sources. So multiple transfers can go to the same device.
+
+Let me think about it as: we have a set of "spare" units (the minimums of devices we choose to transfer from). We want to assign each spare unit to a receiver such that the total loss is minimized, while the total gain from the senders is maximized.
+
+Actually, since a device can only be a source once, and we choose which devices are sources, this is more nuanced.
+
+Let me try a different approach: enumerate all units, sort them, and think about what the optimal assignment looks like.
+
+Actually, I think the key insight is:
+
+After all operations, each device has some number of units. The rating is the minimum. We want to maximize the sum of these minimums.
+
+Note that devices that are sources lose one unit each. Devices that are not sources keep all their units. Devices that receive units gain units.
+
+Let S be the set of source devices. For each i in S, we transfer one unit out.
+
+The problem is equivalent to: choose a set S of sources, and for each i in S, choose which unit to transfer and where to send it, to maximize the sum of ratings.
+
+Given the complexity, let me think about a simpler observation:
+
+If we transfer the minimum unit from device i, the gain is (second_min - min). The best receivers are those whose current min <= the transferred unit (zero loss). If no such receiver exists, we have to take the loss.
+
+But actually, since we can send to any device, and multiple transfers can go to the same device, let's think about it:
+
+Step 1: Calculate for each device its min and second_min.
+Step 2: Sort devices by potential gain (second_min - min) in descending order.
+Step 3: For each device (in order of highest gain), try to find a receiver where the loss is 0 (i.e., receiver's min <= transferred unit). If found, do the transfer. If not, we might still do it if the gain > loss.
+
+Wait, but we need to be careful: after a transfer, the receiver's rating might change, affecting future transfers to that receiver.
+
+This is getting complex. Let me look at the examples again:
+
+Example 1: [[1,3],[2,2]]
+- Device 0: min=1, second_min=3, gain=2
+- Device 1: min=2, second_min=2, gain=0
+- Transfer 1 from device 0 to device 1. Device 1's new units: [2,2,1], min=1. Loss for device 1: 1-2=-1. Gain for device 0: 3-1=2. Net: +1. Total: 4-1+2=... initial sum=1+2=3, new sum=3+1=4. Yes, net +1.
+
+Example 2: [[1,2,3],[4,5,6]]
+- Device 0: min=1, second_min=2, gain=1
+- Device 1: min=4, second_min=5, gain=1
+- Transfer 4 from device 1 to device 0. Device 0's new units: [1,2,3,4], min=1. No loss (4>=1). Device 1's new units: [5,6], min=5. Gain=1. Net: +1. Initial sum=1+4=5, new sum=1+5=6.
+
+Example 3: [[5,5,5],[1,1,1]]
+- Device 0: min=5, second_min=5, gain=0
+- Device 1: min=1, second_min=1, gain=0
+- No beneficial transfers.
+
+So the algorithm could be:
+1. For each device, compute min and second_min.
+2. Identify potential source devices (those with gain > 0).
+3. For each potential source (sorted by gain descending), try to find a receiver with zero loss.
+4. A receiver has zero loss if its current min <= the transferred unit.
+5. If zero loss is possible, do it. Otherwise, consider if gain > loss.
+
+But the issue is that receivers' mins can change after transfers. So we need to update.
+
+Given constraints (m, n up to 10^5 but m*n <= 2*10^5), I think we can simulate this efficiently.
+
+Let me code a solution:
+
+```python
+class Solution:
+    def maxRatings(self, units: list[list[int]]) -> int:
+        m = len(units)
+        
+        # For each device, get sorted units and compute initial rating
+        device_sorted = []
+        ratings = []
+        for i in range(m):
+            sorted_units = sorted(units[i])
+            device_sorted.append(sorted_units)
+            ratings.append(sorted_units[0])
+        
+        initial_sum = sum(ratings)
+        
+        # Calculate potential gain for each device if we remove its minimum
+        gains = []
+        for i in range(m):
+            if len(device_sorted[i]) > 1:
+                gain = device_sorted[i][1] - device_sorted[i][0]
+                if gain > 0:
+                    gains.append((gain, i, device_sorted[i][0]))
+        
+        # Sort by gain descending
+        gains.sort(reverse=True)
+        
+        # Try to perform transfers
+        # We need to track the current state of each device
+        # For efficiency, let's think about which devices can receive without loss
+        
+        # A device j can receive unit x without loss if current_rating[j] <= x
+        # But after a transfer, the device's rating might change... actually no, adding a unit can only decrease or keep the same the minimum.
+        
+        # So if we add x to device j, new rating = min(rating[j], x)
+        # Loss = rating[j] - min(rating[j], x) = max(0, rating[j] - x)
+        
+        # To have zero loss: x >= rating[j]
+        
+        # So for each source device i with min unit x, we want to find a receiver j where rating[j] <= x
+        
+        # Let's create a list of receivers sorted by their rating, so we can find receivers efficiently
+        
+        # Actually, since we want zero loss, and multiple transfers can go to the same receiver,
+        # let's see if there's any receiver with rating <= x for each x.
+        
+        # Collect all current ratings
+        current_ratings = list(ratings)
+        
+        # For efficiency, let's sort the gains and try to match
+        # We need to find, for each transferred unit x, a receiver with current_rating <= x
+        
+        # Let's use a different approach: sort receivers by their rating
+        # Then for each transfer, find if there's a receiver with rating <= x
+        
+        # But we need to be careful: once we transfer to a receiver, its rating might decrease, affecting future transfers.
+        
+        # Hmm, let's think again. If we transfer to a receiver with rating r, and x >= r, no change.
+        # If x < r, new rating is x. So the receiver's rating becomes x.
+        
+        # So if we're doing multiple transfers to the same receiver, and the first transfer has x1 >= r, no change.
+        # If we then transfer x2, and x2 >= r, no change. But if x2 < r, rating becomes x2.
+        
+        # This is complex. Let me try a greedy: always try to find a zero-loss receiver first.
+        
+        # Create a list of (rating, device_index) for all devices
+        receivers = [(current_ratings[i], i) for i in range(m)]
+        receivers.sort()  # Sort by rating ascending
+        
+        # For each potential source (sorted by gain desc)
+        for gain, source_idx, transfer_unit in gains:
+            # Find a receiver with rating <= transfer_unit
+            # Since receivers is sorted, we can binary search or iterate
+            found = False
+            for r, receiver_idx in receivers:
+                if r <= transfer_unit:
+                    # Zero loss transfer
+                    found = True
+                    break
+            if found:
+                # Perform the transfer
+                # Source: remove minimum, so its new rating is second_min
+                # But we already calculated gain, so new rating for source = old_rating + gain
+                current_ratings[source_idx] += gain
+                # Receiver's rating doesn't change (since r <= transfer_unit)
+                # But we need to update the receiver's position in the sorted list if needed
+                # Actually, since the rating doesn't change, no update needed for this receiver
+        ```
+
+Wait, I realize there's a problem with my approach. The `receivers` list is sorted, but after some transfers, the ratings change, and the order might change. Also, I'm not actually tracking which devices have been used as sources (each can be used at most once, which is handled by iterating through `gains` once each).
+
+But more importantly, I'm not correctly handling the case where the receiver's rating changes. Let me reconsider.
+
+Actually, in my greedy, I'm only considering zero-loss transfers. For zero-loss, the receiver's rating doesn't change, so the sorted order of receivers stays the same (for those with zero-loss transfers). This means I can pre-sort and reuse the list.
+
+But wait, I need to make sure I don't use the same source twice, which I don't since I iterate through `gains` once.
+
+Let me also consider: what if there's no zero-loss receiver? Should I still consider transfers with positive net gain?
+
+Let me refine: for each source, if there's a zero-loss receiver, do it. Otherwise, calculate the best receiver (minimizing loss) and check if gain > loss.
+
+Actually, for simplicity and given the constraints, let me first implement the zero-loss case and see if it passes the examples.
+
+Let me write the code:
+
+```python
+class Solution:
+    def maxRatings(self, units: list[list[int]]) -> int:
+        m = len(units)
+        
+        # For each device, get sorted units and compute initial rating
+        device_sorted = []
+        ratings = []
+        for i in range(m):
+            sorted_units = sorted(units[i])
+            device_sorted.append(sorted_units)
+            ratings.append(sorted_units[0])
+        
+        # Calculate potential gain for each device if we remove its minimum
+        gains = []
+        for i in range(m):
+            if len(device_sorted[i]) > 1:
+                gain = device_sorted[i][1] - device_sorted[i][0]
+                if gain > 0:
+                    gains.append((gain, i, device_sorted[i][0]))
+        
+        # Sort by gain descending
+        gains.sort(reverse=True)
+        
+        # Current ratings
+        current_ratings = list(ratings)
+        
+        # Create a list of (rating, device_index) for all devices, sorted by rating
+        receivers = [(current_ratings[i], i) for i in range(m)]
+        receivers.sort()
+        
+        # For each potential source
+        for gain, source_idx, transfer_unit in gains:
+            # Find a receiver with rating <= transfer_unit (zero loss)
+            # Since receivers is sorted by rating, iterate and find the first such receiver
+            found = False
+            for r, receiver_idx in receivers:
+                if receiver_idx == source_idx:
+                    continue  # Can't transfer to self
+                if r <= transfer_unit:
+                    found = True
+                    break
+            if found:
+                # Zero loss transfer
+                current_ratings[source_idx] += gain
+                # Receiver's rating doesn't change
+        
+        return sum(current_ratings)
+```
+
+Let me test this with the examples:
+
+Example 1: [[1,3],[2,2]]
+- Device 0: sorted=[1,3], rating=1, gain=2
+- Device 1: sorted=[2,2], rating=2, gain=0
+- Gains: [(2, 0, 1)]
+- Receivers: [(1, 0), (2, 1)]
+- For source 0, transfer_unit=1. Find receiver with rating <= 1 and not source 0.
+  - Receiver (1, 0): skip (same as source)
+  - Receiver (2, 1): 2 > 1, not found.
+- No zero-loss transfer. Return sum = 1+2=3. But expected is 4.
+
+Hmm, this doesn't work. The zero-loss condition is too strict. In example 1, transferring 1 from device 0 to device 1 results in device 1's rating dropping from 2 to 1, which is a loss of 1, but the gain is 2, so net +1.
+
+Let me update the algorithm to also consider transfers with positive net gain:
+
+```python
+class Solution:
+    def maxRatings(self, units: list[list[int]]) -> int:
+        m = len(units)
+        
+        # For each device, get sorted units and compute initial rating
+        device_sorted = []
+        ratings = []
+        for i in range(m):
+            sorted_units = sorted(units[i])
+            device_sorted.append(sorted_units)
+            ratings.append(sorted_units[0])
+        
+        # Calculate potential gain for each device if we remove its minimum
+        gains = []
+        for i in range(m):
+            if len(device_sorted[i]) > 1:
+                gain = device_sorted[i][1] - device_sorted[i][0]
+                if gain > 0:
+                    gains.append((gain, i, device_sorted[i][0]))
+        
+        # Sort by gain descending
+        gains.sort(reverse=True)
+        
+        # Current ratings
+        current_ratings = list(ratings)
+        
+        # Track which devices have been used as sources
+        used_source = [False] * m
+        
+        for gain, source_idx, transfer_unit in gains:
+            if used_source[source_idx]:
+                continue
+            used_source[source_idx] = True
+            
+            # Find the best receiver: minimize loss = max(0, current_ratings[receiver] - transfer_unit)
+            # We want to maximize (current_ratings[receiver] - transfer_unit) but capped at 0... 
+            # Actually, loss = max(0, current_ratings[receiver] - transfer_unit)
+            # To minimize loss, we want current_ratings[receiver] <= transfer_unit (loss=0), or as close as possible.
+            
+            best_receiver = -1
+            min_loss = float('inf')
+            
+            for receiver_idx in range(m):
+                if receiver_idx == source_idx:
+                    continue
+                loss = max(0, current_ratings[receiver_idx] - transfer_unit)
+                if loss < min_loss:
+                    min_loss = loss
+                    best_receiver = receiver_idx
+            
+            # Check if net gain is positive
+            net_gain = gain - min_loss
+            if net_gain > 0:
+                # Perform the transfer
+                current_ratings[source_idx] += gain  # Source's new rating
+                if min_loss > 0:
+                    current_ratings[best_receiver] = transfer_unit  # New rating is transfer_unit
+                # If min_loss == 0, receiver's rating doesn't change
+        
+        return sum(current_ratings)
+```
+
+Let me test this:
+
+Example 1: [[1,3],[2,2]]
+- Device 0: gain=2, source, transfer_unit=1
+- Device 1: gain=0, not in gains list
+- For source 0, transfer_unit=1:
+  - Receiver 1: loss = max(0, 2-1) = 1. Net gain = 2-1=1 > 0. Do it.
+- Current ratings: source 0: 1+2=3, receiver 1: 1 (since min_loss=1>0).
+- Sum = 3+1=4. Correct!
+
+Example 2: [[1,2,3],[4,5,6]]
+- Device 0: gain=1, transfer_unit=1
+- Device 1: gain=1, transfer_unit=4
+- Gains sorted: [(1,0,1),(1,1,4)] or [(1,1,4),(1,0,1)] (same gain, order might vary)
+
+Let's say order is [(1,0,1),(1,1,4)]:
+- Source 0, transfer_unit=1:
+  - Receiver 1: loss = max(0, 4-1)=3. Net = 1-3=-2 < 0. Don't do it.
+- Source 1, transfer_unit=4:
+  - Receiver 0: loss = max(0, 1-4)=0. Net = 1-0=1 > 0. Do it.
+- Current ratings: source 1: 4+1=5, receiver 0: 1 (no change since loss=0).
+- Sum = 1+5=6. Correct!
+
+Example 3: [[5,5,5],[1,1,1]]
+- Device 0: gain=0, not in gains.
+- Device 1: gain=0, not in gains.
+- No transfers. Sum = 5+1=6. Correct!
+
+This looks promising. However, there's a concern: the order of gains matters. In example 2, if we process device 0 first, we skip it, then process device 1 and do the transfer. If we process device 1 first, we do the transfer, then process device 0 and skip it (net negative). Either way, we get the correct answer.
+
+But is this greedy approach optimal? Let me think of a counterexample.
+
+Consider: devices with gains 10, 5, 5. Transfer units: 1, 8, 8. Receivers with ratings: 100, 100, 100.
+- If we process gain 10 first: transfer_unit=1, best receiver has loss=99, net=-89. Skip.
+- Gain 5, transfer_unit=8: best receiver has loss=92, net=-87. Skip.
+- Gain 5, transfer_unit=8: same. Skip.
+- Sum = 300 + 0 = 300 (initial sum).
+
+But what if we could do some transfers? Actually, in this case, no transfer has positive net gain, so 300 is correct.
+
+Another example: devices with gains 10, 5. Transfer units: 5, 5. Receivers with ratings: 6, 6.
+- Process gain 10 first: transfer_unit=5, loss for receiver with rating 6: 1. Net=9. Do it.
+- Process gain 5 second: transfer_unit=5, receiver with rating 6 (but one receiver's rating is now 5 after previous transfer). Loss for receiver with rating 6: 1, for receiver with rating 5: 0. Best receiver has loss 0. Net=5. Do it.
+- Total net: 9+5=14.
+
+Is this optimal? Let's see: if we only did the first transfer, net=9. If we only did the second, net=5. If we did both, net=14. So yes, greedy works here.
+
+But what if the order was different? Say gains are 5, 10 with same transfer units.
+- Process gain 5 first: transfer_unit=5, loss=1 for both receivers. Net=4. Do it. One receiver's rating becomes 5.
+- Process gain 10: transfer_unit=5, one receiver has rating 5 (loss 0), other has 6 (loss 1). Best is loss 0. Net=10. Do it.
+- Total net: 4+10=14. Same result.
+
+So it seems like the order doesn't matter much. But I'm not 100% sure this is always optimal.
+
+Given the problem constraints and time limit, and that this greedy approach works for the examples, let me go with it. But let me also think about whether there's a better approach.
+
+Actually, I realize there might be an issue: after a transfer, the receiver's rating changes, which affects subsequent transfers. In my code, I update `current_ratings[best_receiver]` correctly.
+
+Let me write the final solution:
+
+```python
+class Solution:
+    def maxRatings(self, units: list[list[int]]) -> int:
+        m = len(units)
+        
+        # For each device, get sorted units and compute initial rating
+        device_sorted = []
+        ratings = []
+        for i in range(m):
+            sorted_units = sorted(units[i])
+            device_sorted.append(sorted_units)
+            ratings.append(sorted_units[0])
+        
+        # Calculate potential gain for each device if we remove its minimum
+        gains = []
+        for i in range(m):
+            if len(device_sorted[i]) > 1:
+                gain = device_sorted[i][1] - device_sorted[i][0]
+                if gain > 0:
+                    gains.append((gain, i, device_sorted[i][0]))
+        
+        # Sort by gain descending
+        gains.sort(reverse=True)
+        
+        # Current ratings
+        current_ratings = list(ratings)
+        
+        # Track which devices have been used as sources
+        used_source = [False] * m
+        
+        for gain, source_idx, transfer_unit in gains:
+            if used_source[source_idx]:
+                continue
+            used_source[source_idx] = True
+            
+            # Find the best receiver: minimize loss
+            best_receiver = -1
+            min_loss = float('inf')
+            
+            for receiver_idx in range(m):
+                if receiver_idx == source_idx:
+                    continue
+                loss = max(0, current_ratings[receiver_idx] - transfer_unit)
+                if loss < min_loss:
+                    min_loss = loss
+                    best_receiver = receiver_idx
+            
+            net_gain = gain - min_loss
+            if net_gain > 0:
+                current_ratings[source_idx] += gain
+                if min_loss > 0:
+                    current_ratings[best_receiver] = transfer_unit
+        
+        return sum(current_ratings)
+```
+
+Wait, but there's still an issue: when we update the receiver's rating, it might be that the best receiver for a later transfer was the one whose rating changed. My code handles this by iterating through all receivers each time and using the updated `current_ratings`.
+
+However, there's another issue: what if the best receiver for one transfer is the same as the source for another transfer? That's fine because a device can be a receiver even if it was a source (the problem says "choose a device that has not been used as a source before" for being a source, but there's no restriction on being a receiver).
+
+Let me verify with a more complex example:
+
+Example: [[3,10],[5,6],[1,100]]
+- Device 0: sorted=[3,10], rating=3, gain=7
+- Device 1: sorted=[5,6], rating=5, gain=1
+- Device 2: sorted=[1,100], rating=1, gain=99
+
+Gains: [(99, 2, 1), (7, 0, 3), (1, 1, 5)]
+
+- Process source 2, gain=99, transfer_unit=1:
+  - Receivers: 0 (rating 3, loss=2), 1 (rating 5, loss=4). Best: receiver 0, loss=2. Net=97 > 0. Do it.
+  - Current ratings: 2 -> 100, 0 -> 1 (since loss>0), 1 -> 5.
+
+- Process source 0, gain=7, transfer_unit=3:
+  - Receivers: 1 (rating 5, loss=2), 2 (rating 100, loss=97). Best: receiver 1, loss=2. Net=5 > 0. Do it.
+  - Current ratings: 0 -> 10, 1 -> 3 (since loss>0), 2 -> 100.
+
+- Process source 1, gain=1, transfer_unit=5:
+  - Receivers: 0 (rating 10, loss=5), 2 (rating 100, loss=95). Best: receiver 0, loss=5. Net=-4 < 0. Skip.
+
+Sum = 10+3+100=113.
+
+Let me verify: initially sum=3+5+1=9. After transfers:
+- Source 2 transfers 1 to device 0. Device 2: [100], rating=100. Device 0: [3,10,1], rating=1. 
+- Source 0 transfers 3 to device 1. Device 0: [10,1], rating=1. Wait, no: device 0 originally had [3,10], we transferred in 1, so [3,10,1]. Then we transfer out 3 (the minimum of the original, but wait, the minimum of [3,10,1] is 1, not 3.
+
+Oh no, I think I have a bug. The gain calculation assumes we're removing the minimum of the original device. But after receiving a unit, the minimum might change.
+
+Let me reconsider: when we transfer from a source, we remove one unit from it. But which unit? The problem says "remove exactly one unit". To maximize the rating, we should remove the minimum unit. So the source's new rating is the second minimum of its original units... but wait, if it has received units before, the minimum might be different.
+
+Hmm, this is getting complicated. Let me re-read the problem.
+
+"Choose a device i that has not been used as a source before. Remove exactly one unit from device i and add it to any different device."
+
+So when we choose a device as a source, we remove one unit. To maximize the rating, we should remove the minimum unit of the device at that moment (not the original).
+
+So my calculation of gain is wrong if the device has received units before its transfer.
+
+This changes things. Let me rethink.
+
+Actually, in my greedy, I'm processing sources in order of their original gain. But if a device receives units before being a source, its minimum might change, affecting its gain.
+
+This is much more complex. Let me think about whether it's ever optimal for a device to receive units before being a source.
+
+If a device receives a unit x, and x > current_min, the rating doesn't change. So no benefit to receiving before being a source (unless x is very large and we want to have more units... but the rating is the minimum, so extra units don't help).
+
+If a device receives a unit x < current_min, the rating becomes x. So the gain when we later remove the minimum (which is now x) is... let's say the original units were [a1, a2, ..., an] with a1 < a2 < ... < an. If we receive x < a1, the sorted units are [x, a1, a2, ..., an], and the rating is x. If we remove x, the new rating is a1. The gain is a1 - x, which is greater than a1 - a1 = 0... wait, no. The original gain (without receiving) was a2 - a1. With receiving x, the gain is a1 - x. This could be larger or smaller than a2 - a1 depending on x.
+
+For example, original [3, 10], gain=7. If we receive 1, units=[1,3,10], gain when removing 1 is 3-1=2. Smaller than 7.
+
+If we receive 5, units=[3,5,10], gain when removing 3 is 5-3=2. Smaller.
+
+If we receive 11, units=[3,10,11], gain when removing 3 is 10-3=7. Same.
+
+So receiving a unit before being a source generally decreases or doesn't change the gain. Therefore, it's never optimal to receive before being a source (unless the gain is still positive and useful).
+
+Actually, wait. The gain when removing the minimum is (second_min - min). If we add a unit larger than the minimum, the second_min might change.
+
+Original: [a1, a2, ..., an] sorted. Min=a1, second=a2, gain=a2-a1.
+Add x where a1 < x < a2: new sorted=[a1, x, a2, ..., an]. Min=a1, second=x, gain=x-a1 < a2-a1. Worse.
+Add x where x > an: new sorted=[a1, a2, ..., an, x]. Min=a1, second=a2, gain=a2-a1. Same.
+Add x where x < a1: new sorted=[x, a1, a2, ..., an]. Min=x, second=a1, gain=a1-x. Could be larger or smaller.
+
+For the gain to be larger: a1-x > a2-a1 => 2*a1 - a2 > x. Since x < a1, this is possible if a1 is much larger than a2-a1.
+
+Example: [10, 11]. Gain=1. Receive 5: units=[5,10,11]. Gain=5. Larger!
+
+So it can be beneficial to receive a small unit before being a source.
+
+This makes the problem much more complex. Given the time constraints, I think I need a different approach.
+
+Let me think about this differently. Since m*n <= 2*10^5, and we're dealing with ratings (minimums), maybe we can think about the problem in terms of which units end up being the minimums of which devices.
+
+Actually, let me look for a pattern or a known algorithm for this type of problem.
+
+After some thought, I think the key insight is:
+
+1. Collect all units from all devices.
+2. Sort them.
+3. The optimal strategy is to form devices such that each device's minimum is as large as possible.
+4. We have m devices, and we need to assign units to them.
+5. Each device must have at least 0 units (empty device has rating 0).
+6. The total number of units is m*n.
+
+Wait, but the devices start with n units each, and we can transfer units around. The total number of units is conserved: m*n.
+
+After transfers, some devices have fewer units (sources), some have more (receivers). The number of units for device i is n - (1 if i is a source else 0) + (number of units received by i).
+
+The sum of units across all devices is still m*n.
+
+Now, the question is: what's the maximum sum of minimums we can achieve?
+
+This is a resource allocation problem. We have m*n units, and we want to distribute them into m groups (devices) to maximize the sum of minimums.
+
+But there's a constraint: the initial distribution matters because we can only transfer one unit per source, and each source can be used once.
+
+Hmm, but actually, since we can do any number of operations, and each operation involves choosing a device (not used as source before) and transferring one unit, the total number of transfers is at most m (one per device). So we can transfer at most m units.
+
+Wait, no. Each device can be a source at most once, but can receive multiple units. So we can have at most m transfers (one from each device).
+
+So the total number of units is conserved, and we can redistribute them by doing at most m transfers.
+
+Given this, the problem becomes: given the initial distribution, what's the optimal redistribution (via at most m transfers) to maximize the sum of minimums?
+
+This is still complex. Let me think about a simpler case.
+
+If we could redistribute arbitrarily (ignoring the transfer constraints), the optimal way to maximize the sum of minimums of m groups with total N units is:
+- Sort all units.
+- Assign the smallest unit to one device, the next smallest to another, etc., such that each device has at least one unit.
+- But we also want to "boost" the minimums by adding larger units to devices with small minimums.
+
+Actually, the optimal strategy for maximizing sum of minimums is:
+1. Sort all units in ascending order.
+2. Assign the m smallest units to be the minimums of the m devices.
+3. Distribute the remaining units to the devices in a way that doesn't change their minimums (i.e., add units larger than the current minimum to each device).
+
+But we're constrained by the number of transfers (at most m).
+
+Given the complexity, let me try a different approach: simulate the process with a priority queue or similar.
+
+Actually, I think the greedy approach I had earlier is approximately correct, but I need to handle the case where a device receives units before being a source.
+
+Let me think about this: if a device receives a unit before being a source, and that unit is smaller than its current minimum, the gain when it becomes a source might be larger. But as I calculated, this only helps if the received unit is small enough.
+
+In practice, for the given constraints and time limit, I think the following approach works:
+
+1. For each device, calculate the gain if we remove its minimum (without any prior receptions).
+2. Sort devices by gain descending.
+3. For each device, try to find the best receiver (minimizing loss), considering the current state of all devices.
+4. If the net gain is positive, perform the transfer.
+5. If a device receives a unit before being a source, update its "potential gain" for when it becomes a source.
+
+Updating the potential gain: if a device receives unit x < its current minimum, its new minimum is x, and the second minimum is its old minimum. So the new gain is (old_min - x).
+
+This makes the problem dynamic and harder.
+
+Given the time I've spent, let me try a simpler approach: just consider transfers from devices to receivers without considering receptions before source, and see if it passes.
+
+Actually, I realize that in the examples, no device receives before being a source. Let me check if that's always the case in optimal solutions.
+
+If a device receives a unit before being a source, and the unit is smaller, the gain increases. But the loss for the receiver of that unit must be considered too.
+
+For example, if device A has [10, 11] (gain=1), and device B has [1, 100] (gain=99), and device C has [50, 60] (gain=10).
+
+If A receives 1 from B before being a source:
+- B: gain=99, transfer_unit=1. Receiver A: loss = max(0, 10-1)=9. Net=90. Do it.
+- Now A has [1, 10, 11], gain=9 (when removing 1, new rating=10).
+- B: used as source, rating=100.
+- C: not processed yet.
+
+Then process C: gain=10, transfer_unit=50. Receivers: A (rating 1, loss=0), B (rating 100, loss=50). Best: A, loss=0. Net=10. Do it.
+- A: rating becomes 10 (remove 1), then receive 50, so [10, 11, 50], rating=10. Wait, no: after B's transfer, A's rating is 1 (minimum of [1,10,11]). After C's transfer, A receives 50, so [1,10,11,50], rating=1. Then A becomes a source? No, A hasn't been a source yet. But A's gain is now 9 (second_min=10, min=1, gain=9).
+
+Let me redo:
+- After B's transfer: A has [1,10,11], rating=1. B has [100], rating=100. C has [50,60], rating=50.
+- Gains: A: 10-1=9, C: 60-50=10.
+- Process C first (gain 10): transfer_unit=50. Best receiver: A (rating 1, loss=0). Net=10. Do it.
+- C's rating: 60. A's rating: 1 (no change, since loss=0).
+- Process A (gain 9): transfer_unit=1. Best receiver: C (rating 60, loss=59) or B (rating 100, loss=99). Best: C, loss=59. Net=9-59=-50 < 0. Skip.
+- Sum = 1+100+60=161.
+
+Alternative: without A receiving before being a source:
+- B's gain=99, transfer_unit=1. Best receiver: C (rating 50, loss=49). Net=50. Do it.
+- B's rating: 100. C's rating: 1.
+- A's gain=1, transfer_unit=10. Best receiver: C (rating 1, loss=0). Net=1. Do it.
+- A's rating: 11. C's rating: 1 (no change).
+- Sum = 11+100+1=112.
+
+So the first approach (161) is better. This shows that receiving before being a source can be beneficial.
+
+Given this, my earlier greedy approach is not correct. I need a more sophisticated algorithm.
+
+This problem is quite complex. Let me think about it differently.
+
+Actually, wait. In the first approach, after B transfers to A, A has [1,10,11]. A's gain is 9. But A's transfer_unit would be 1 (its minimum). When A transfers 1, it goes to C (which has [50,60] initially, but then receives 50 from C's transfer... wait, I messed up the order.
+
+Let me redo carefully:
+
+Initial: A=[10,11], B=[1,100], C=[50,60].
+Sorted and gains: B: gain=99, transfer_unit=1. C: gain=10, transfer_unit=50. A: gain=1, transfer_unit=10.
+
+Gains sorted: [(99, B, 1), (10, C, 50), (1, A, 10)].
+
+Processing:
+1. B, gain=99, transfer_unit=1:
+   - Receivers: A (rating 10, loss=9), C (rating 50, loss=49). Best: A, loss=9. Net=90 > 0. Do it.
+   - B's rating: 100. A's rating: 1 (since min_loss=9>0, new rating=1).
+   - Current: A=[1,10,11], B=[100], C=[50,60].
+
+2. C, gain=10, transfer_unit=50:
+   - Receivers: A (rating 1, loss=0), B (rating 100, loss=50). Best: A, loss=0. Net=10 > 0. Do it.
+   - C's rating: 60. A's rating: 1 (no change).
+   - Current: A=[1,10,11,50], B=[100], C=[60].
+
+3. A, gain: A's sorted units=[1,10,11,50]. Min=1, second_min=10, gain=9. Transfer_unit=1.
+   - Receivers: B (rating 100, loss=99), C (rating 60, loss=59). Best: C, loss=59. Net=9-59=-50 < 0. Skip.
+
+Sum = 1+100+60=161.
+
+Is this optimal? Let me see if there's a better way.
+
+Alternative: only do B's transfer.
+- B to A: A's rating=1, B's rating=100, C's rating=50. Sum=151. Worse than 161.
+
+Alternative: B to C, C to A.
+- B to C: loss for C=49, net=50. C's rating=1. B's rating=100. A's rating=10.
+- C to A: gain for C=0 (C's units=[1,50,60], min=1, second=50, gain=49... wait, no: C originally had [50,60], received 1, so [1,50,60]. Min=1, second=50, gain=49. Transfer_unit=1. Best receiver: A (rating 10, loss=9). Net=40. Do it.
+- C's rating=50. A's rating=1. B's rating=100.
+- Sum=1+100+50=151. Worse.
+
+So 161 seems good. But is it the maximum?
+
+What if we do B to A, and then... well, A's gain is 9, but the net is negative, so we skip.
+
+What if we skip B's transfer and do C's?
+- C to A: gain=10, transfer_unit=50. Receiver A (rating 10, loss=0). Net=10. Do it.
+- C's rating=60. A's rating=10. B's rating=1.
+- B: gain=99, transfer_unit=1. Receiver A (rating 10, loss=9). Net=90. Do it.
+- B's rating=100. A's rating=1.
+- Sum=1+100+60=161. Same.
+
+What if we do B to A, and A to C, and C to B? (But C can't be a source if we skip it... let's see.)
+- B to A: A's rating=1, B's rating=100, C's rating=50. Sum=151.
+- A to C: A's gain=9, transfer_unit=1. Receiver C (rating 50, loss=49). Net=-40. Skip.
+- Sum=151. Worse.
+
+So 161 seems to be the maximum for this example.
+
+Now, my algorithm gives 161, which is correct.
+
+But the issue is: how do I calculate the gain for a device that has received units? In my code, I calculate the gain based on the original units, not the updated units.
+
+In the example above, for device A, the original gain was 1 (11-10). But after receiving 1 from B, A's units are [1,10,11], and the gain is 9 (10-1). My code would still use the original gain of 1, which is incorrect.
+
+So I need to update the gain for devices that receive units before being sources.
+
+This makes the problem more complex. I need to:
+1. Maintain the current state of each device (sorted list of units).
+2. When a device receives a unit, insert it into the sorted list and recalculate its gain.
+3. When a device is used as a source, remove its minimum and update its rating.
+
+Given the constraints (m*n <= 2*10^5), I can afford to do this efficiently using a heap or similar.
+
+Let me implement this:
+
+```python
+import heapq
+
+class Solution:
+    def maxRatings(self, units: list[list[int]]) -> int:
+        m = len(units)
+        
+        # For each device, create a min-heap of units
+        device_heaps = []
+        for i in range(m):
+            heap = units[i][:]  # Copy the list
+            heapq.heapify(heap)
+            device_heaps.append(heap)
+        
+        # Function to get the minimum and second minimum of a device
+        def get_min_second(heap):
+            if len(heap) == 0:
+                return (0, 0)  # Empty device, rating 0
+            min1 = heap[0]
+            # Get second min
+            temp = heapq.heappop(heap)
+            if len(heap) == 0:
+                # Only one unit
+                heapq.heappush(heap, temp)
+                return (min1, min1)  # No second min, gain would be 0
+            min2 = heap[0]
+            heapq.heappush(heap, temp)
+            return (min1, min2)
+        
+        # Calculate initial gains
+        # gains: (gain, device_idx, transfer_unit)
+        gains = []
+        for i in range(m):
+            min1, min2 = get_min_second(device_heaps[i])
+            gain = min2 - min1
+            if gain > 0:
+                gains.append((gain, i, min1))
+        
+        # Sort by gain descending
+        gains.sort(reverse=True)
+        
+        # Current ratings
+        # Rating of a device is its minimum
+        current_ratings = [device_heaps[i][0] if device_heaps[i] else 0 for i in range(m)]
+        
+        # Track which devices have been used as sources
+        used_source = [False] * m
+        
+        for gain, source_idx, transfer_unit in gains:
+            if used_source[source_idx]:
+                continue
+            used_source[source_idx] = True
+            
+            # Find the best receiver: minimize loss
+            best_receiver = -1
+            min_loss = float('inf')
+            
+            for receiver_idx in range(m):
+                if receiver_idx == source_idx:
+                    continue
+                if not device_heaps[receiver_idx]:
+                    loss = 0  # Empty device, adding any unit doesn't change rating (still 0)
+                    # Wait, no: if a device is empty, its rating is 0. Adding a unit x makes it [x], rating=x.
+                    # So loss = 0 - x = -x? No, loss = current_rating - new_rating = 0 - x = -x. But loss is max(0, ...).
+                    # Actually, loss = max(0, current_rating - transfer_unit) = max(0, 0 - x) = 0.
+                    # So loss is 0.
+                else:
+                    loss = max(0, current_ratings[receiver_idx] - transfer_unit)
+                if loss < min_loss:
+                    min_loss = loss
+                    best_receiver = receiver_idx
+            
+            net_gain = gain - min_loss
+            if net_gain > 0:
+                # Perform the transfer
+                # Source: remove minimum
+                heapq.heappop(device_heaps[source_idx])
+                # New rating for source: min of remaining, or 0 if empty
+                if device_heaps[source_idx]:
+                    current_ratings[source_idx] = device_heaps[source_idx][0]
+                else:
+                    current_ratings[source_idx] = 0
+                
+                # Receiver: add the transferred unit
+                heapq.heappush(device_heaps[best_receiver], transfer_unit)
+                # New rating for receiver: min of all units, or 0 if empty (but we're adding, so not empty)
+                current_ratings[best_receiver] = device_heaps[best_receiver][0]
+                
+                # Update gain for the receiver if it's not used as a source
+                # Actually, we need to recalculate gains for all devices that haven't been used as sources
+                # But this is expensive. Let me think about whether we need to.
+        
+        return sum(current_ratings)
+```
+
+Wait, but after updating the heaps, I'm not recalculating the gains for the sorted list. The `gains` list was calculated initially and sorted, but after updates, the gains might change.
+
+For example, if device A receives a unit, its gain changes, but it's still in the `gains` list with its old gain.
+
+This is a problem. I need to either:
+1. Recalculate gains after each transfer and re-sort.
+2. Use a priority queue to always pick the device with the highest current gain.
+
+Given the constraints (m*n <= 2*10^5), recalculating gains after each transfer might be too expensive if we do it naively.
+
+Let me think about option 2: use a max-heap for gains.
+
+```python
+import heapq
+
+class Solution:
+    def maxRatings(self, units: list[list[int]]) -> int:
+        m = len(units)
+        
+        # For each device, create a min-heap of units
+        device_heaps = []
+        for i in range(m):
+            heap = units[i][:]
+            heapq.heapify(heap)
+            device_heaps.append(heap)
+        
+        # Function to calculate the gain for a device
+        def calculate_gain(heap):
+            if len(heap) <= 1:
+                return 0
+            # Get min and second min
+            min1 = heap[0]
+            temp = heapq.heappop(heap)
+            min2 = heap[0] if heap else min1
+            heapq.heappush(heap, temp)
+            return min2 - min1
+        
+        # Function to get the current rating of a device
+        def get_rating(heap):
+            return heap[0] if heap else 0
+        
+        # Initial gains
+        # Use a max-heap for gains: (-gain, device_idx, transfer_unit)
+        gain_heap = []
+        for i in range(m):
+            gain = calculate_gain(device_heaps[i])
+            if gain > 0:
+                transfer_unit = device_heaps[i][0] if device_heaps[i] else 0
+                heapq.heappush(gain_heap, (-gain, i, transfer_unit))
+        
+        # Current ratings
+        current_ratings = [get_rating(device_heaps[i]) for i in range(m)]
+        
+        # Track which devices have been used as sources
+        used_source = [False] * m
+        
+        while gain_heap:
+            neg_gain, source_idx, transfer_unit = heapq.heappop(gain_heap)
+            gain = -neg_gain
+            
+            if used_source[source_idx]:
+                continue
+            
+            # Recalculate the gain for this device (in case it changed)
+            actual_gain = calculate_gain(device_heaps[source_idx])
+            actual_transfer_unit = device_heaps[source_idx][0] if device_heaps[source_idx] else 0
+            
+            if actual_gain <= 0:
+                continue
+            
+            # Use the actual values
+            gain = actual_gain
+            transfer_unit = actual_transfer_unit
+            
+            used_source[source_idx] = True
+            
+            # Find the best receiver
+            best_receiver = -1
+            min_loss = float('inf')
+            
+            for receiver_idx in range(m):
+                if receiver_idx == source_idx:
+                    continue
+                if not device_heaps[receiver_idx]:
+                    loss = 0
+                else:
+                    loss = max(0, current_ratings[receiver_idx] - transfer_unit)
+                if loss < min_loss:
+                    min_loss = loss
+                    best_receiver = receiver_idx
+            
+            net_gain = gain - min_loss
+            if net_gain > 0:
+                # Perform the transfer
+                # Source: remove minimum
+                heapq.heappop(device_heaps[source_idx])
+                current_ratings[source_idx] = get_rating(device_heaps[source_idx])
+                
+                # Receiver: add the transferred unit
+                heapq.heappush(device_heaps[best_receiver], transfer_unit)
+                current_ratings[best_receiver] = get_rating(device_heaps[best_receiver])
+                
+                # Update gains for all devices
+                # This is expensive: O(m log m) per transfer, and there are at most m transfers.
+                # Total: O(m^2 log m), which might be too slow for m=10^5.
+                # But m*n <= 2*10^5, so m can be up to 10^5 only if n=1.
+                # If n=1, there are no gains (since len(heap)<=1), so no transfers.
+                # If n>=2, m <= 10^5, but m*n <= 2*10^5, so m <= 10^5 and n <= 2.
+                # Wait, no: m*n <= 2*10^5, so if m=10^5, n<=2. If n=2, m<=10^5.
+                # So m can be up to 10^5.
+                # Recalculating gains for all devices after each transfer is O(m), and there are at most m transfers.
+                # Total: O(m^2), which is too slow for m=10^5.
+                
+                # Instead, let's only update the gain for the receiver, since that's the only device whose state changed besides the source.
+                receiver_idx = best_receiver
+                if not used_source[receiver_idx]:
+                    new_gain = calculate_gain(device_heaps[receiver_idx])
+                    if new_gain > 0:
+                        heapq.heappush(gain_heap, (-new_gain, receiver_idx, device_heaps[receiver_idx][0]))
+            
+            # Also, for the source, it's now used, so we don't care about its gain.
+        
+        return sum(current_ratings)
+```
+
+This is still not quite right. The issue is that after updating the receiver's gain, the gain heap might have stale entries for that device. We're using a lazy approach: when we pop from the gain heap, we check if the gain is still valid (by recalculating).
+
+Also, we might have multiple entries for the same device in the gain heap. When we pop one, we check if the device is already used as a source. If not, we recalculate the gain and use the latest value.
+
+Let me refine this:
+
+```python
+import heapq
+
+class Solution:
+    def maxRatings(self, units: list[list[int]]) -> int:
+        m = len(units)
+        
+        # For each device, create a min-heap of units
+        device_heaps = []
+        for i in range(m):
+            heap = units[i][:]
+            heapq.heapify(heap)
+            device_heaps.append(heap)
+        
+        # Function to calculate the gain for a device
+        def calculate_gain(heap):
+            if len(heap) <= 1:
+                return 0
+            min1 = heap[0]
+            temp = heapq.heappop(heap)
+            min2 = heap[0] if heap else min1
+            heapq.heappush(heap, temp)
+            return min2 - min1
+        
+        # Function to get the current rating of a device
+        def get_rating(heap):
+            return heap[0] if heap else 0
+        
+        # Initial gains
+        gain_heap = []
+        for i in range(m):
+            gain = calculate_gain(device_heaps[i])
+            if gain > 0:
+                transfer_unit = device_heaps[i][0] if device_heaps[i] else 0
+                heapq.heappush(gain_heap, (-gain, i, transfer_unit))
+        
+        # Current ratings
+        current_ratings = [get_rating(device_heaps[i]) for i in range(m)]
+        
+        # Track which devices have been used as sources
+        used_source = [False] * m
+        
+        while gain_heap:
+            neg_gain, source_idx, transfer_unit = heapq.heappop(gain_heap)
+            gain = -neg_gain
+            
+            if used_source[source_idx]:
+                continue
+            
+            # Recalculate the gain for this device
+            actual_gain = calculate_gain(device_heaps[source_idx])
+            actual_transfer_unit = device_heaps[source_idx][0] if device_heaps[source_idx] else 0
+            
+            if actual_gain <= 0:
+                continue
+            
+            # Use the actual values
+            gain = actual_gain
+            transfer_unit = actual_transfer_unit
+            
+            used_source[source_idx] = True
+            
+            # Find the best receiver
+            best_receiver = -1
+            min_loss = float('inf')
+            
+            for receiver_idx in range(m):
+                if receiver_idx == source_idx:
+                    continue
+                if not device_heaps[receiver_idx]:
+                    loss = 0
+                else:
+                    loss = max(0, current_ratings[receiver_idx] - transfer_unit)
+                if loss < min_loss:
+                    min_loss = loss
+                    best_receiver = receiver_idx
+            
+            net_gain = gain - min_loss
+            if net_gain > 0:
+                # Perform the transfer
+                # Source: remove minimum
+                heapq.heappop(device_heaps[source_idx])
+                current_ratings[source_idx] = get_rating(device_heaps[source_idx])
+                
+                # Receiver: add the transferred unit
+                heapq.heappush(device_heaps[best_receiver], transfer_unit)
+                current_ratings[best_receiver] = get_rating(device_heaps[best_receiver])
+                
+                # Update gain for the receiver
+                if not used_source[best_receiver]:
+                    new_gain = calculate_gain(device_heaps[best_receiver])
+                    if new_gain > 0:
+                        heapq.heappush(gain_heap, (-new_gain, best_receiver, device_heaps[best_receiver][0]))
+        
+        return sum(current_ratings)
+```
+
+Let me test this with the examples:
+
+Example 1: [[1,3],[2,2]]
+- Device 0: heap=[1,3], gain=2, transfer_unit=1.
+- Device 1: heap=[2,2], gain=0.
+- Gain heap: [(-2, 0, 1)].
+- Pop: gain=2, source=0, transfer_unit=1.
+- Best receiver: 1, loss=max(0, 2-1)=1. Net=1 > 0. Do it.
+- Device 0: remove 1, heap=[3], rating=3.
+- Device 1: add 1, heap=[1,2,2], rating=1.
+- Update gain for receiver 1: heap=[1,2,2], gain=2-1=1. Push to gain heap.
+- Gain heap: [(-1, 1, 1)].
+- Pop: gain=1, source=1, transfer_unit=1.
+- Best receiver: 0, loss=max(0, 3-1)=2. Net=-1 < 0. Skip.
+- Sum = 3+1=4. Correct!
+
+Example 2: [[1,2,3],[4,5,6]]
+- Device 0: heap=[1,2,3], gain=1, transfer_unit=1.
+- Device 1: heap=[4,5,6], gain=1, transfer_unit=4.
+- Gain heap: [(-1,0,1), (-1,1,4)].
+- Pop: gain=1, source=0 or 1 (order depends on heap implementation).
+- Let's say source=0: transfer_unit=1.
+  - Best receiver: 1, loss=max(0, 4-1)=3. Net=-2 < 0. Skip.
+- Pop: gain=1, source=1, transfer_unit=4.
+  - Best receiver: 0, loss=max(0, 1-4)=0. Net=1 > 0. Do it.
+  - Device 1: remove 4, heap=[5,6], rating=5.
+  - Device 0: add 4, heap=[1,2,3,4], rating=1.
+  - Update gain for receiver 0: heap=[1,2,3,4], gain=2-1=1. Push.
+- Gain heap: [(-1,0,1)].
+- Pop: gain=1, source=0, transfer_unit=1.
+  - Best receiver: 1, loss=max(0, 5-1)=4. Net=-3 < 0. Skip.
+- Sum = 1+5=6. Correct!
+
+Example 3: [[5,5,5],[1,1,1]]
+- Device 0: heap=[5,5,5], gain=0.
+- Device 1: heap=[1,1,1], gain=0.
+- No gains. Sum = 5+1=6. Correct!
+
+The algorithm seems to work. However, there's a performance concern: for each transfer, we iterate through all receivers, which is O(m). And there are at most m transfers. So total is O(m^2).
+
+With m up to 10^5, this is O(10^10), which is too slow.
+
+I need a more efficient way to find the best receiver.
+
+The best receiver is the one with the smallest loss, where loss = max(0, current_rating - transfer_unit).
+
+To minimize loss, we want to maximize current_rating - transfer_unit... no, we want to minimize max(0, current_rating - transfer_unit).
+
+If there's a receiver with current_rating <= transfer_unit, loss=0. So we want to find such a receiver.
+
+If there are multiple, we can pick any.
+
+If not, we want the receiver with the smallest current_rating (since loss = current_rating - transfer_unit, and we want to minimize this).
+
+Wait, no: loss = max(0, current_rating - transfer_unit). If current_rating > transfer_unit, loss = current_rating - transfer_unit. To minimize this, we want the smallest current_rating > transfer_unit.
+
+If current_rating <= transfer_unit, loss=0. So we prefer receivers with current_rating <= transfer_unit.
+
+So the best receiver is:
+- If there's a receiver with current_rating <= transfer_unit, pick any (loss=0).
+- Otherwise, pick the receiver with the smallest current_rating (loss = min current_rating - transfer_unit).
+
+To find the best receiver efficiently, I can maintain a sorted list of (current_rating, device_index) and use binary search.
+
+But the current_ratings change after each transfer, so I need to update the sorted list.
+
+Alternatively, I can use a min-heap of (current_rating, device_index) and iterate to find the best receiver.
+
+But iterating through the heap is O(m) in the worst case.
+
+Given the time constraints, let me try to optimize by using a sorted list and binary search.
+
+Actually, for the "zero loss" case, I can check if there's any receiver with current_rating <= transfer_unit. If I maintain a sorted list of current_ratings, I can use binary search to find the smallest current_rating > transfer_unit (if any).
+
+If there's a receiver with current_rating <= transfer_unit, I pick any such receiver.
+If not, I pick the receiver with the smallest current_rating (which is the first one in the sorted list).
+
+Let me implement this:
+
+```python
+import heapq
+from bisect import bisect_left
+
+class Solution:
+    def maxRatings(self, units: list[list[int]]) -> int:
+        m = len(units)
+        
+        # For each device, create a min-heap of units
+        device_heaps = []
+        for i in range(m):
+            heap = units[i][:]
+            heapq.heapify(heap)
+            device_heaps.append(heap)
+        
+        # Function to calculate the gain for a device
+        def calculate_gain(heap):
+            if len(heap) <= 1:
+                return 0
+            min1 = heap[0]
+            temp = heapq.heappop(heap)
+            min2 = heap[0] if heap else min1
+            heapq.heappush(heap, temp)
+            return min2 - min1
+        
+        # Function to get the current rating of a device
+        def get_rating(heap):
+            return heap[0] if heap else 0
+        
+        # Current ratings
+        current_ratings = [get_rating(device_heaps[i]) for i in range(m)]
+        
+        # Sorted list of (current_rating, device_index)
+        # We'll maintain this list sorted by current_rating
+        sorted_receivers = sorted([(current_ratings[i], i) for i in range(m)])
+        
+        # Initial gains
+        gain_heap = []
+        for i in range(m):
+            gain = calculate_gain(device_heaps[i])
+            if gain > 0:
+                transfer_unit = device_heaps[i][0] if device_heaps[i] else 0
+                heapq.heappush(gain_heap, (-gain, i, transfer_unit))
+        
+        # Track which devices have been used as sources
+        used_source = [False] * m
+        
+        while gain_heap:
+            neg_gain, source_idx, transfer_unit = heapq.heappop(gain_heap)
+            gain = -neg_gain
+            
+            if used_source[source_idx]:
+                continue
+            
+            # Recalculate the gain for this device
+            actual_gain = calculate_gain(device_heaps[source_idx])
+            actual_transfer_unit = device_heaps[source_idx][0] if device_heaps[source_idx] else 0
+            
+            if actual_gain <= 0:
+                continue
+            
+            gain = actual_gain
+            transfer_unit = actual_transfer_unit
+            
+            used_source[source_idx] = True
+            
+            # Find the best receiver:
+            # 1. If there's a receiver with current_rating <= transfer_unit, pick any (loss=0).
+            # 2. Otherwise, pick the receiver with the smallest current_rating (minimize loss).
+            
+            # Check if there's a receiver with current_rating <= transfer_unit
+            # sorted_receivers is sorted by current_rating. Find the first receiver with current_rating > transfer_unit.
+            # All receivers before that have current_rating <= transfer_unit.
+            idx = bisect_left(sorted_receivers, (transfer_unit, float('inf')))
+            # sorted_receivers[idx] is the first with current_rating > transfer_unit, or out of bounds.
+            # Receivers 0 to idx-1 have current_rating <= transfer_unit.
+            
+            best_receiver = -1
+            min_loss = float('inf')
+            
+            if idx > 0:
+                # There's at least one receiver with current_rating <= transfer_unit
+                # Pick any, say the first one
+                best_receiver = sorted_receivers[0][1]
+                min_loss = 0
+            else:
+                # All receivers have current_rating > transfer_unit
+                # Pick the one with the smallest current_rating
+                if idx < len(sorted_receivers):
+                    best_receiver = sorted_receivers[idx][1]
+                    min_loss = current_ratings[best_receiver] - transfer_unit
+                else:
+                    # No receivers? (shouldn't happen if m>=2)
+                    continue
+            
+            # Skip if the best receiver is the source
+            if best_receiver == source_idx:
+                # Try the next best
+                if idx > 1:
+                    best_receiver = sorted_receivers[1][1]
+                    min_loss = 0
+                elif idx < len(sorted_receivers) and idx > 0:
+                    best_receiver = sorted_receivers[idx][1]
+                    min_loss = current_ratings[best_receiver] - transfer_unit
+                else:
+                    continue  # No valid receiver
+            
+            net_gain = gain - min_loss
+            if net_gain > 0:
+                # Perform the transfer
+                # Source: remove minimum
+                heapq.heappop(device_heaps[source_idx])
+                new_source_rating = get_rating(device_heaps[source_idx])
+                current_ratings[source_idx] = new_source_rating
+                
+                # Receiver: add the transferred unit
+                heapq.heappush(device_heaps[best_receiver], transfer_unit)
+                new_receiver_rating = get_rating(device_heaps[best_receiver])
+                current_ratings[best_receiver] = new_receiver_rating
+                
+                # Update the sorted_receivers list:
+                # Remove the source and receiver from the list, update their ratings, and reinsert.
+                # This is O(m) for removal and insertion, which is too slow.
+                
+                # Instead, let's just rebuild the sorted list after each transfer.
+                # This is O(m log m) per transfer, and there are at most m transfers.
+                # Total: O(m^2 log m), which is too slow for m=10^5.
+                
+                # Alternative: use a balanced BST or skip this for now and see if it passes.
+                
+                # Update gain for the receiver
+                if not used_source[best_receiver]:
+                    new_gain = calculate_gain(device_heaps[best_receiver])
+                    if new_gain > 0:
+                        heapq.heappush(gain_heap, (-new_gain, best_receiver, device_heaps[best_receiver][0]))
+        
+        return sum(current_ratings)
+```
+
+The issue with rebuilding the sorted list is performance. Let me think about whether we can avoid it.
+
+Actually, I realize that the sorted list is only used to find the best receiver. If I use a min-heap for receivers (sorted by current_rating), I can find the best receiver in O(1) (the top of the heap), but updating the heap after a transfer is O(log m).
+
+However, I need to find the first receiver with current_rating <= transfer_unit, which is not the same as the minimum.
+
+Let me use a different approach: maintain a sorted list of current_ratings (just the values, not the indices). Then:
+- To find if there's a receiver with current_rating <= transfer_unit, check if the minimum current_rating <= transfer_unit.
+- To find the receiver with the smallest current_rating, use the minimum.
+
+But I need the device index, so I need to maintain (current_rating, device_index) pairs.
+
+Given the time I've spent, let me try a simpler approach: just use the sorted list and rebuild it after each transfer. If it's too slow, I'll optimize.
+
+Actually, let me first check the constraints: m*n <= 2*10^5. So if m=10^5, n<=2. If n=1, there are no gains. If n=2, m<=10^5.
+
+For n=2, each device has 2 units. The gain is the difference between the two units. The max gain is 10^5-1.
+
+With m=10^5, rebuilding the sorted list after each transfer is O(m log m) per transfer, and there are at most m transfers. Total: O(m^2 log m) = O(10^10 * log(10^5)), which is too slow.
+
+I need a better approach.
+
+Let me think about the problem again. The key insight is:
+
+The best receiver for a transfer of unit x is:
+- Any receiver with current_rating <= x (loss=0).
+- If none, the receiver with the smallest current_rating (minimize loss = current_rating - x).
+
+To efficiently find the best receiver, I can maintain a min-heap of (current_rating, device_index) for all devices.
+
+But I also need to check if there's a receiver with current_rating <= x. The minimum current_rating is the top of the heap. If the minimum current_rating <= x, then there's at least one such receiver.
+
+So:
+- If the minimum current_rating (of non-source devices) <= x, pick that receiver (loss=0).
+- Else, pick the receiver with the minimum current_rating (which is the same as above, since all have current_rating > x, and the minimum is the smallest).
+
+Wait, that's not right. If the minimum current_rating <= x, I can pick any receiver with current_rating <= x. But the minimum might be from the source device, which I can't pick.
+
+So I need to find the minimum current_rating among non-source devices.
+
+Let me maintain a min-heap of (current_rating, device_index) for all non-source devices.
+
+Initially, all devices are non-source, so the heap has all m devices.
+
+When a device is used as a source, I remove it from the heap.
+
+When a device's current_rating changes (after receiving a unit), I update its rating in the heap. But updating a heap is O(log m).
+
+Let me implement this:
+
+```python
+import heapq
+
+class Solution:
+    def maxRatings(self, units: list[list[int]]) -> int:
+        m = len(units)
+        
+        # For each device, create a min-heap of units
+        device_heaps = []
+        for i in range(m):
+            heap = units[i][:]
+            heapq.heapify(heap)
+            device_heaps.append(heap)
+        
+        # Function to calculate the gain for a device
+        def calculate_gain(heap):
+            if len(heap) <= 1:
+                return 0
+            min1 = heap[0]
+            temp = heapq.heappop(heap)
+            min2 = heap[0] if heap else min1
+            heapq.heappush(heap, temp)
+            return min2 - min1
+        
+        # Function to get the current rating of a device
+        def get_rating(heap):
+            return heap[0] if heap else 0
+        
+        # Current ratings
+        current_ratings = [get_rating(device_heaps[i]) for i in range(m)]
+        
+        # Min-heap of (current_rating, device_index) for non-source devices
+        receiver_heap = [(current_ratings[i], i) for i in range(m)]
+        heapq.heapify(receiver_heap)
+        
+        # Initial gains
+        gain_heap = []
+        for i in range(m):
+            gain = calculate_gain(device_heaps[i])
+            if gain > 0:
+                transfer_unit = device_heaps[i][0] if device_heaps[i] else 0
+                heapq.heappush(gain_heap, (-gain, i, transfer_unit))
+        
+        # Track which devices have been used as sources
+        used_source = [False] * m
+        
+        while gain_heap:
+            neg_gain, source_idx, transfer_unit = heapq.heappop(gain_heap)
+            gain = -neg_gain
+            
+            if used_source[source_idx]:
+                continue
+            
+            # Recalculate the gain for this device
+            actual_gain = calculate_gain(device_heaps[source_idx])
+            actual_transfer_unit = device_heaps[source_idx][0] if device_heaps[source_idx] else 0
+            
+            if actual_gain <= 0:
+                continue
+            
+            gain = actual_gain
+            transfer_unit = actual_transfer_unit
+            
+            used_source[source_idx] = True
+            
+            # Remove source from receiver_heap
+            # This is tricky: we need to remove a specific element from the heap.
+            # One way: lazy removal. Mark the source as used, and skip it when popping.
+            # But we need the top of the heap to find the best receiver.
+            
+            # Let's use lazy removal: when popping from receiver_heap, skip used sources.
+            
+            best_receiver = -1
+            min_loss = float('inf')
+            
+            # Find the best receiver from the heap
+            temp_heap = []
+            found = False
+            while receiver_heap:
+                rating, receiver_idx = heapq.heappop(receiver_heap)
+                if used_source[receiver_idx]:
+                    continue  # Skip used sources
+                if rating <= transfer_unit:
+                    # Zero loss, pick this receiver
+                    best_receiver = receiver_idx
+                    min_loss = 0
+                    found = True
+                    # Put back the other elements
+                    for item in temp_heap:
+                        heapq.heappush(receiver_heap, item)
+                    break
+                else:
+                    temp_heap.append((rating, receiver_idx))
+                    if not found:
+                        best_receiver = receiver_idx
+                        min_loss = rating - transfer_unit
+            
+            # Put back the other elements
+            for item in temp_heap:
+                heapq.heappush(receiver_heap, item)
+            
+            if not found and min_loss == float('inf'):
+                continue  # No valid receiver
+            
+            net_gain = gain - min_loss
+            if net_gain > 0:
+                # Perform the transfer
+                # Source: remove minimum
+                heapq.heappop(device_heaps[source_idx])
+                new_source_rating = get_rating(device_heaps[source_idx])
+                current_ratings[source_idx] = new_source_rating
+                
+                # Receiver: add the transferred unit
+                heapq.heappush(device_heaps[best_receiver], transfer_unit)
+                new_receiver_rating = get_rating(device_heaps[best_receiver])
+                current_ratings[best_receiver] = new_receiver_rating
+                
+                # Update the receiver's rating in the receiver_heap:
+                # Remove the old entry and add the new one.
+                # Lazy removal: just add the new entry, and skip old entries when popping.
+                heapq.heappush(receiver_heap, (new_receiver_rating, best_receiver))
+                
+                # Update gain for the receiver
+                if not used_source[best_receiver]:
+                    new_gain = calculate_gain(device_heaps[best_receiver])
+                    if new_gain > 0:
+                        heapq.heappush(gain_heap, (-new_gain, best_receiver, device_heaps[best_receiver][0]))
+        
+        return sum(current_ratings)
+```
+
+This uses lazy removal for the receiver_heap. When we need to find the best receiver, we pop from the heap until we find a non-source device. If it has current_rating <= transfer_unit, we pick it. Otherwise, we keep the one with the smallest current_rating as a backup.
+
+This should work correctly. The time complexity per transfer is O(m log m) in the worst case (if we pop many elements), but on average, it's faster.
+
+Given the constraints, this might pass. Let me write the final solution and test it.
+
+Actually, I realize there's a bug: after performing a transfer, the source's rating changes, but I'm not updating the source's entry in the receiver_heap. However, since the source is now used, it will be skipped when we pop from the receiver_heap, so it doesn't matter.
+
+Let me finalize the code and write it to a file.
+
+Looking back at my implementation, I see that the `receiver_heap` might contain multiple entries for the same device (after updates). The lazy removal handles this by skipping used sources. But for non-source devices with updated ratings, we might have stale entries. When we pop a stale entry (with an old rating), we should ignore it and continue.
+
+To handle this, I can check if the popped rating matches the current_rating. If not, ignore it and continue.
+
+Let me update the code:
+
+```python
+import heapq
+
+class Solution:
+    def maxRatings(self, units: list[list[int]]) -> int:
+        m = len(units)
+        
+        # For each device, create a min-heap of units
+        device_heaps = []
+        for i in range(m):
+            heap = units[i][:]
+            heapq.heapify(heap)
+            device_heaps.append(heap)
+        
+        # Function to calculate the gain for a device
+        def calculate_gain(heap):
+            if len(heap) <= 1:
+                return 0
+            min1 = heap[0]
+            temp = heapq.heappop(heap)
+            min2 = heap[0] if heap else min1
+            heapq.heappush(heap, temp)
+            return min2 - min1
+        
+        # Function to get the current rating of a device
+        def get_rating(heap):
+            return heap[0] if heap else 0
+        
+        # Current ratings
+        current_ratings = [get_rating(device_heaps[i]) for i in range(m)]
+        
+        # Min-heap of (current_rating, device_index) for non-source devices
+        receiver_heap = [(current_ratings[i], i) for i in range(m)]
+        heapq.heapify(receiver_heap)
+        
+        # Initial gains
+        gain_heap = []
+        for i in range(m):
+            gain = calculate_gain(device_heaps[i])
+            if gain > 0:
+                transfer_unit = device_heaps[i][0] if device_heaps[i] else 0
+                heapq.heappush(gain_heap, (-gain, i, transfer_unit))
+        
+        # Track which devices have been used as sources
+        used_source = [False] * m
+        
+        while gain_heap:
+            neg_gain, source_idx, transfer_unit = heapq.heappop(gain_heap)
+            gain = -neg_gain
+            
+            if used_source[source_idx]:
+                continue
+            
+            # Recalculate the gain for this device
+            actual_gain = calculate_gain(device_heaps[source_idx])
+            actual_transfer_unit = device_heaps[source_idx][0] if device_heaps[source_idx] else 0
+            
+            if actual_gain <= 0:
+                continue
+            
+            gain = actual_gain
+            transfer_unit = actual_transfer_unit
+            
+            used_source[source_idx] = True
+            
+            # Find the best receiver
+            best_receiver = -1
+            min_loss = float('inf')
+            
+            # Pop from receiver_heap to find the best receiver
+            temp_heap = []
+            while receiver_heap:
+                rating, receiver_idx = heapq.heappop(receiver_heap)
+                
+                # Check if this entry is stale
+                if rating != current_ratings[receiver_idx]:
+                    # Stale entry, ignore
+                    continue
+                
+                # Check if this device is a source
+                if used_source[receiver_idx]:
+                    continue
+                
+                if rating <= transfer_unit:
+                    # Zero loss, pick this receiver
+                    best_receiver = receiver_idx
+                    min_loss = 0
+                    # Put back the other elements
+                    for item in temp_heap:
+                        heapq.heappush(receiver_heap, item)
+                    break
+                else:
+                    # Save as potential backup
+                    temp_heap.append((rating, receiver_idx))
+                    if best_receiver == -1:
+                        best_receiver = receiver_idx
+                        min_loss = rating - transfer_unit
+            
+            # Put back the other elements
+            for item in temp_heap:
+                heapq.heappush(receiver_heap, item)
+            
+            if best_receiver == -1:
+                continue  # No valid receiver
+            
+            net_gain = gain - min_loss
+            if net_gain > 0:
+                # Perform the transfer
+                # Source: remove minimum
+                heapq.heappop(device_heaps[source_idx])
+                new_source_rating = get_rating(device_heaps[source_idx])
+                current_ratings[source_idx] = new_source_rating
+                
+                # Receiver: add the transferred unit
+                heapq.heappush(device_heaps[best_receiver], transfer_unit)
+                new_receiver_rating = get_rating(device_heaps[best_receiver])
+                current_ratings[best_receiver] = new_receiver_rating
+                
+                # Add the new rating for the receiver to the heap
+                heapq.heappush(receiver_heap, (new_receiver_rating, best_receiver))
+                
+                # Update gain for the receiver
+                if not used_source[best_receiver]:
+                    new_gain = calculate_gain(device_heaps[best_receiver])
+                    if new_gain > 0:
+                        heapq.heappush(gain_heap, (-new_gain, best_receiver, device_heaps[best_receiver][0]))
+        
+        return sum(current_ratings)
+```
+
+Let me write this to a file and test it.
+
+```python
+import heapq
+
+class Solution:
+    def maxRatings(self, units: list[list[int]]) -> int:
+        m = len(units)
+        
+        # For each device, create a min-heap of units
+        device_heaps = []
+        for i in range(m):
+            heap = units[i][:]
+            heapq.heapify(heap)
+            device_heaps.append(heap)
+        
+        # Function to calculate the gain for a device
+        def calculate_gain(heap):
+            if len(heap) <= 1:
+                return 0
+            min1 = heap[0]
+            temp = heapq.heappop(heap)
+            min2 = heap[0] if heap else min1
+            heapq.heappush(heap, temp)
+            return min2 - min1
+        
+        # Function to get the current rating of a device
+        def get_rating(heap):
+            return heap[0] if heap else 0
+        
+        # Current ratings
+        current_ratings = [get_rating(device_heaps[i]) for i in range(m)]
+        
+        # Min-heap of (current_rating, device_index) for non-source devices
+        receiver_heap = [(current_ratings[i], i) for i in range(m)]
+        heapq.heapify(receiver_heap)
+        
+        # Initial gains
+        gain_heap = []
+        for i in range(m):
+            gain = calculate_gain(device_heaps[i])
+            if gain > 0:
+                transfer_unit = device_heaps[i][0] if device_heaps[i] else 0
+                heapq.heappush(gain_heap, (-gain, i, transfer_unit))
+        
+        # Track which devices have been used as sources
+        used_source = [False] * m
+        
+        while gain_heap:
+            neg_gain, source_idx, transfer_unit = heapq.heappop(gain_heap)
+            gain = -neg_gain
+            
+            if used_source[source_idx]:
+                continue
+            
+            # Recalculate the gain for this device
+            actual_gain = calculate_gain(device_heaps[source_idx])
+            actual_transfer_unit = device_heaps[source_idx][0] if device_heaps[source_idx] else 0
+            
+            if actual_gain <= 0:
+                continue
+            
+            gain = actual_gain
+            transfer_unit = actual_transfer_unit
+            
+            used_source[source_idx] = True
+            
+            # Find the best receiver
+            best_receiver = -1
+            min_loss = float('inf')
+            
+            temp_heap = []
+            while receiver_heap:
+                rating, receiver_idx = heapq.heappop(receiver_heap)
+                
+                # Check if this entry is stale
+                if rating != current_ratings[receiver_idx]:
+                    continue
+                
+                if used_source[receiver_idx]:
+                    continue
+                
+                if rating <= transfer_unit:
+                    best_receiver = receiver_idx
+                    min_loss = 0
+                    for item in temp_heap:
+                        heapq.heappush(receiver_heap, item)
+                    break
+                else:
+                    temp_heap.append((rating, receiver_idx))
+                    if best_receiver == -1:
+                        best_receiver = receiver_idx
+                        min_loss = rating - transfer_unit
+            
+            for item in temp_heap:
+                heapq.heappush(receiver_heap, item)
+            
+            if best_receiver == -1:
+                continue
+            
+            net_gain = gain - min_loss
+            if net_gain > 0:
+                # Source: remove minimum
+                heapq.heappop(device_heaps[source_idx])
+                new_source_rating = get_rating(device_heaps[source_idx])
+                current_ratings[source_idx] = new_source_rating
+                
+                # Receiver: add the transferred unit
+                heapq.heappush(device_heaps[best_receiver], transfer_unit)
+                new_receiver_rating = get_rating(device_heaps[best_receiver])
+                current_ratings[best_receiver] = new_receiver_rating
+                
+                # Add the new rating for the receiver
+                heapq.heappush(receiver_heap, (new_receiver_rating, best_receiver))
+                
+                # Update gain for the receiver
+                if not used_source[best_receiver]:
+                    new_gain = calculate_gain(device_heaps[best_receiver])
+                    if new_gain > 0:
+                        heapq.heappush(gain_heap, (-new_gain, best_receiver, device_heaps[best_receiver][0]))
+        
+        return sum(current_ratings)
+```
+
+Let me create a test file and run it.
+
+
+[finish_reason: tool_calls | provider: DeepInfra | reasoning chars: 0 | usage: {'prompt_tokens': 1411, 'completion_tokens': 21684, 'total_tokens': 23095, 'cost': 0.0207409, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0207409, 'upstream_inference_prompt_cost': 0.0001411, 'upstream_inference_completions_cost': 0.0205998}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'path': 'solution.py', 'content': "import heapq\n\nclass Solution:\n    def maxRatings(self, units: list[list[int]]) -> int:\n        m = len(units)\n        \n        # For each device, create a min-heap of units\n        device_heaps = []\n        for i in range(m):\n            heap = units[i][:
+writing
+[write_file] result: Content written to solution.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: DeepInfra | reasoning chars: 0 | usage: {'prompt_tokens': 23117, 'completion_tokens': 163, 'total_tokens': 23280, 'cost': 0.00246655, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00246655, 'upstream_inference_prompt_cost': 0.0023117, 'upstream_inference_completions_cost': 0.00015485}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'path': 'test.py', 'content': 'from solution import Solution\ns = Solution()\n\n# Example 1\nresult = s.maxRatings([[1,3],[2,2]])\nprint(f"Example 1: {result}, expected 4")\n\n# Example 2\nresult = s.maxRatings([[1,2,3],[4,5,6]])\nprint(f"Example 2: {result}, expected 6")\n\n# Example 3\nresult = s
+writing
+[write_file] result: Content written to test.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: DeepInfra | reasoning chars: 0 | usage: {'prompt_tokens': 23302, 'completion_tokens': 27, 'total_tokens': 23329, 'cost': 0.00235585, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 23056, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00235585, 'upstream_inference_prompt_cost': 0.0023302, 'upstream_inference_completions_cost': 2.565e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'test.py'}
+running python
+[run_python] result: Result running test.py: stdout + stderr: Example 1: 4, expected 4
+Example 2: 5, expected 6
+Example 3: 6, expected 6
+
+
+Assistant: Example 2 is failing. Let me debug this.
+
+
+[finish_reason: tool_calls | provider: DeepInfra | reasoning chars: 0 | usage: {'prompt_tokens': 23387, 'completion_tokens': 1165, 'total_tokens': 24552, 'cost': 0.00344545, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00344545, 'upstream_inference_prompt_cost': 0.0023387, 'upstream_inference_completions_cost': 0.00110675}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'content': 'from solution import Solution\nimport heapq\n\n# Example 2: [[1,2,3],[4,5,6]]\nunits = [[1,2,3],[4,5,6]]\nm = len(units)\n\n# For each device, create a min-heap of units\ndevice_heaps = []\nfor i in range(m):\n    heap = units[i][:]\n    heapq.heapify(heap)\n    device_heaps.append(heap
+writing
+[write_file] result: Content written to debug.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 24574, 'completion_tokens': 27, 'total_tokens': 24601, 'cost': 0.00248305, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00248305, 'upstream_inference_prompt_cost': 0.0024574, 'upstream_inference_completions_cost': 2.565e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'debug.py'}
+running python
+[run_python] result: Result running debug.py: stdout + stderr: Initial ratings: [1, 4]
+Device 0: heap=[1, 3, 2], gain=1
+Device 1: heap=[4, 6, 5], gain=1
+Gain heap: [(-1, 0, 1), (-1, 1, 4)]
+
+Processing: gain=1, source=0, transfer_unit=1
+  Actual gain=1, actual_transfer_unit=1
+  Marking device 0 as used
+  Source entry: (1, 0)
+  Best backup: 1, rating=4, loss=3
+  Net gain = 1 - 3 = -2
+
+Processing: gain=1, source=1, transfer_unit=4
+  Actual gain=1, actual_transfer_unit=4
+  Marking device 1 as used
+  Source entry: (4, 1)
+
+Assistant: I see the issue! When processing source 0, the only non-source device is 1 (rating 4), and 4 > 1, so loss = 3. Net gain = -2, so we skip.
+
+When processing source 1, the only non-source device is 0, but device 0 is already used as a source! So there's no valid receiver.
+
+The problem is that after device 0 is marked as used, it's skipped when looking for receivers. But device 0 can still be a receiver! The constraint is that a device can only be a source once, but it can receive units even after being a source.
+
+Let me fix this:
+
+
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 24837, 'completion_tokens': 1111, 'total_tokens': 25948, 'cost': 0.00232475, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 24288, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00232475, 'upstream_inference_prompt_cost': 0.0012693, 'upstream_inference_completions_cost': 0.00105545}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'content': "import heapq\n\nclass Solution:\n    def maxRatings(self, units: list[list[int]]) -> int:\n        m = len(units)\n        \n        # For each device, create a min-heap of units\n        device_heaps = []\n        for i in range(m):\n            heap = units[i][:]\n            heapq.he
+writing
+[write_file] result: Content written to solution.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 25970, 'completion_tokens': 27, 'total_tokens': 25997, 'cost': 0.00140825, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 24288, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00140825, 'upstream_inference_prompt_cost': 0.0013826, 'upstream_inference_completions_cost': 2.565e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'test.py'}
+running python
+[run_python] result: Result running test.py: stdout + stderr: Example 1: 4, expected 4
+Example 2: 5, expected 6
+Example 3: 6, expected 6
+
+
+Assistant: Still failing example 2. Let me debug again:
+
+
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 26055, 'completion_tokens': 1158, 'total_tokens': 27213, 'cost': 0.0024384, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 25344, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0024384, 'upstream_inference_prompt_cost': 0.0013383, 'upstream_inference_completions_cost': 0.0011001}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'content': 'from solution import Solution\nimport heapq\n\n# Example 2: [[1,2,3],[4,5,6]]\nunits = [[1,2,3],[4,5,6]]\nm = len(units)\n\n# For each device, create a min-heap of units\ndevice_heaps = []\nfor i in range(m):\n    heap = units[i][:]\n    heapq.heapify(heap)\n    device_heaps.append(heap
+writing
+[write_file] result: Content written to debug.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 27235, 'completion_tokens': 27, 'total_tokens': 27262, 'cost': 0.00274915, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00274915, 'upstream_inference_prompt_cost': 0.0027235, 'upstream_inference_completions_cost': 2.565e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'debug.py'}
+running python
+[run_python] result: Result running debug.py: stdout + stderr: Initial ratings: [1, 4]
+Device 0: heap=[1, 3, 2], gain=1
+Device 1: heap=[4, 6, 5], gain=1
+Gain heap: [(-1, 0, 1), (-1, 1, 4)]
+
+Processing: gain=1, source=0, transfer_unit=1
+  Actual gain=1, actual_transfer_unit=1
+  Marking device 0 as used
+  Self entry: (1, 0)
+  Best backup: 1, rating=4, loss=3
+  Net gain = 1 - 3 = -2
+
+Processing: gain=1, source=1, transfer_unit=4
+  Actual gain=1, actual_transfer_unit=4
+  Marking device 1 as used
+  Self entry: (4, 1)
+  N
+
+Assistant: The issue is clear now. When source=1 tries to find a receiver, the only other device is 0, which is already used as a source. But device 0 can still be a receiver! The problem is that the receiver_heap still has device 0's entry, but when we pop it, we check `if receiver_idx == source_idx` which is `0 == 1`, so it's not skipped. Wait, let me re-read...
+
+Oh! The issue is that device 0 was already processed as a source, so it was marked as `used_source[0] = True`. But when we look for a receiver, we skip `receiver_idx == source_idx`, which is `0 == 1` (false), so device 0 should be considered as a receiver.
+
+But the receiver_heap only has one entry: (4, 1). After popping it, we check `1 == 1` (self), so we skip it. Then the heap is empty, so there's no valid receiver.
+
+Wait, the receiver_heap initially has [(1, 0), (4, 1)]. After processing source 0, we didn't add any new entries (since no transfer happened). So the receiver_heap still has both entries... but we popped (1, 0) and pushed it back to temp_heap, then pushed back to receiver_heap. So after processing source 0, receiver_heap has both entries again.
+
+Then when processing source 1, we pop (1, 0) first (since it's smaller). Check: 0 != 1, so it's not self. So we should consider it as a receiver!
+
+Let me trace through more carefully:
+
+1. receiver_heap = [(1, 0), (4, 1)]
+2. Process source 0:
+   - Pop (1, 0): 0 == 0 (self), skip.
+   - Pop (4, 1): 1 != 0, not self. 4 > 1, so backup. best_receiver=1, min_loss=3.
+   - No zero-loss found. Push back (4, 1).
+   - Net gain = 1 - 3 = -2 < 0, skip transfer.
+3. receiver_heap = [(1, 0), (4, 1)]
+4. Process source 1:
+   - Pop (1, 0): 0 != 1, not self. 1 <= 4, zero-loss! best_receiver=0, min_loss=0.
+   - Net gain = 1 - 0 = 1 > 0. Transfer!
+
+So the algorithm should work! But the debug output shows "Self entry: (4, 1)" for source 1, which means the heap only had (4, 1). That means the (1, 0) entry was already popped and not pushed back.
+
+Wait, I see the issue. After processing source 0, we pop both entries from receiver_heap, and then push back only the temp_heap entries. But (1, 0) was popped and skipped (self), so it's not in temp_heap. So after processing source 0, receiver_heap only has (4, 1).
+
+That's the bug! When we skip an entry (self or stale), we don't push it back. Let me fix this:
+
+
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 27498, 'completion_tokens': 1717, 'total_tokens': 29215, 'cost': 0.00438095, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00438095, 'upstream_inference_prompt_cost': 0.0027498, 'upstream_inference_completions_cost': 0.00163115}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'content': "import heapq\n\nclass Solution:\n    def maxRatings(self, units: list[list[int]]) -> int:\n        m = len(units)\n        \n        # For each device, create a min-heap of units\n        device_heaps = []\n        for i in range(m):\n            heap = units[i][:]\n            heapq.he
+writing
+[write_file] result: Content written to solution.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 29237, 'completion_tokens': 27, 'total_tokens': 29264, 'cost': 0.00157655, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 27456, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00157655, 'upstream_inference_prompt_cost': 0.0015509, 'upstream_inference_completions_cost': 2.565e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'test.py'}
+running python
+[run_python] result: Result running test.py: stdout + stderr: Example 1: 4, expected 4
+Example 2: 6, expected 6
+Example 3: 6, expected 6
+
+
+Assistant: All examples pass. But I need to make sure the solution is efficient enough for the constraints. Let me think about the time complexity.
+
+The issue is that in the worst case, we might pop many entries from `receiver_heap` for each transfer. Each entry is either stale or self, and we push them back. In the worst case, there could be O(m) stale/self entries, and we do this for each of the O(m) transfers, giving O(m^2) operations.
+
+With m up to 10^5, this could be O(10^10), which is too slow.
+
+However, let me think about how many stale entries there can be. Each transfer adds at most one new entry to the receiver_heap (for the receiver). So after k transfers, there are at most m + k entries. Since k <= m, there are at most 2m entries.
+
+But the issue is that we might pop many stale entries before finding the best receiver. In the worst case, all entries except the best one are stale, so we pop O(m) entries.
+
+To optimize, I can use a different approach: maintain a separate min-heap for each device's gain, and use lazy removal for the receiver_heap.
+
+Actually, let me first check if the current solution passes within the time limit by running it with larger inputs.
+
+But before that, let me also add some edge case tests:
+
+
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 29322, 'completion_tokens': 780, 'total_tokens': 30102, 'cost': 0.002406, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 25344, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.002406, 'upstream_inference_prompt_cost': 0.001665, 'upstream_inference_completions_cost': 0.000741}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'content': 'from solution import Solution\ns = Solution()\n\n# Example 1\nresult = s.maxRatings([[1,3],[2,2]])\nprint(f"Example 1: {result}, expected 4, {\'PASS\' if result == 4 else \'FAIL\'}")\n\n# Example 2\nresult = s.maxRatings([[1,2,3],[4,5,6]])\nprint(f"Example 2: {result}, expected 6, {\'PA
+writing
+[write_file] result: Content written to test.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 30124, 'completion_tokens': 27, 'total_tokens': 30151, 'cost': 0.00161245, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 28512, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00161245, 'upstream_inference_prompt_cost': 0.0015868, 'upstream_inference_completions_cost': 2.565e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'test.py'}
+running python
+[run_python] result: Result running test.py: stdout + stderr: Example 1: 4, expected 4, PASS
+Example 2: 6, expected 6, PASS
+Example 3: 6, expected 6, PASS
+Single device: 1, expected 1, PASS
+Single unit per device: 6, expected 6, PASS
+All same: 4, expected 4, PASS
+High value device: 2, expected ?, let's compute
+  Computed: 2, PASS
+
+
+Assistant: Good, all tests pass. Now let me think about the time complexity issue. The current solution might be too slow for large inputs.
+
+Let me optimize by using a more efficient data structure for finding the best receiver. Instead of popping all entries from the receiver_heap, I can use a segment tree or a balanced BST to find the best receiver in O(log m) time.
+
+However, implementing a segment tree in Python might be complex. Let me think of a simpler optimization.
+
+One optimization: instead of maintaining a heap of all devices, I can maintain two heaps:
+1. A min-heap of (current_rating, device_index) for all devices.
+2. When looking for a receiver, I pop from the min-heap until I find a non-self device. If its rating <= transfer_unit, it's a zero-loss receiver. Otherwise, I keep it as the best backup.
+
+But I still need to push back the entries I popped. To avoid this, I can use a different approach: maintain a sorted list of devices by their current_rating, and use binary search to find the best receiver.
+
+Actually, let me try a different approach: since the key operation is finding the device with the smallest current_rating that is not the source, I can maintain a min-heap and use lazy removal.
+
+Here's the optimized approach:
+
+1. Maintain a min-heap `receiver_heap` of (current_rating, device_index).
+2. When looking for the best receiver for transfer_unit:
+   - Pop from the heap until we find a device that is not the source.
+   - If its rating <= transfer_unit, it's a zero-loss receiver.
+   - Otherwise, it's the best backup (since it has the smallest rating > transfer_unit).
+   - Don't push back the entries; just keep the best backup.
+
+But this modifies the heap, so we need to be careful. Let me think...
+
+Actually, the issue with the current approach is that we pop all entries and push them back, which is O(m log m) per transfer. To optimize, I can:
+
+1. Pop entries from the heap until I find a zero-loss receiver or I've checked all entries.
+2. Keep track of the best backup (smallest rating > transfer_unit, and not self).
+3. Don't push back the entries; instead, rebuild the heap at the end.
+
+But rebuilding the heap is O(m), which is still expensive.
+
+Let me try a different optimization: use a separate min-heap for "active" devices (those that can be receivers), and update it lazily.
+
+Actually, I think the current solution might be fast enough for the given constraints. Let me test it with a larger input:
+
+
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 30275, 'completion_tokens': 759, 'total_tokens': 31034, 'cost': 0.00232295, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 28512, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00232295, 'upstream_inference_prompt_cost': 0.0016019, 'upstream_inference_completions_cost': 0.00072105}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'content': 'from solution import Solution\nimport time\nimport random\n\ns = Solution()\n\n# Generate a larger test case\n# m*n <= 2*10^5, so let\'s use m=1000, n=100 (m*n=10^5)\nm = 1000\nn = 100\nunits = [[random.randint(1, 100000) for _ in range(n)] for _ in range(m)]\n\nstart = time.time()\nres
+writing
+[write_file] result: Content written to perf_test.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 31057, 'completion_tokens': 28, 'total_tokens': 31085, 'cost': 0.0016539, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 29568, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0016539, 'upstream_inference_prompt_cost': 0.0016273, 'upstream_inference_completions_cost': 2.66e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'perf_test.py'}
+running python
+[run_python] result: Result running perf_test.py: stdout + stderr: m=1000, n=100, result=1960284, time=0.01s
+
+
+Assistant: Good, it's fast for m=1000. Let me try a larger case:
+
+
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 31142, 'completion_tokens': 191, 'total_tokens': 31333, 'cost': 0.00181725, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 29568, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00181725, 'upstream_inference_prompt_cost': 0.0016358, 'upstream_inference_completions_cost': 0.00018145}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'content': 'from solution import Solution\nimport time\nimport random\n\ns = Solution()\n\n# Test with m=10000, n=10 (m*n=10^5)\nm = 10000\nn = 10\nunits = [[random.randint(1, 100000) for _ in range(n)] for _ in range(m)]\n\nstart = time.time()\nresult = s.maxRatings(units)\nend = time.time()\n\npr
+writing
+[write_file] result: Content written to perf_test2.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 31357, 'completion_tokens': 29, 'total_tokens': 31386, 'cost': 0.00163205, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 30624, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00163205, 'upstream_inference_prompt_cost': 0.0016045, 'upstream_inference_completions_cost': 2.755e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'perf_test2.py'}
+running python
+[run_python] result: Result running perf_test2.py: stdout + stderr: m=10000, n=10, result=183140392, time=0.03s
+
+
+Assistant: Still fast. Let me try the maximum case:
+
+
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 31446, 'completion_tokens': 181, 'total_tokens': 31627, 'cost': 0.00178535, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 30624, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00178535, 'upstream_inference_prompt_cost': 0.0016134, 'upstream_inference_completions_cost': 0.00017195}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'content': 'from solution import Solution\nimport time\nimport random\n\ns = Solution()\n\n# Test with m=50000, n=4 (m*n=2*10^5)\nm = 50000\nn = 4\nunits = [[random.randint(1, 100000) for _ in range(n)] for _ in range(m)]\n\nstart = time.time()\nresult = s.maxRatings(units)\nend = time.time()\n\npr
+writing
+[write_file] result: Content written to perf_test3.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 31651, 'completion_tokens': 29, 'total_tokens': 31680, 'cost': 0.00166145, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 30624, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00166145, 'upstream_inference_prompt_cost': 0.0016339, 'upstream_inference_completions_cost': 2.755e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'perf_test3.py'}
+running python
+[run_python] result: Result running perf_test3.py: timed out after 10s. stdout + stderr so far: 
+
+Assistant: It's too slow for m=50000. I need to optimize the solution.
+
+The bottleneck is in the receiver_heap operations. Let me optimize by using a more efficient data structure.
+
+The key insight is that we need to find the best receiver efficiently. The best receiver is:
+1. Any receiver with current_rating <= transfer_unit (zero loss).
+2. If none, the receiver with the smallest current_rating (minimize loss).
+
+To find this efficiently, I can maintain a sorted list of (current_rating, device_index) and use binary search.
+
+Let me implement this with a sorted list:
+
+
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 31718, 'completion_tokens': 1432, 'total_tokens': 33150, 'cost': 0.0032122, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 26400, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0032122, 'upstream_inference_prompt_cost': 0.0018518, 'upstream_inference_completions_cost': 0.0013604}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'content': "import heapq\nfrom bisect import bisect_left, insort\n\nclass Solution:\n    def maxRatings(self, units: list[list[int]]) -> int:\n        m = len(units)\n        \n        # For each device, create a min-heap of units\n        device_heaps = []\n        for i in range(m):\n            
+writing
+[write_file] result: Content written to solution.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 33172, 'completion_tokens': 27, 'total_tokens': 33199, 'cost': 0.00181165, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 30624, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00181165, 'upstream_inference_prompt_cost': 0.001786, 'upstream_inference_completions_cost': 2.565e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'test.py'}
+running python
+[run_python] result: Result running test.py: stdout + stderr: Example 1: 4, expected 4, PASS
+Example 2: 6, expected 6, PASS
+Example 3: 6, expected 6, PASS
+Single device: 1, expected 1, PASS
+Single unit per device: 6, expected 6, PASS
+All same: 4, expected 4, PASS
+High value device: 2, expected ?, let's compute
+  Computed: 2, PASS
+
+
+Assistant: Good, all tests pass. Now let me check the performance:
+
+
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 33323, 'completion_tokens': 43, 'total_tokens': 33366, 'cost': 0.00184195, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 30624, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00184195, 'upstream_inference_prompt_cost': 0.0018011, 'upstream_inference_completions_cost': 4.085e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'perf_test3.py'}
+running python
+[run_python] result: Result running perf_test3.py: timed out after 10s. stdout + stderr so far: 
+
+Assistant: Still too slow. The issue is rebuilding the sorted list after each transfer, which is O(m log m).
+
+Let me think of a better approach. Instead of maintaining a sorted list, I can use a segment tree or a balanced BST to find the best receiver in O(log m) time.
+
+In Python, I don't have a built-in balanced BST, but I can use a sorted list with the `bisect` module for binary search. The issue is updating the list, which is O(m).
+
+Let me try a different optimization: instead of updating the sorted list after each transfer, I can use a "lazy" approach where I rebuild the list only when needed.
+
+Actually, let me think about the problem differently. The key observation is:
+
+1. We want to maximize the sum of ratings.
+2. Each transfer can increase the sum by at most the gain of the source minus the loss of the receiver.
+3. The gain of a source is (second_min - min), and the loss of a receiver is max(0, current_rating - transfer_unit).
+
+Given the constraints (m*n <= 2*10^5), the number of devices m can be up to 10^5 (if n=1), but if n=1, there are no gains. If n>=2, m <= 10^5.
+
+Let me think about the maximum number of transfers. Each device can be a source at most once, so there are at most m transfers.
+
+For each transfer, we need to find the best receiver efficiently. The best receiver is the one with the smallest current_rating that is not the source.
+
+To find this efficiently, I can maintain a min-heap of (current_rating, device_index) for all devices. When I need to find the best receiver, I pop from the heap until I find a non-source device. The first such device is the best receiver (since the heap is sorted by current_rating).
+
+But I need to push back the devices I popped. To avoid this, I can use a different approach:
+
+1. Maintain a min-heap of (current_rating, device_index) for all devices.
+2. When finding the best receiver, pop from the heap until I find a non-source device.
+3. If I find a zero-loss receiver, use it and push back the other popped devices.
+4. If I don't find a zero-loss receiver, the first non-source device I found is the best backup. Don't push it back; instead, rebuild the heap at the end.
+
+But rebuilding the heap is O(m), which is still expensive.
+
+Let me try a different approach: use a segment tree to maintain the minimum current_rating for each range of devices. This allows me to find the best receiver in O(log m) time.
+
+Actually, given the time constraints, let me try a simpler optimization: instead of rebuilding the sorted list after each transfer, I can update the ratings in-place and re-sort only the affected entries.
+
+But this is still complex. Let me try yet another approach: since the number of transfers is at most m, and m can be up to 10^5, I need an O(m log m) or O(m) solution.
+
+Let me think about the problem again. The key insight is:
+
+- The sum of ratings is maximized when we transfer units from devices with high gain to devices with low loss.
+- The gain of a device is (second_min - min), and the loss of a receiver is max(0, current_rating - transfer_unit).
+
+Given the complexity of implementing an efficient data structure, let me try a different approach:
+
+1. Calculate the initial sum of ratings.
+2. For each device, calculate the gain if we remove its minimum.
+3. Sort devices by gain descending.
+4. For each device (in order of gain), find the best receiver (minimizing loss).
+5. If the net gain is positive, perform the transfer.
+
+The key optimization is to find the best receiver efficiently. Instead of iterating through all devices, I can maintain a sorted list of devices by their current_rating, and use binary search to find the best receiver.
+
+Let me implement this with a sorted list, but only update it when necessary:
+
+
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 33404, 'completion_tokens': 1894, 'total_tokens': 35298, 'cost': 0.0035029, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 32736, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0035029, 'upstream_inference_prompt_cost': 0.0017036, 'upstream_inference_completions_cost': 0.0017993}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'content': "import heapq\nfrom bisect import bisect_left\n\nclass Solution:\n    def maxRatings(self, units: list[list[int]]) -> int:\n        m = len(units)\n        \n        # For each device, create a min-heap of units\n        device_heaps = []\n        for i in range(m):\n            heap = u
+writing
+[write_file] result: Content written to solution.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 35320, 'completion_tokens': 27, 'total_tokens': 35347, 'cost': 0.00192085, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 32736, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00192085, 'upstream_inference_prompt_cost': 0.0018952, 'upstream_inference_completions_cost': 2.565e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'test.py'}
+running python
+[run_python] result: Result running test.py: stdout + stderr: Example 1: 4, expected 4, PASS
+Example 2: 6, expected 6, PASS
+Example 3: 6, expected 6, PASS
+Single device: 1, expected 1, PASS
+Single unit per device: 6, expected 6, PASS
+All same: 4, expected 4, PASS
+High value device: 2, expected ?, let's compute
+  Computed: 2, PASS
+
+
+Assistant: 
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 35471, 'completion_tokens': 29, 'total_tokens': 35500, 'cost': 0.00199065, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 31680, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00199065, 'upstream_inference_prompt_cost': 0.0019631, 'upstream_inference_completions_cost': 2.755e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'perf_test3.py'}
+running python
+[run_python] result: Result running perf_test3.py: timed out after 10s. stdout + stderr so far: 
+
+Assistant: Still too slow. The issue is that rebuilding the sorted list is O(m log m), and we do it after each transfer. With m=50000 and up to 50000 transfers, this is O(m^2 log m), which is too slow.
+
+Let me think of a fundamentally different approach. 
+
+Actually, I realize that the issue is that we're updating the sorted list after each transfer, which is expensive. Instead, I can use a more efficient data structure.
+
+Let me try using a balanced BST simulation with a sorted list and only update the necessary entries:
+
+Actually, let me try a completely different approach. Instead of simulating the transfers, let me think about what the optimal solution looks like.
+
+Key insight: The sum of ratings is maximized when we assign the largest possible units to be the minimums of the devices.
+
+Given that we can transfer at most m units (one from each device), the problem becomes: what's the maximum sum of minimums we can achieve by redistributing at most m units?
+
+This is still complex, but let me think about it differently.
+
+Actually, I think the greedy approach is correct, but I need a more efficient implementation. Let me use a segment tree or a Fenwick tree to find the best receiver efficiently.
+
+Given the time constraints, let me try a simpler optimization: instead of rebuilding the sorted list after each transfer, I can maintain it incrementally.
+
+Let me implement this with a sorted list and only update the affected entries:
+
+
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 35538, 'completion_tokens': 1390, 'total_tokens': 36928, 'cost': 0.0031319, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 34848, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0031319, 'upstream_inference_prompt_cost': 0.0018114, 'upstream_inference_completions_cost': 0.0013205}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'content': "import heapq\nfrom bisect import bisect_left, insort, bisect_right\n\nclass Solution:\n    def maxRatings(self, units: list[list[int]]) -> int:\n        m = len(units)\n        \n        # For each device, create a min-heap of units\n        device_heaps = []\n        for i in range(m):
+writing
+[write_file] result: Content written to solution.py
+
+Assistant: Wait, I removed the cache rebuild, which means the sorted_receivers list is not updated after transfers. This will cause incorrect results.
+
+Let me think about this differently. The issue is that we need to update the sorted list after each transfer, which is O(m). But we can't afford O(m) per transfer.
+
+Let me try a different approach: instead of maintaining a sorted list, I can use a segment tree to find the best receiver in O(log m) time.
+
+A segment tree can maintain the minimum current_rating for each range of devices. To find the best receiver, I can query the segment tree for the minimum current_rating in the range [0, m-1] excluding the source device.
+
+Let me implement this:
+
+
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 36950, 'completion_tokens': 1739, 'total_tokens': 38689, 'cost': 0.00360465, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 34848, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00360465, 'upstream_inference_prompt_cost': 0.0019526, 'upstream_inference_completions_cost': 0.00165205}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'content': "import heapq\n\nclass Solution:\n    def maxRatings(self, units: list[list[int]]) -> int:\n        m = len(units)\n        \n        # For each device, create a min-heap of units\n        device_heaps = []\n        for i in range(m):\n            heap = units[i][:]\n            heapq.he
+writing
+[write_file] result: Content written to solution.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 38711, 'completion_tokens': 27, 'total_tokens': 38738, 'cost': 0.00210155, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 35904, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00210155, 'upstream_inference_prompt_cost': 0.0020759, 'upstream_inference_completions_cost': 2.565e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'test.py'}
+running python
+[run_python] result: Result running test.py: stdout + stderr: Example 1: 4, expected 4, PASS
+Example 2: 6, expected 6, PASS
+Example 3: 6, expected 6, PASS
+Single device: 1, expected 1, PASS
+Single unit per device: 6, expected 6, PASS
+All same: 4, expected 4, PASS
+High value device: 2, expected ?, let's compute
+  Computed: 2, PASS
+
+
+Assistant: All tests pass. Now let me check the performance:
+
+
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 38862, 'completion_tokens': 41, 'total_tokens': 38903, 'cost': 0.00218275, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 34848, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00218275, 'upstream_inference_prompt_cost': 0.0021438, 'upstream_inference_completions_cost': 3.895e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'perf_test3.py'}
+running python
+[run_python] result: Result running perf_test3.py: stdout + stderr: m=50000, n=4, result=2009518179, time=0.48s
+
+
+Assistant: Excellent! It's now fast. Let me run a few more performance tests to make sure:
+
+
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 38963, 'completion_tokens': 48, 'total_tokens': 39011, 'cost': 0.0020411, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 38016, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0020411, 'upstream_inference_prompt_cost': 0.0019955, 'upstream_inference_completions_cost': 4.56e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'perf_test.py'}
+running python
+[run_python] result: Result running perf_test.py: stdout + stderr: m=1000, n=100, result=2044155, time=0.01s
+
+
+Assistant: 
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 39068, 'completion_tokens': 29, 'total_tokens': 39097, 'cost': 0.00203355, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 38016, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00203355, 'upstream_inference_prompt_cost': 0.002006, 'upstream_inference_completions_cost': 2.755e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'perf_test2.py'}
+running python
+[run_python] result: Result running perf_test2.py: stdout + stderr: m=10000, n=10, result=181250559, time=0.07s
+
+
+Assistant: Great, all performance tests pass within the time limit. Let me verify the solution one more time by reading it:
+
+
+[finish_reason: tool_calls | provider: AkashML | reasoning chars: 0 | usage: {'prompt_tokens': 39209, 'completion_tokens': 50, 'total_tokens': 39259, 'cost': 0.0039659, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0039659, 'upstream_inference_prompt_cost': 0.0039209, 'upstream_inference_completions_cost': 4.5e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[read_file] args: {'path': 'solution.py'}
+reading
+[read_file] result: Content at solution.py:
+stdout:
+ import heapq
+
+class Solution:
+    def maxRatings(self, units: list[list[int]]) -> int:
+        m = len(units)
+        
+        # For each device, create a min-heap of units
+        device_heaps = []
+        for i in range(m):
+            heap = units[i][:]
+            heapq.heapify(heap)
+            device_heaps.append(heap)
+        
+        # Function to calculate the gain for a device
+        def calculate_gain(heap):
+            if len(heap) <= 1:
+            
+
+Assistant: The solution looks good. Let me run the test one more time to make sure everything passes:
+
+
+[finish_reason: tool_calls | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 40779, 'completion_tokens': 47, 'total_tokens': 40826, 'cost': 0.00222175, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 38016, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00222175, 'upstream_inference_prompt_cost': 0.0021771, 'upstream_inference_completions_cost': 4.465e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'test.py'}
+running python
+[run_python] result: Result running test.py: stdout + stderr: Example 1: 4, expected 4, PASS
+Example 2: 6, expected 6, PASS
+Example 3: 6, expected 6, PASS
+Single device: 1, expected 1, PASS
+Single unit per device: 6, expected 6, PASS
+All same: 4, expected 4, PASS
+High value device: 2, expected ?, let's compute
+  Computed: 2, PASS
+
+
+Assistant: All tests pass. The solution is complete and efficient. Let me provide the final answer:
+
+```python
+import heapq
+
+class Solution:
+    def maxRatings(self, units: list[list[int]]) -> int:
+        m = len(units)
+        
+        # For each device, create a min-heap of units
+        device_heaps = []
+        for i in range(m):
+            heap = units[i][:]
+            heapq.heapify(heap)
+            device_heaps.append(heap)
+        
+        # Function to calculate the gain for a device
+        def calculate_gain(heap):
+            if len(heap) <= 1:
+                return 0
+            min1 = heap[0]
+            temp = heapq.heappop(heap)
+            min2 = heap[0] if heap else min1
+            heapq.heappush(heap, temp)
+            return min2 - min1
+        
+        # Function to get the current rating of a device
+        def get_rating(heap):
+            return heap[0] if heap else 0
+        
+        # Current ratings
+        current_ratings = [get_rating(device_heaps[i]) for i in range(m)]
+        
+        # Segment tree to find the minimum current_rating in a range
+        tree_size = 1
+        while tree_size < m:
+            tree_size *= 2
+        
+        # Segment tree: tree[i] stores the minimum (current_rating, device_index) in the range
+        tree = [(float('inf'), -1)] * (2 * tree_size)
+        
+        # Build the tree
+        for i in range(m):
+            tree[tree_size + i] = (current_ratings[i], i)
+        for i in range(tree_size - 1, 0, -1):
+            tree[i] = min(tree[2*i], tree[2*i+1])
+        
+        # Function to query the minimum in range [l, r)
+        def query(l, r):
+            result = (float('inf'), -1)
+            l += tree_size
+            r += tree_size
+            while l < r:
+                if l % 2 == 1:
+                    result = min(result, tree[l])
+                    l += 1
+                if r % 2 == 1:
+                    r -= 1
+                    result = min(result, tree[r])
+                l //= 2
+                r //= 2
+            return result
+        
+        # Function to update the value at position idx
+        def update(idx, value):
+            pos = tree_size + idx
+            tree[pos] = value
+            pos //= 2
+            while pos >= 1:
+                tree[pos] = min(tree[2*pos], tree[2*pos+1])
+                pos //= 2
+        
+        # Initial gains
+        gain_heap = []
+        for i in range(m):
+            gain = calculate_gain(device_heaps[i])
+            if gain > 0:
+                transfer_unit = device_heaps[i][0] if device_heaps[i] else 0
+                heapq.heappush(gain_heap, (-gain, i, transfer_unit))
+        
+        # Track which devices have been used as sources
+        used_source = [False] * m
+        
+        while gain_heap:
+            neg_gain, source_idx, transfer_unit = heapq.heappop(gain_heap)
+            gain = -neg_gain
+            
+            if used_source[source_idx]:
+                continue
+            
+            # Recalculate the gain for this device
+            actual_gain = calculate_gain(device_heaps[source_idx])
+            actual_transfer_unit = device_heaps[source_idx][0] if device_heaps[source_idx] else 0
+            
+            if actual_gain <= 0:
+                continue
+            
+            gain = actual_gain
+            transfer_unit = actual_transfer_unit
+            
+            used_source[source_idx] = True
+            
+            # Find the best receiver
+            best_receiver = -1
+            min_loss = float('inf')
+            
+            # First, try to find a zero-loss receiver
+            if source_idx > 0:
+                result = query(0, source_idx)
+                if result[0] <= transfer_unit:
+                    best_receiver = result[1]
+                    min_loss = 0
+            
+            if best_receiver == -1 and source_idx + 1 < m:
+                result = query(source_idx + 1, m)
+                if result[0] <= transfer_unit:
+                    best_receiver = result[1]
+                    min_loss = 0
+            
+            # If still no zero-loss receiver, find the best backup
+            if best_receiver == -1:
+                if source_idx > 0:
+                    result = query(0, source_idx)
+                    if result[1] != -1:
+                        best_receiver = result[1]
+                        min_loss = result[0] - transfer_unit
+                
+                if source_idx + 1 < m:
+                    result = query(source_idx + 1, m)
+                    if result[1] != -1:
+                        if best_receiver == -1:
+                            best_receiver = result[1]
+                            min_loss = result[0] - transfer_unit
+                        else:
+                            new_loss = result[0] - transfer_unit
+                            if new_loss < min_loss:
+                                best_receiver = result[1]
+                                min_loss = new_loss
+            
+            if best_receiver == -1:
+                continue
+            
+            net_gain = gain - min_loss
+            if net_gain > 0:
+                # Perform the transfer
+                heapq.heappop(device_heaps[source_idx])
+                new_source_rating = get_rating(device_heaps[source_idx])
+                current_ratings[source_idx] = new_source_rating
+                
+                heapq.heappush(device_heaps[best_receiver], transfer_unit)
+                new_receiver_rating = get_rating(device_heaps[best_receiver])
+                current_ratings[best_receiver] = new_receiver_rating
+                
+                # Update the segment tree
+                update(source_idx, (current_ratings[source_idx], source_idx))
+                update(best_receiver, (current_ratings[best_receiver], best_receiver))
+                
+                # Update gain for the receiver
+                if not used_source[best_receiver]:
+                    new_gain = calculate_gain(device_heaps[best_receiver])
+                    if new_gain > 0:
+                        heapq.heappush(gain_heap, (-new_gain, best_receiver, device_heaps[best_receiver][0]))
+        
+        return sum(current_ratings)
+```
+[finish_reason: stop | provider: Parasail | reasoning chars: 0 | usage: {'prompt_tokens': 40950, 'completion_tokens': 1370, 'total_tokens': 42320, 'cost': 0.0033901, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 40128, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0033901, 'upstream_inference_prompt_cost': 0.0020886, 'upstream_inference_completions_cost': 0.0013015}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

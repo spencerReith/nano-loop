@@ -1,0 +1,224 @@
+
+Assistant: ```python
+from collections import defaultdict
+
+class Solution:
+    def maxSum(self, nums: list[int], k: int) -> int:
+        n = len(nums)
+        pref = [0] * (n + 1)
+        for i, x in enumerate(nums):
+            pref[i+1] = pref[i] + x
+
+        # dp[i][s]: max prefix sum up to index i (prefix nums[0..i-1]) with exactly s used swaps
+        # after performing swaps within the prefix to maximize its total sum.
+        INF_NEG = -10**30
+        # O(n*k) states, each transition O(1) using last occurrence map.
+        # For each i,s: dp[i][s] = max(dp[i-1][s], pref[i-1] - min_{prev} (pref[prev-1] - s_used(prev,i-1)))
+        # where s_used(prev, r) = minimal swaps to make all nums[prev..r] equal to nums[r].
+        # We iterate r from 0..n-1 and maintain best[s] = min(pref[prev-1] - s_used(prev,r)) for each exact s.
+
+        # This is equivalent to: for each r, answer includes pref[r+1] - min_{prev,s} (pref[prev-1] - s_used(prev,r)) with s <= k
+        # So compute g_r[s] = min over prev of (pref[prev-1] - s_used(prev,r)), then ans candidate = pref[r+1] - min_{s<=k} g_r[s].
+
+        ans = max(nums) if n else 0  # at least one element; overall ans updated anyway
+        minpref = 0  # min pref[prev-1] with s_used = 0 => prev arbitrary, choose min prefix
+
+        # For each ending r, extend prev backwards maintaining per-value count of mismatches cost = number of swaps needed
+        # cost to fix [prev..r] to value nums[r] = (len segment) - count[nums[r]] within segment.
+        # g[s] = min(pref[prev-1] - cost). We need, for each r, min over s<=k of g[s].
+        # Instead of iterating all prev (O(n^2)), we use monotonic structure by iterating prev and updating a DP over s:
+        # For fixed r, define f_prev[s] = pref[prev-1] - min_swaps(prev,r). As prev decreases by 1 (adding x=nums[prev-1]):
+        # cost' = cost + (0 if x == nums[r] else 1). So f'[s] = min over prev of pref[prev-1] - (cost at that prev).
+        # We can iterate prev from r down to 0 and maintain h[s] = max( -pref[prev-1] + cost(prev,r) ) minimized appropriately.
+        # Simpler: iterate prev and update dp over s incrementally. For each r, maintain array best[s] (min pref[prev-1]-cost).
+        # Adding new prev with cost c and value p=pref[prev-1]: new candidates: for each s, best_new[s] = min(best_old[s], p - c). But c depends on prev, not a shift.
+        # However cost(prev-1, r) = cost(prev, r) + (nums[prev-1] != nums[r]). So if we maintain candidates grouped by cost parity? Not directly.
+
+        # Alternative O(n*k) total using DP over positions as knapsack-like:
+        # Standard solution: dp[i][j] = max subarray sum ending at i using j swaps.
+        # Transition: dp[i][j] = nums[i] + max(0, dp[i-1][j], and consider moving a better value into i costing swaps). But swaps can bring any value.
+
+        # Given constraints n=1500, O(n*k) = 2.25M states with O(1) transition is fine; O(n^2) too slow (2.25M actually n^2=2.25M too! n=1500 => n^2=2.25M, that's also OK!). Wait 1500^2 = 2,250,000 which is fine in 5s. So O(n^2) with small constant OK.
+
+        # Simpler O(n^2): For each r, iterate prev from r down to 0, maintain cost and track best value.
+        # For each r, ans candidate = pref[r+1] - min_over_prev( pref[prev-1] + cost(prev,r) ... wait sign)
+        # Subarray sum after making all equal to nums[r]: sum_{t=prev..r} nums[r] = nums[r]*(r-prev+1). That's not what we want.
+
+        # Re-derive properly. We want max subarray sum after at most k swaps globally, not necessarily making segment uniform.
+        # Known approach: choose subarray [l..r], we can swap in up to k larger elements from outside to replace small elements inside.
+        # For fixed [l..r], optimal: sort inside ascending, outside descending, swap smallest inside with largest outside while gain>0 and swaps<=k.
+        # Total = sum_inside + sum of top gains. Compute efficiently via selection.
+
+        # With n=1500, O(n^2 log n) maybe borderline but OK in 5s Python? 2.25M * log ~ fine.
+
+        # Implement per r: maintain multiset of inside elements and max-heap of outside gains? Use two heaps per r extension O(log n).
+        # For each l fixed, extend r, maintain inside min-heap (smallest in window), outside as sorted? Outside changes as r moves (element leaves outside into window).
+        # This is complex; instead for each pair (l,r) compute via precomputed sorted structures too heavy.
+
+        # Given n=1500, O(n^2) pairs = 1.1M pairs (n*(n+1)/2 ≈ 1.1M). For each pair doing O(k) too much, but O(log) fine.
+        # Approach: for each l, r expanding, maintain:
+        #   - window sum S
+        #   - min-heap inH of window values (to pick smallest to swap out)
+        #   - max-heap outH of values outside window (indices < l or > r) — but as r grows, only index r+1 leaves outside; indices < l fixed.
+        #   We need outside as elements not in [l..r]. When l fixed and r increases by 1, nums[r+1] moves from outside to inside. So outside max-heap must support deletion of arbitrary element -> use lazy deletion with counter, or balanced BST.
+        # Use sortedcontainers? Not allowed. Use heap with lazy deletion via dict counts.
+
+        # Simpler: For each l, precompute outside elements as those < l (fixed set A) plus those > r (shrinking). Use two heaps:
+        # leftMax: max-heap of nums[0..l-1] (fixed for this l).
+        # rightMax: max-heap of nums[r+1..n-1], as r increases we pop nums[r+1] from right structure. Use sorted list via "bisect" on a list -> O(n) insert/remove. n=1500, O(n) per step => O(n^3)=3.3B too slow.
+
+        # Use heap with lazy deletion for right side: initially push all nums[l+1..n-1] into max-heap; as r advances, mark nums[r+1] as removed (lazy). Top retrieval skips removed. That's O(log n) amortized.
+
+        # For each window [l..r], candidate sum = S + sum of top t positive gains where gain = out_max - in_min, with t <= k, matching smallest inside with largest outside.
+        # To compute sum of top swaps efficiently, we repeatedly: peek in_min (min-heap inH), out_max (max-heap outH combined from leftMax and rightMax). If out_max > in_min and swaps used < k, gain += diff, but we shouldn't mutate. Copying heaps each time too heavy.
+
+        # Instead precompute: we want sum of largest positive differences pairing sorted inside ascending with sorted outside descending, up to k pairs. Equivalent: take k smallest inside a1<=...<=ak and k largest outside b1>=...>=bk, gain = sum max(0, bi - ai) pairing largest with smallest.
+
+        # For each window, getting k smallest inside and k largest outside quickly: maintain inside min-heap gives only global min; need k smallest -> keep inside as two heaps? k up to n.
+
+        # Given constraints, per window O(k) too slow (1.1M * 1500).
+
+        # Alternative: for each window, the best gain = sum over top swaps; we can binary search threshold T: count pairs where outside - inside > T. Complex.
+
+        # Simpler O(n^2 log n): for each l, r loop, maintain inside sorted list via bisect.insort (O(n) insert but small n? O(n^3) again).
+
+        # Practical: n=1500 => windows ≈ 1.1M. For each window O(k) impossible, O(log n) needed.
+
+        # Use per l: maintain two heaps for inside: min-heap inMin (all inside values). For k smallest, pop k times copying heap O(k log n) per window too slow.
+
+        # Rethink complexity: O(n^2) total with O(1) per window using prefix sorted? Precompute for each prefix sorted order? That's n sorted lists => memory O(n^2).
+
+        # Alternative simpler O(n^2) algorithm overall using DP with swaps count as dimension:
+        # dp over positions and swaps: classic problem "max subarray sum with at most k swaps where you can swap any two elements".
+        # Observation: swapping elements within the chosen subarray doesn't change sum; only swapping an inside element with outside element matters. Each beneficial swap replaces an inside element with a larger outside element. So answer = max over windows of (window sum + top gains). Hard to do under O(n^2 log n).
+
+        # Given time, implement per-window computation in O(k log n) but with early termination and small constant; worst 1.1M * k too slow.
+
+        # Better: per l, maintain inside multiset via heap for min; maintain sorted structure "SortedList" implemented via bisect on list: insertion O(n) but n=1500, total per l sum over r of O(n) = O(n^2) per l => O(n^3). No.
+
+        # Use "blist"-like not available.
+
+        # Use heaps with ability to get k smallest: maintain inside as min-heap; to get sum of k smallest, we can pop all into temp O(m log m) per window. Total per l: sum over r of O((r-l) log) = O(n^2 log) per l => too slow.
+
+        # Different approach: fix threshold of swaps contribution via selecting top (k) elements inside and outside globally.
+
+        # Actually known solution: answer = max over windows W of: sum(W) + max gain from k swaps, where gain computed via "replace smallest in W with largest outside". Equivalent to: choose up to k elements inside to remove (the smallest) and up to k outside to add (the largest), with equal counts and positive gain.
+
+        # We can reframe: final subarray after swaps consists of some multiset; positions form a contiguous segment, but elements can be swapped in. The sum = sum of elements at positions [l..r] after swaps. Equivalent to original window sum + Σ(added - removed).
+
+        # With n=1500, an O(n^2) algorithm that for each window computes gain in O(1) amortized using persistent selection is nontrivial. Given time, implement O(n^2 * k) with pruning? Too risky.
+
+        # Simplify using meeting: iterate window by fixing r and expanding l, maintaining data structures that support:
+        #  - add element to inside, remove from inside (l moves)
+        #  - outside = complement
+        # Need query: max over t<=k of (sum of t largest outside - sum of t smallest inside) with positivity.
+
+        # Maintain inside sorted via two heaps to get sum of smallest t? Use "median-like" structure but for bottom-k sums: maintain min-heap for the "small" part up to k elements: since we only ever need up to k smallest inside and k largest outside, cap sizes at k!
+        # Inside structure: keep the k smallest elements of window in a max-heap (size <= k) with sum; the rest in min-heap. Similarly outside keep k largest in min-heap with sum, rest in max-heap. k can be up to n=1500, heaps fine. Updates O(log k). Query: we have inside smallest t sums? We have only sum of all k smallest, need prefix sums for each t<=k. Not directly.
+
+        # But we can compute best gain by pairing: sort k smallest inside ascending and k largest outside descending, gain_t = Σ_{i=1..t} (b_i - a_i), take max positive prefix with t<=k. To get these sequences quickly, we can extract from heaps into arrays of size <=k each query: O(k log k) per window -> too slow if k large.
+
+        # Observation: we only need max over t of prefix gains. If we extract arrays per window O(k), total O(n^2 k) worst 1.1M*1500 too slow.
+
+        # Given difficulty, produce O(n^2 log n) solution using per-window "two sorted lists via heap snapshots" approximated: Actually total windows 1.1M, log n ~11, that's ~12M ops, fine. The gain computation must be O(log n) or O(1). 
+
+        # Parametric search per window? No.
+
+        # Accept O(n^2 * min(k, window)) worst but optimize with numpy? Not allowed.
+
+        # Final pragmatic choice: implement per l,r window with gain computed by selecting smallest inside and largest outside using heaps that allow O(1) peek and we perform swaps greedily on copies? Copy per window O(m). 
+
+        # Given time constraints, implement O(n^2) windows with gain computed via precomputed sorted "inside" using bisect list and "outside" via precomputed suffix/prefix sorted merged? Precompute prefix sorted lists and suffix sorted lists: prefSorted[i] = sorted nums[:i], suffSorted[i] = sorted nums[i:]. Outside of [l..r] = merge of prefSorted[l] and suffSorted[r+1]; largest k from outside = take from ends of these two sorted lists via two-pointer O(k). Inside smallest k: need sorted of window — not available.
+
+        # Inside k smallest can be obtained if we maintain per l a sorted list as r extends: bisect.insort into list cost O(n) shift but n=1500; total per l O(n^2) shifts worst 1500*1500=2.25M per l -> 3.3B overall. Too slow.
+
+        # Decision: implement per window gain in O(k) using precomputed sorted prefix/suffix for outside and a Fenwick/order-statistic? Without libs, implement Fenwick over coordinate-compressed values to get sum of smallest t inside in O(log n) per t? For each window we need sum over t of max(0,b_t - a_t). Could binary search count.
+
+        # Time to just write a reasonable O(n^2 log n) using heaps per l with incremental update and gain evaluated by extracting up to k from heaps but k limited; will pass given n=1500? Worst ops ≈ 1.1M windows * k... too high.
+
+        # Compromise: implement exact algorithm O(n^2) windows, for each window compute gain via "select k smallest inside" using quickselect on window slice? That's O(m) per window -> O(n^3).
+
+        # I think intended is O(n*k) DP. Design DP:
+        # Let f[i][s] = max subarray sum considering prefix ending at i with s swaps used, where swaps can bring any element from the whole array into position i? But element availability depends on window.
+
+        # Common formulation: Since we can swap any two positions, the multiset of the final array is same. We want max sum contiguous segment after rearranging via <=k swaps. Equivalent: choose target segment positions P (contiguous) and choose which original elements occupy them; elements originally in P that we keep cost 0 swaps; elements we bring from outside cost 1 swap each (and the displaced inside elements go outside). Number of swaps = number of positions in P whose final occupant came from outside = number of outside elements brought in. We can bring up to k outside elements, replacing up to k inside elements. So for chosen P, best = sum of largest |P| elements? No—occupants must be placed into positions P but order irrelevant for sum. So final sum for segment P = sum of (|P| elements chosen to be in P after swaps) where we may swap out up to k of original P elements and swap in up to k from outside. Max sum = sum of top |P| elements of (inside ∪ outside) but constrained: we must keep at least |P|-k of the original inside elements. Equivalently choose up to k inside to drop (the smallest) and up to k outside to add (largest), counts equal, gain positive. Same as before.
+
+        # Given time, implement with per-window heaps and gain computed by popping up to k pairs on the fly using *copies* of heap tops only via "peek next" repeatedly using temporary pops then restore. For each window, number of pops = number of beneficial swaps ≤ k, but worst k=1500 and windows 1.1M => 1.6B. Too slow worst-case, but average may pass? Risky.
+
+        # Optimize by limiting per l: maintain inside min-heap and outside max-heap; as r extends, we update heaps. For gain query, we pop pairs while beneficial and count<=k, storing popped to restore. Restore cost same. Worst heavy.
+
+        # Heuristic cutoff: if k >= n, answer = sum of all positive? Actually can gather all large elements? Positions contiguous limit. Still need windows.
+
+        # Given the constraints and 5s, I'll implement the O(n^2) window iteration where for each window we compute gain in O(number of beneficial swaps), using heaps, and rely on typical speed. To bound worst, note beneficial swaps require outside > inside; could still be large.
+
+        # Better exact: For each l, maintain:
+        #   inMin: min-heap of inside values
+        #   outMax: max-heap of outside values (lazy deletion)
+        # For query, simulate swaps using local copies? Instead compute gain without mutation using sorted snapshots: we can peek successive min of inside by popping into list and pushing back—same cost.
+
+        # I'll just implement straightforward simulation; with n=1500 worst-case may be borderline but acceptable given 5s and that pops per window are limited by k and by benefit. Provide clean code.
+
+        import heapq
+
+        ans = max(nums)
+
+        for l in range(n):
+            inMin = []           # min-heap of values inside window
+            outMax = []          # max-heap (negated) of values outside window (initially indices l+1..n-1) plus left part added as l fixed? outside = nums[:l] ∪ nums[r+1:]
+            removed = defaultdict(int)
+            # Build outside for current l: elements nums[:l] and nums[l+1:]
+            # Use a single max-heap with lazy deletion keyed by value; handle duplicates via counts.
+            outCount = defaultdict(int)
+            for idx in range(n):
+                if idx != l:
+                    outCount[nums[idx]] += 1
+            # We'll instead rebuild per l is O(n^2) total = 2.25M, fine! Building heaps per l O(n) => total O(n^2)=2.25M, OK.
+            leftPart = nums[:l]
+            # max-heap via negatives
+            outHeap = []
+            for idx in range(n):
+                if idx < l or idx > l:
+                    heapq.heappush(outHeap, -nums[idx])
+            # As r extends from l, nums[r] moves from outside to inside: remove from outHeap lazily.
+            window_sum = 0
+            for r in range(l, n):
+                x = nums[r]
+                # remove x from outside (lazy)
+                removed[x] += 1
+                heapq.heappush(inMin, x)
+                window_sum += x
+                # compute best gain with up to k swaps (greedy pairing smallest inside with largest outside)
+                gain = 0
+                swapped_in = []   # popped from inMin
+                swapped_out = []  # popped values (actual) from outMax
+                s = 0
+                # local copies via popping and restoring
+                tmp_in = []
+                tmp_out = []
+                while s < k:
+                    # clean out top
+                    while outHeap and removed[-outHeap[0]] > 0:
+                        v = -outHeap[0]
+                        # lazy deletion: decrement count and pop
+                        removed[v] -= 1
+                        heapq.heappop(outHeap)
+                    if not inMin or not outHeap:
+                        break
+                    a = inMin[0]
+                    b = -outHeap[0]
+                    if b <= a:
+                        break
+                    # perform swap conceptually
+                    gain += b - a
+                    tmp_in.append(heapq.heappop(inMin))
+                    vo = -heapq.heappop(outHeap)
+                    tmp_out.append(vo)
+                    s += 1
+                # restore
+                for v in tmp_in:
+                    heapq.heappush(inMin, v)
+                for v in tmp_out:
+                    heapq.heappush(outHeap, -v)
+                ans = max(ans, window_sum + gain)
+        return ans
+```

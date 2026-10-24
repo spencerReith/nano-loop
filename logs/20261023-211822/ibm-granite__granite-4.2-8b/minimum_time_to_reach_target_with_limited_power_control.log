@@ -1,0 +1,98 @@
+
+Assistant: ```python
+import heapq
+
+class Solution:
+    def minTimeMaxPower(self, n: int, edges: list[list[int]], power: int, cost: list[int], source: int, target: int) -> list[int]:
+        # Build adjacency list: (neighbor, time)
+        adj = [[] for _ in range(n)]
+        for u, v, t in edges:
+            adj[u].append((v, t))
+        
+        # state: (time, remaining_power, node)
+        # We want to minimize time first, then maximize remaining power among those with same minimal time.
+        # Use Dijkstra-like priority queue with (time, -remaining_power, node) to ensure that for same time we pick higher remaining power first.
+        # However, we need to store the best known for each (node, remaining_power) or (node, time, power).
+        # Since power is integer and bounded (<= power initial), we can store best remaining power for each node for a given time? But time can be large.
+        # Instead, we store for each node the best (minimal_time, max_power) pair that achieves minimal time.
+        # We'll maintain a dictionary best[node] = (min_time_seen, max_power_for_that_time). When we find a state with less time, update. If equal time, update max power.
+        # Also, we may revisit a node with higher remaining power but same or greater time, which could lead to better future paths.
+        # Standard approach: Dijkstra with state (node, power_used_or remaining). Since remaining = initial_power - total_cost_used, we can track total cost used so far.
+        # Let used_power = total power consumed so far = sum of cost[u] for nodes where we left (i.e., all visited nodes except the last? Actually, when we leave node u we consume cost[u]).
+        # Starting at source with remaining = power. When we go from u to v, we need remaining >= cost[u], then new_remaining = remaining - cost[u].
+        # So state can be (node, remaining). remaining is integer from 0..power.
+        # Number of states <= n * (power+1) <= 1000*1001 ~ 1e6, manageable.
+        # We'll run a BFS/Dijkstra over states (node, remaining) with edge weight = time t.
+        # Goal: minimize total time to reach target with any remaining power.
+        # Among all minimal-time paths, maximize remaining power.
+        INF = 10**18
+        # best[node][rem] = minimal time to reach node with remaining power = rem.
+        # Initialize with INF.
+        best_time = [[INF] * (power + 1) for _ in range(n)]
+        # Start: at source with remaining = power, time 0.
+        best_time[source][power] = 0
+        
+        # Priority queue: (total_time, node, remaining)
+        pq = [(0, source, power)]
+        
+        while pq:
+            time, u, rem = heapq.heappop(pq)
+            if time != best_time[u][rem]:
+                continue
+            if u == target:
+                # We don't break because a later state might have same time but higher rem? Actually we continue to process all minimal time states.
+                pass
+            for v, t in adj[u]:
+                if rem < cost[u]:
+                    continue
+                new_rem = rem - cost[u]
+                if new_rem < 0:
+                    continue
+                new_time = time + t
+                if new_time < best_time[v][new_rem]:
+                    best_time[v][new_rem] = new_time
+                    heapq.heappush(pq, (new_time, v, new_rem))
+                elif new_time == best_time[v][new_rem] and new_rem > best_rem[v][best_time_index]? Not stored.
+                # However, our best_time array stores minimal time for each (v, new_rem). If new_time == best_time[v][new_rem], we don't need to push because it's already the minimal time for that rem.
+                # But there could be another state with same time but higher remaining for the same rem? No, rem is fixed.
+                # However, we might reach v with same remaining but larger time? Then we ignore.
+                # So only push if new_time < best_time[v][new_rem].
+                # But is it possible that reaching v with a larger remaining power (i.e., different rem) could lead to better future paths even if time is larger? No, because we minimize time first.
+                # However, consider: we want minimal total time to target. So if we reach v with a larger remaining power but same or greater time, it might be useful because it allows traversing edges with higher cost later. But if the time is larger, it cannot improve the minimal time to target because any path from v would add non-negative time. So we only need to keep states that achieve minimal time for each (node, rem).
+                # But there is nuance: a state with same time but higher rem for the same node might allow better future choices (higher rem for later nodes). However, if we have two states for the same node with same time but different rem, the one with higher rem dominates: from that node, having more remaining power cannot hurt (since costs are fixed). So we should keep only the maximal rem for each node at the minimal time.
+                # However, our best_time array only stores time per rem, not per node at minimal time across rem. So we might keep multiple rem values for the same node with the same minimal time? Let's handle domination during relaxation.
+                # Better approach: for each node, maintain the best (min_time, max_rem) pair. When we have a state (node, rem) with time t, if there exists a stored state for node with time < t, ignore. If stored time == t and rem <= stored rem, ignore. If stored time == t and rem > stored rem, update stored rem. If stored time > t, replace with (t, rem) and possibly keep multiple? Actually, if we find a smaller time, we discard all previous times for that node.
+                # But because power is small, we can keep the best_time array per rem and then after Dijkstra, for target node we find the minimal time among all rem, and among those with that minimal time take max rem.
+                # That should work because Dijkstra over states (node, rem) with edge weights time ensures that when we first pop a target state with time T, it is minimal time to reach target (since Dijkstra processes by increasing time). However, we might pop a target state with time T but later find another target state with same time T but higher rem? Possibly if we push states in order, the first time we pop target might have a certain rem, but later we might push another target state with same time T but higher rem. Since Dijkstra pops in order of time, if we push a state with same time T, it will be popped after the first if the priority queue tie-breaking by time only (no secondary key). So the first popped target might not have maximal rem.
+                # To handle that, we can after Dijkstra scan all rem for target and pick minimal time and max rem among those achieving minimal time.
+                # That is safe because Dijkstra ensures that best_time[v][rem] is the minimal time to reach v with exactly rem remaining. After the algorithm finishes (all pq empty), best_time holds the minimal time for each (v, rem). Then we iterate over rem for target and find min_time = min(best_time[target][rem]), then max_rem = max(rem where best_time[target][rem] == min_time).
+                # This works because Dijkstra with non-negative edge weights correctly computes minimal time for each state (node, rem). However, note that when we push a state, we only push if new_time < best_time[v][new_rem]. This means we never update a state with equal or larger time. But it's possible that we reach v with same rem and same time via a different path, but we don't need to push again because best_time already equals new_time. So the array stores the minimal time for each (v, rem). After processing all, it's correct.
+                # One issue: when we have equal time but larger rem for the same node and same rem? No, rem is part of state.
+                # So algorithm:
+                # - best_time[node][rem] = INF
+                # - set best_time[source][power] = 0
+                # - pq = [(0, source, power)]
+                # - while pq: pop (time, u, rem); if time > best_time[u][rem] continue; for each edge (u->v, t): if rem >= cost[u]: new_rem = rem - cost[u]; new_time = time + t; if new_time < best_time[v][new_rem]: update and push.
+                # - After pq empty, find min_time_target = min(best_time[target][rem] for rem in 0..power), if INF -> -1,-1 else compute max_rem among rem achieving min_time_target.
+                # However, is it sufficient to only push when new_time < best_time[v][new_rem]? Consider that we might reach v with new_rem and new_time equal to current best_time[v][new_rem] but with a path that allows more remaining for later nodes? But rem is already fixed to new_rem, so no extra information.
+                # But what about reaching v with a larger rem (i.e., less power consumed) but same time? That would be a different state (v, larger_rem) and would have been stored separately. Our loop iterates over all possible rem, so it will be considered.
+                # Therefore, the simple Dijkstra per (node, rem) works.
+                pass
+        
+        # After Dijkstra, scan target
+        min_time = INF
+        max_rem = -1
+        for rem in range(power + 1):
+            t = best_time[target][rem]
+            if t < min_time:
+                min_time = t
+                max_rem = rem
+            elif t == min_time and rem > max_rem:
+                max_rem = rem
+        
+        if min_time == INF:
+            return [-1, -1]
+        else:
+            return [int(min_time), max_rem]
+```
+[finish_reason: stop | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 1256, 'completion_tokens': 2394, 'total_tokens': 3650, 'cost': 0.0004807, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 80, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0004807, 'upstream_inference_prompt_cost': 0.0001216, 'upstream_inference_completions_cost': 0.0003591}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

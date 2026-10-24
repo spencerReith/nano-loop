@@ -1,0 +1,369 @@
+
+Assistant: ```python
+class Solution:
+    def findColoredRoot(self, edges: list[list[int]], colors: str) -> int:
+        from collections import defaultdict, deque
+
+        n = len(colors)
+        # Build adjacency list
+        adj = defaultdict(list)
+        for u, v in edges:
+            adj[u].append(v)
+            adj[v].append(u)
+
+        # Map colors to indices for modulo arithmetic
+        col_idx = {'R': 0, 'B': 1, 'W': 2}
+        inv_col = ['R', 'B', 'W']
+
+        # Helper: check if coloring starting from root r satisfies both conditions
+        def is_valid_root(r):
+            # BFS from root
+            depth = {r: 0}
+            parent = {r: -1}
+            queue = deque([r])
+            ok = True
+
+            while queue and ok:
+                u = queue.popleft()
+                depth_u = depth[u]
+                color_u = col_idx[colors[u]]
+                # Determine allowed color for children: (color_u + 1) % 3 for next layer
+                allowed_next = (color_u + 1) % 3  # because pattern must be R->B->W->R...
+                # Actually, we must accept all three possible starting patterns.
+                # But when rooted at r, the pattern is fixed: depth 0 gets colors[r], depth 1 gets (colors[r]+1)%3, etc.
+                # However, the pattern could be one of the three cycles; but if we fix root color, the only consistent pattern
+                # is that depth d must be (col_idx[colors[r]] + d) % 3.
+                # Because the sequence is strictly periodic with step +1 mod 3.
+                # The other two patterns (starting with B->W->R or W->R->B) are equivalent to shifting the root color.
+                # So for a candidate root, we can define: expected color at depth d = (col_idx[colors[r]] + d) % 3.
+                # But note: the problem says "Starting at depth 0, these colors follow one of the three repeating sequences".
+                # That means the root's color determines the whole pattern uniquely (up to the cycle choice), because the pattern
+                # is fixed as +1 mod 3. So yes, expected color = (root_color + depth) % 3.
+
+                # Check that all children have the correct expected color and at most two children.
+                children = [v for v in adj[u] if v != parent[u]]
+                if len(children) > 2:
+                    return False
+                for v in children:
+                    # color of v must equal expected color at depth depth_u+1
+                    expected = (col_idx[colors[r]] + depth_u + 1) % 3
+                    if col_idx[colors[v]] != expected:
+                        return False
+                    parent[v] = u
+                    depth[v] = depth_u + 1
+                    queue.append(v)
+
+            # BFS done without conflict -> valid
+            return True
+
+        # However, note: the root's own color must be consistent with the pattern at depth 0.
+        # That is automatically true because depth 0 is root. But we must ensure that the pattern
+        # (i.e., the choice of cycle) is consistent across the whole tree. Our check uses
+        # expected = (col_idx[colors[r]] + depth) % 3, which corresponds to the cycle starting with root's color.
+        # Is that sufficient? Yes, because the only valid sequences are the three cycles that are rotations of each other.
+        # If we fix root's color to be, say, 'R', then depth 1 must be 'B', depth 2 must be 'W', etc.
+        # That matches exactly one of the three cycles (the R->B->W cycle). Similarly if root is 'B', it forces the B->W->R cycle, etc.
+        # Therefore, for a candidate root, we only need to check that all nodes satisfy color = (root_color + depth) mod 3.
+
+        # But wait: what if the root's color could be consistent with a different cycle? No, because the cycle is defined by the starting color.
+        # If the root is 'R', it cannot be part of the B->W->R cycle as depth 0 (since that cycle starts with B), because that would require root to be B.
+        # So indeed, the root's color fixes the cycle uniquely.
+
+        # Now, we must check all nodes? We can check all nodes that are in the tree from root. Since it's a tree, BFS covers all.
+
+        # But we must also consider that the root might have degree > 2? Condition 1: every node has at most two children.
+        # In a rooted tree, children are neighbors except parent. So for root, all neighbors are children, so root must have <=2 children.
+        # Our check includes that.
+
+        # However, the above BFS only checks children when processing from root outward. It uses parent dict to avoid going back.
+        # It will correctly enforce that each node has at most two children.
+
+        # But note: the degree constraint "every node has at most two children" means in the rooted tree, no node has more than two children.
+        # That is exactly what we check.
+
+        # Now, we need to try all nodes? n up to 1e5, trying all roots would be O(n^2). We need smarter.
+
+        # Observation: In a valid coloring, the pattern is fixed by the root color and depth.
+        # Moreover, the tree has max degree 3 (given: every node has degree at most three). That helps.
+
+        # We can try only nodes that have degree <= 2? Actually root must have <=2 children, so degree <=2 (if root has no parent) or <=3? 
+        # Root has no parent, so its degree equals number of children, so must be <=2.
+        # Other nodes have parent + children, so degree <=3 is already given.
+
+        # But we still cannot try all n roots naively.
+
+        # Alternate approach: since the pattern is strict (color = (root_color + depth) % 3), we can attempt to assign depths
+        # from an arbitrary node and see if it works for all, or find a root.
+
+        # Known technique for such "rooted tree with pattern" problems: the valid roots are very limited.
+        # Because the color at each node is fixed, and depth must satisfy color[node] = (root_color + depth[node]) % 3.
+        # So for any edge (u,v), we must have |depth[u] - depth[v]| = 1, and colors must differ by exactly +1 mod 3 (in the direction away from root).
+        # Therefore, for any edge, the colors must be consecutive in the cycle (i.e., not equal and not opposite? only consecutive: R->B, B->W, W->R).
+        # Moreover, if we consider the cycle order: R->B->W->R, then from R only B is allowed for a child, from B only W, from W only R.
+
+        # So for an edge (u,v), if colors[u] == colors[v], then no root can have one as parent and the other as child with this edge direction, because
+        # the color must change. However, the root itself could have same color as a child? No, because depth 0 vs depth 1 must be different (since pattern cycles).
+        # So any edge connecting two nodes of the same color is impossible in a valid rooting? Not necessarily: if the root is placed such that one of the nodes is the parent and the other is child, then they must have consecutive colors.
+        # But if two adjacent nodes have the same color, then they cannot be in a parent-child relationship in a valid tree, because the color must advance by 1 mod 3.
+        # Therefore, in a valid rooting, no edge can connect two nodes of the same color.
+
+        # Check examples: Example 1: edges = [[3,1],[3,2],[1,4],[2,0]], colors = "BRRWB"
+        # Let's list: node0:'W', node1:'R', node2:'R', node3:'B', node4:'B'? 
+        # Actually "BRRWB": index0:'B'? Wait string "BRRWB" -> index0='B', index1='R', index2='R', index3='W', index4='B'? 
+        # But example says root is 3. Let's map: 
+        # They wrote: colors = "BRRWB", and node labels 0..4.
+        # So node0='B', node1='R', node2='R', node3='W', node4='B'? That would be "BRRWB": B,R,R,W,B -> yes.
+        # But they said root at node3 gives pattern W→R→B. So root color W, depth1 R, depth2 B.
+        # Check edges: [3,1]: W-R (ok), [3,2]: W-R (ok), [1,4]: R-B (ok), [2,0]: R-B? node2='R', node0='B' -> ok.
+        # No edge connects same colors? node1='R', node2='R' are adjacent via node3? Actually edge [3,1] and [3,2] connect W to R, and [1,4] is R-B, [2,0] is R-B. No direct R-R edge. So consistent.
+
+        # Example 2: "RBRB": R-B-R-B chain. All edges connect R-B or B-R, which are consecutive? R->B is consecutive (R then B), B->R would be the reverse of B->W? Wait B->R is not consecutive in the cycle R->B->W->R: from B the next must be W, not R. So edge B-R would be invalid if B is parent and R is child? But if R is parent and B is child, that's fine (R->B). However, in a chain R-B-R-B, if we try to root at an endpoint, say node0=R, then depth1=B (ok), depth2=R (should be W) -> fails. Similarly, rooting at node1=B would require depth1=W, but node0=R and node2=R, not W. So indeed no root.
+
+        # Therefore, a necessary condition: no edge connects two nodes of the same color, and every edge must connect colors that are consecutive in the cycle (i.e., (R,B), (B,W), (W,R)). Note: (B,R) is consecutive in the cycle R->B->W? R->B is forward, B->R would be backward (since cycle is directed R->B->W->R). But the pattern requires that from parent to child, the color must go to the next in the cycle (i.e., R->B, B->W, W->R). So the edge direction matters.
+
+        # However, for an undirected edge, it could be oriented either way depending on root. So for an edge (u,v), it must be that {colors[u], colors[v]} is a pair of consecutive colors in the cycle (i.e., not equal and not opposite? there is no opposite, only next). The possible consecutive pairs are (R,B), (B,W), (W,R). So (B,R) is same as (R,B) because set {R,B} is consecutive. Similarly (W,B) is {B,W}, etc. So the edge color set must be one of these three unordered pairs.
+
+        # Check: Example 2: edges connect R-B and B-R and R-B etc. The set {R,B} is consecutive, {B,R} same, so that condition holds, but still no root. So that condition is necessary but not sufficient.
+
+        # Given time, and since the problem expects a solution in 2 seconds, and n up to 1e5, we need an efficient check.
+
+        # However, the problem says "every node has degree at most three". That might allow us to check only nodes with degree <=2 (as root candidates) and run BFS for each candidate? Number of degree<=2 nodes could be up to n, but in a tree with max degree 3, the number of nodes with degree <=2 is at least n-2? Actually many nodes have degree 1 or 2. Worst-case a path has n nodes with two leaves and n-2 nodes of degree 2, so all nodes have degree <=2 except possibly some nodes of degree 3. So number of degree<=2 nodes is n - (#degree3 nodes). #degree3 nodes could be up to about n/3? So still O(n) candidates.
+
+        # But checking each candidate with BFS O(n) would be O(n^2) worst-case, which is too slow for 1e5.
+
+        # We need a linear or O(n log n) solution.
+
+        # Insight: The pattern forces a unique depth modulo 3 up to an additive constant. Specifically, for any node i, we must have depth[i] ≡ (c[i] - root_color) mod 3, where c[i] is the index (0,1,2). So if we pick a root r, then for every node i, depth[i] is determined modulo 3: depth[i] ≡ (col_idx[colors[i]] - col_idx[colors[r]]) mod 3.
+
+        # Moreover, depths must be non-negative integers and consistent with tree distances: for any edge (u,v), |depth[u] - depth[v]| = 1.
+
+        # So we can attempt to assign depths consistently.
+
+        # Choose an arbitrary node as candidate root? We can try to assign depths based on modulo 3 and see if there is a root that works.
+
+        # Alternative approach from known solutions for similar problems (e.g., "Find Root of a Colored Tree" on LeetCode): 
+        #   - First, check that no edge has same-colored endpoints (necessary).
+        #   - Then, for each node, check that it has at most two neighbors with color different from its own and that among those, the colors follow the cycle.
+        #   - But also the root must have <=2 children.
+
+        # Given the time constraint of this response, and since the instruction says "output your answer as one Python code block",
+        # I'll implement a straightforward check for all nodes that have degree <=2 (since root must have <=2 children), but prune early.
+        # In worst-case (path), all nodes have degree <=2, so we would check n roots, each O(n), leading to O(n^2) = 1e10, too slow.
+
+        # But perhaps the test cases are not worst-case? However, the problem states time limit 2s, so we need efficient.
+
+        # Given the complexity, I'll implement a smarter check that runs in O(n) by attempting to deduce the root from a leaf.
+
+        # Observation: In a valid tree, leaves must have color that is either the first or last in the cycle depending on depth. But more importantly, from a leaf, the only possible parent must have the color that is the predecessor in the cycle.
+
+        # We can try to root from a leaf and propagate constraints.
+
+        # Standard method for such tree pattern rooting: 
+        #   - For each edge, define the allowed direction: from color c to next(c) where next(R)=B, next(B)=W, next(W)=R.
+        #   - So an edge (u,v) is valid only if colors[v] == next(colors[u]) for u as parent, or colors[u] == next(colors[v]) for v as parent.
+        #   - That means the edge can be oriented in one direction only if the colors are consecutive in the forward direction; otherwise it must be oriented backward.
+        #   - Actually, if colors are consecutive (i.e., {c, next(c)}), then exactly one orientation is forward (parent->child) and the other is backward (child->parent). The backward orientation would mean the parent has color next(child), which is not equal to next(parent) in general. For example, edge R-B: if R is parent, then B is child (forward); if B is parent, then R would be child, but next(B)=W, not R, so that orientation would be invalid because from B the child must be W. Therefore, for an edge {R,B}, only orientation R->B is allowed as parent->child; B->R is not allowed. Similarly, for edge B-W, only B->W; for W-R, only W->R.
+
+        #   - So each edge between consecutive colors has a forced direction: from the color that is the predecessor in the cycle to the successor.
+
+        #   - Therefore, we can direct each edge from the color with index i to the color with index (i+1)%3.
+
+        #   - Then the tree must become a rooted tree with edges directed away from the root, and every node must have out-degree <=1? No, each node can have multiple children, but the direction is from parent to child, so out-degree can be up to 2 (since max children 2). In-degree can be 1 (except root which has in-degree 0).
+
+        #   - So we can build a directed graph based on the forced direction: for edge (u,v), if col_idx[colors[u]] + 1 == col_idx[colors[v]] (mod 3), then we must have u as parent and v as child. Similarly, if col_idx[colors[v]] + 1 == col_idx[colors[u]], then v must be parent and u child. But if the colors are not consecutive in the forward direction (i.e., not {c, next(c)}), then no orientation works -> invalid tree overall.
+
+        #   - However, the problem allows any of the three cycles, but all cycles are the same forward direction (R->B->W->R). So indeed, for an edge to be part of the pattern, it must go from a node to the next color in the cycle. Therefore, the direction is forced uniquely per edge (if the colors are consecutive in the cycle). If the edge connects two colors that are not consecutive (i.e., same or separated by two steps like R-W), then it's impossible.
+
+        #   - Check: R and W are not consecutive (R->B->W, so R and W are two steps apart), so edge R-W cannot appear in a valid tree because from R the child must be B, not W; from W the child must be R? Wait, from W the child must be R (since W->R), so W-R is consecutive. R-W would be R to W, which is not forward from R (which is B), nor forward from W (which is R) if we consider direction: from W to R is forward, but from R to W is backward (since W->R is forward, R->W would be two steps backward). So edge R-W can only be oriented W->R, not R->W. Therefore, if we have edge R-W, it must be oriented W->R. So it is consecutive in the sense that {R,W} = {W,R} and W->R is the forward direction. So actually every pair of distinct colors is consecutive in one direction? No: the cycle is R->B->W->R, so the consecutive pairs are (R,B), (B,W), (W,R). So {R,W} is not consecutive because the cycle does not have an edge R-W; it goes R-B-W. So R and W are not adjacent in the cycle; they are separated by B. Therefore, an edge directly connecting R and W would violate the pattern because from R you must go to B, not W; from W you must go to R? Wait, from W the next is R, so W->R is allowed. So if we have edge W-R, it can be oriented W->R. But if we have edge R-W (same set), it can be oriented W->R, meaning W is parent and R is child. So the edge between R and W is allowed only if it is oriented from W to R. Similarly, edge between R and B must be R->B, and between B and W must be B->W.
+
+        #   - So indeed, for any edge with two distinct colors, there is exactly one valid orientation (the one where parent color = c and child color = next(c)), provided that the two colors are consecutive in the cycle (i.e., not {R,W} with R not equal to next(W)? Let's list:
+        #         next(R)=B, so edge R-B must be R->B.
+        #         next(B)=W, so edge B-W must be B->W.
+        #         next(W)=R, so edge W-R must be W->R.
+        #     What about edge R-W? It would be R and W: next(R)=B ≠ W, next(W)=R, so only W->R is valid (since next(W)=R). So edge R-W is valid only if oriented W->R.
+        #     Similarly, edge B-R: next(B)=W ≠ R, next(R)=B, so only R->B is valid? Wait, next(R)=B, so R->B is valid; next(B)=W, so B->R is not valid. So edge B-R must be R->B? But if we have B and R, then the only valid parent-child is R->B. So yes.
+        #     In general, for two distinct colors c1 and c2, the valid parent must be the color that precedes the other in the cycle. That is, if (c1, c2) equals (c, next(c)) for some c, then c must be parent and c2 child. If it equals (next(c), c), then c must be child and next(c) parent? Let's define: the cycle order is c -> next(c) -> next(next(c)) -> c. So for an edge between c and d, with c ≠ d, if d == next(c), then c can be parent and d child. If c == next(d), then d can be parent and c child. If neither (i.e., c and d are not adjacent in the cycle, which only happens if they are separated by two steps like R and W), then there is no valid orientation? But R and W: W = next(next(R)), so they are two steps apart. In that case, from R the child must be B, not W; from W the child must be R. So W->R is valid (since next(W)=R), but R->W is not. So indeed, if the edge is between R and W, then only W can be parent and R child. That is consistent: if we have R and W, then W must be parent and R child. Similarly, if we have B and R, then R must be parent and B child? Check: B and R: next(B)=W ≠ R, next(R)=B, so only R->B is valid. So yes.
+
+        #   - Therefore, for any edge with two distinct colors, there is exactly one direction that is valid: from the color that is the predecessor of the other in the cycle.
+
+        #   - So we can direct each edge from parent to child uniquely based on colors.
+
+        #   - After directing, we get a directed graph. In a valid rooted tree, there should be exactly one node with in-degree 0 (the root), and all other nodes have in-degree 1, and out-degree <=2.
+
+        #   - Moreover, the direction must be consistent along paths (no cycles), but since it's a tree and directions are forced, there might be a conflict: if we get two incoming edges to a node, then no root can satisfy.
+
+        #   - Steps:
+        #         1. For each edge (u,v):
+        #             if colors[u] == colors[v]: return -1 (impossible)
+        #             else:
+        #                 determine which color must be parent. Let c_u = col_idx[colors[u]], c_v = col_idx[colors[v]].
+        #                 The valid parent is the one with color c such that (c+1)%3 == the other color.
+        #                 i.e., if (c_u + 1) % 3 == c_v, then u must be parent, v child.
+        #                 else if (c_v + 1) % 3 == c_u, then v must be parent, u child.
+        #                 else: impossible (colors not consecutive in cycle) -> return -1.
+        #                 But note: with three colors in a cycle, any two distinct colors are consecutive in exactly one direction? Check: 
+        #                     colors: R=0, B=1, W=2.
+        #                     (0+1)%3=1 -> R->B valid.
+        #                     (1+1)%3=2 -> B->W valid.
+        #                     (2+1)%3=0 -> W->R valid.
+        #                     Now, is (0,2) consecutive? (0+1)%3=1 !=2, (2+1)%3=0 ==0? (2+1)%3=0 which equals R, so W->R is valid for edge W-R. For edge R-W (0 and 2), (0+1)%3=1 !=2, but (2+1)%3=0 ==0, so yes, (c_v+1)%3 == c_u? Let c_v=2 (W), c_u=0 (R), then (2+1)%3=0 == c_u, so v must be parent (W) and u child (R). So indeed, for any two distinct colors, exactly one of (c_u+1)%3==c_v or (c_v+1)%3==c_u holds? 
+        #                     Check all pairs:
+        #                         R(0) & B(1): (0+1)=1==1 -> u parent; (1+1)=2 !=0 -> so only u parent works.
+        #                         R(0) & W(2): (0+1)=1 !=2; (2+1)=0==0 -> v parent works.
+        #                         B(1) & W(2): (1+1)=2==2 -> u parent; (2+1)=0 !=1 -> only u parent.
+        #                     So yes, for any two distinct colors among {0,1,2} in a cycle of length 3, exactly one of the two conditions holds. Because the cycle is of length 3, every color has exactly one successor and one predecessor.
+        #                 Therefore, we can always assign a direction uniquely.
+
+        #         2. Build directed graph (outgoing) and in-degree count.
+        #         3. Find all nodes with in-degree 0. There should be exactly one such node (the root candidate). If zero or more than one, return -1.
+        #         4. Check that for that root, all nodes have out-degree <=2 (which they will from directed edges, but we must ensure no node has out-degree >2).
+        #         5. Also, the directed graph must be acyclic and connected in the rooted sense (i.e., from root we can reach all nodes). Since it's a tree and directions are consistent, if there is exactly one in-degree 0 node and all others have in-degree 1, then it must be a rooted tree (no cycles).
+        #         6. Additionally, we must ensure that the root has degree <=2 in the undirected tree? But in the directed tree, root's out-degree should be <=2 (children), which is already checked.
+
+        #   - However, is it possible that after directing, a node gets two incoming edges? That would mean two neighbors both try to be parent of it, which would indicate inconsistency, and we would have more than one node with in-degree 0? Let's see: if a node has two neighbors that both have colors that require this node to be child (i.e., both neighbors have color equal to predecessor of this node's color), then both would try to direct edge toward this node as child, giving it in-degree 2. That would violate the requirement that each node has at most one parent. So such a node would have in-degree >1, and then we would have no node with in-degree 0? Actually, there might still be a node with in-degree 0, but the node with in-degree 2 would have two parents, which is invalid. So we must check that every node has in-degree <=1.
+
+        #   - Similarly, out-degree <=2.
+
+        #   - Therefore, algorithm:
+        #         - Map colors to 0,1,2.
+        #         - For each edge (u,v):
+        #             if colors[u] == colors[v]: return -1
+        #             c_u = col_idx[colors[u]], c_v = col_idx[colors[v]]
+        #             if (c_u + 1) % 3 == c_v:
+        #                 # u -> v
+        #                 add directed edge u->v
+        #             else: # then (c_v+1)%3 == c_u must hold
+        #                 add directed edge v->u
+        #         - After processing all edges, compute in_degree for each node.
+        #         - Count nodes with in_degree 0. If not exactly 1, return -1.
+        #         - Let root be that node.
+        #         - Check that for all nodes, in_degree <=1 and out_degree <=2.
+        #         - Also, do a DFS/BFS from root to ensure all nodes are reachable (should be, since tree and directions consistent).
+        #         - Return root.
+
+        #   - But wait: is it possible that the forced direction leads to a root that has more than 2 children? That would be out_degree >2, which we check.
+
+        #   - Example 1: edges = [[3,1],[3,2],[1,4],[2,0]], colors = "BRRWB"
+        #         Let's index: node0:'B' (1), node1:'R'(0), node2:'R'(0), node3:'W'(2), node4:'B'(1)  [since "BRRWB": index0='B', index1='R', index2='R', index3='W', index4='B']
+        #         col_idx: R->0, B->1, W->2.
+        #         edges:
+        #           (3,1): colors[3]='W'=2, colors[1]='R'=0. Check: (2+1)%3=0 ==0 -> so 3->1? (c_v? Let's do rule: if (c_u+1)%3==c_v then u->v. For u=3,c=2: (2+1)%3=0 == c_v=0 -> true, so 3->1.
+        #           (3,2): (2+1)%3=0 == c_v=0 -> 3->2.
+        #           (1,4): c1=0, c4=1: (0+1)%3=1==1 -> 1->4.
+        #           (2,0): c2=0, c0=1: (0+1)%3=1==1 -> 2->0.
+        #         Directed edges: 3->1, 3->2, 1->4, 2->0.
+        #         In-degrees: node3:0, node1:1, node2:1, node4:1, node0:1. Only node3 has in-degree 0. Out-degrees: node3:2 (<=2), node1:1, node2:1, others 0. All good. BFS from 3 reaches all. Return 3. Works.
+
+        #   - Example 2: edges = [[0,1],[1,2],[2,3]], colors = "RBRB" -> node0='R'(0), node1='B'(1), node2='R'(0), node3='B'(1)
+        #         edges:
+        #           (0,1): (0+1)%3=1==1 -> 0->1
+        #           (1,2): c1=1, c2=0: (1+1)%3=2 !=0; (0+1)%3=1==1? Let's apply rule: for edge (1,2), check (c1+1)%3==c2? (1+1)=2 !=0. So go to else: then (c2+1)%3==c1? (0+1)=1==1 -> true, so 2->1? But our rule says: if (c_u+1)%3==c_v then u->v else v->u. Let's do consistently with u=1,v=2: c1=1, c2=0. (c1+1)%3=2 !=0, so else: v->u i.e., 2->1.
+        #           (2,3): (0+1)%3=1==1 -> 2->3? Check: u=2,c=0: (0+1)=1==c3=1 -> 2->3.
+        #         Directed edges: 0->1, 2->1, 2->3.
+        #         In-degrees: node0:0, node1:2 (from 0 and 2), node2:0? node2 has no incoming? from edge 2->1 and 2->3, so node2 out, in=0; node3:1.
+        #         Nodes with in-degree 0: node0 and node2 (two nodes). Also node1 has in-degree 2 (>1). So return -1. Correct.
+
+        #   - Edge case: what if the forced direction gives a node with in-degree 0 but out-degree >2? That would be invalid.
+
+        #   - Therefore, the algorithm seems correct.
+
+        #   - Implementation details:
+        #         - Build out_edges list or just compute in_degree and out_degree counts.
+        #         - Use array of size n for in_deg and out_deg.
+        #         - For each edge (u,v):
+        #             if colors[u] == colors[v]: return -1
+        #             c_u = col_idx[colors[u]], c_v = col_idx[colors[v]]
+        #             if (c_u + 1) % 3 == c_v:
+        #                 # u -> v
+        #                 out_deg[u] += 1
+        #                 in_deg[v] += 1
+        #             else:
+        #                 # must be v -> u
+        #                 out_deg[v] += 1
+        #                 in_deg[u] += 1
+        #         - After loop, find root candidates: nodes with in_deg == 0.
+        #         - If not exactly one node with in_deg == 0, return -1.
+        #         - Check that all in_deg[i] <= 1 and all out_deg[i] <= 2. (Actually if any node has in_deg>1 or out_deg>2, invalid)
+        #         - Optionally, BFS from root to ensure all nodes are reached (should be, but check for disconnectedness due to wrong direction? Since it's a tree and directions are consistent with the rule, if root has in_deg 0 and others have in_deg 1, the directed graph must be a rooted tree). Still, do BFS to confirm all nodes visited.
+        #         - Return the root.
+
+        #   - Complexity O(n).
+
+        # Let's test mentally on a valid path with three nodes: edges=[(0,1),(1,2)], colors="RBR" (node0='R', node1='B', node2='R')
+        #   But "RBR": R->B->R. However, pattern: depth0=R, depth1=B, depth2=W required? Because from B child must be W, not R. So invalid. Let's see forced direction:
+        #       (0,1): R->B valid (0->1)
+        #       (1,2): B and R: for edge (1,2), c1=1, c2=0: (1+1)%3=2 !=0, so else: 2->1? Check: (0+1)%3=1==1, so 2->1? That would give edge from node2 (R) to node1 (B), but then node1 would have two incoming? node1 already has from 0->1, and now 2->1, so in_deg[1]=2 -> invalid. So returns -1, correct.
+
+        #   Another valid: "RWB" for three nodes path 0-1-2: colors[0]='R', [1]='W', [2]='B'? But pattern R->B->W would be R at depth0, B depth1, W depth2. So edge0-1 should be R->B, but we have R-W, which is not consecutive forward. However, W->R is consecutive, so edge0-1 would be directed 1->0 if W parent? Let's do: edge(0,1): R and W -> only W->R valid, so 1->0. edge(1,2): W and B -> only B->W? Check: W=2, B=1: (2+1)%3=0 !=1, (1+1)%3=2==2? Actually B=1, W=2: (1+1)%3=2==2 -> B->W valid, so 1->2? Wait for edge (1,2): c1=2 (W), c2=1 (B): (2+1)%3=0 !=1, so else: (1+1)%3=2==2 -> so 2->1? Let's apply rule: if (c_u+1)%3==c_v then u->v else v->u. For u=1 (W=2), v=2 (B=1): (2+1)%3=0 !=1, so else -> v->u i.e., 2->1. So edges: 1->0 and 2->1. Then in_deg: node0:1, node1:1 (from 2), node2:0. Root is node2. Check out_deg: node2:1 (to1), node1:1 (to0), node0:0. All <=2. BFS from node2 reaches all. So valid root is node2. Let's verify pattern: root node2='B' (color B), depth0=B, depth1 should be W (node1), depth2 should be R (node0). Indeed colors: node2='B', node1='W', node0='R'. That matches B->W->R cycle. Good.
+
+        #   So algorithm works.
+
+        #   One more: if there is a node with degree 3, and forced directions give it out-degree 3? That would be caught by out_deg>2.
+
+        #   Therefore, implement as described.
+
+        #   Note: the problem says "every node has degree at most three", so out_deg<=2 is possible only if root has degree <=2 and others have parent + up to 2 children -> total degree up to 3, so out_deg<=2 is correct.
+
+        #   Let's code accordingly.
+
+        n = len(colors)
+        col_idx = {'R': 0, 'B': 1, 'W': 2}
+        in_deg = [0] * n
+        out_deg = [0] * n
+
+        for u, v in edges:
+            cu = col_idx[colors[u]]
+            cv = col_idx[colors[v]]
+            if cu == cv:
+                return -1
+            if (cu + 1) % 3 == cv:
+                # u -> v
+                out_deg[u] += 1
+                in_deg[v] += 1
+            else:
+                # then (cv + 1) % 3 == cu must hold
+                out_deg[v] += 1
+                in_deg[u] += 1
+
+        # Find nodes with in_deg == 0
+        roots = [i for i in range(n) if in_deg[i] == 0]
+        if len(roots) != 1:
+            return -1
+
+        root = roots[0]
+
+        # Check in_deg <=1 for all, out_deg <=2 for all
+        for i in range(n):
+            if in_deg[i] > 1 or out_deg[i] > 2:
+                return -1
+
+        # BFS/DFS from root to ensure all nodes are reachable (the directed graph should be a tree rooted at root)
+        # Build adjacency for directed graph (outgoing)
+        from collections import deque
+        adj_out = [[] for _ in range(n)]
+        for u, v in edges:
+            cu = col_idx[colors[u]]
+            cv = col_idx[colors[v]]
+            if (cu + 1) % 3 == cv:
+                adj_out[u].append(v)
+            else:
+                adj_out[v].append(u)
+
+        visited = [False] * n
+        queue = deque([root])
+        visited[root] = True
+        count = 1
+        while queue:
+            u = queue.popleft()
+            for w in adj_out[u]:
+                if not visited[w]:
+                    visited[w] = True
+                    queue.append(w)
+                    count += 1
+
+        if count != n:
+            return -1
+
+        return root
+```
+[finish_reason: stop | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 848, 'completion_tokens': 9640, 'total_tokens': 10488, 'cost': 0.0015268, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 80, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0015268, 'upstream_inference_prompt_cost': 8.08e-05, 'upstream_inference_completions_cost': 0.001446}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

@@ -1,0 +1,108 @@
+
+Assistant: ```python
+class Solution:
+    def findColoredRoot(self, edges: list[list[int]], colors: str) -> int:
+        n = len(colors)
+        adj = [[] for _ in range(n)]
+        for u, v in edges:
+            adj[u].append(v)
+            adj[v].append(u)
+        
+        deg = [len(a) for a in adj]
+        
+        # Precompute color integers and expected color of successor
+        col = [0 if c == 'R' else 1 if c == 'B' else 2 for c in colors]
+        nxt = [1, 2, 0]  # R->B->W->R
+        
+        # For each node, determine if the color pattern forces a "parent direction"
+        # If a node has color c, then any neighbor with color next(c) must be its child
+        # (if rooted such that this node is at some depth d, neighbor at d+1 has next color),
+        # and any neighbor with color prev(c) could be parent OR child? 
+        # No - in a tree oriented away from root, every edge connects depth d to d+1.
+        # The color at depth d+1 must be next(color at depth d) for the specific phase.
+        # So for any edge (u,v), the direction is forced: the node whose color's next is the other's color is the parent.
+        
+        # parent[u] = the unique neighbor that must be u parent, or -1 if u could be root (no forced parent)
+        # But the phase is global! Let's think.
+        
+        # Actually, the phase is determined by root's color: phase = index of root color in sequence starting R,B,W.
+        # The sequence is R(0)->B(1)->W(2)->R... starting phase s means depth d color = (s + d) mod 3.
+        # Root color = col[root] = s. So s = col[root].
+        # Then depth d color must be (col[root] + d) mod 3.
+        # For edge u-v with depths differing by 1, the deeper one has color (shallower's color + 1) mod 3.
+        # So edge direction: u is parent of v iff col[v] == nxt[col[u]].
+        # This must be consistent: exactly one of col[v]==nxt[col[u]] or col[u]==nxt[col[v]] should hold
+        # (they can't both hold since that needs c = nxt[nxt[c]], i.e. c = c+2 mod 3, impossible; 
+        #  and if neither holds, this edge violates pattern for ANY root).
+        
+        # So: check every edge is "orientable": col[v] == nxt[col[u]] XOR col[u] == nxt[col[v]].
+        # If an edge has same color or color difference not 1 mod 3 -> impossible.
+        # Since colors only 3 values, difference mod 3 is 0, 1, or 2. Diff 1 one way means diff 2 the other.
+        # Valid iff (col[v] - col[u]) % 3 in {1, 2}, i.e. not 0. And if it's 1, u->v; if 2, v->u.
+        # Wait: if (col[v]-col[u])%3 == 1 then col[v]==nxt[col[u]], so u must be parent (shallower).
+        # If (col[v]-col[u])%3 == 2 then col[u]==nxt[col[v]] (since col[u]-col[v] = -2 = 1 mod 3), so v must be parent.
+        
+        # After orienting all edges, we need:
+        # - The orientation is acyclic and has exactly one source (root). In a tree with all edges oriented, 
+        #   acyclic iff exactly one node has indegree 0 and rest indegree 1.
+        # - Binary property: every node outdegree <= 2. Given max degree 3 and indegree<=1, outdegree <= 2 auto if indegree>=1,
+        #   but root has indegree 0 and degree <= 3, could have outdegree 3 -> violates binary! So root must have degree <= 2.
+        #   Actually a non-root node has indegree exactly 1, degree <=3, so outdegree <= 2 automatically. Good.
+        # - Root outdegree <= 2 means root degree <= 2 (since root has no parent). So if the unique source has degree 3, invalid.
+        
+        # Also need the phase consistency: depth color pattern. Since every edge goes from color c to nxt[c],
+        # following from root at depth 0 with color col[root], by induction node at depth d has color (col[root]+d)%3. 
+        # That matches sequence starting with s=col[root]: depth d color (s+d)%3. 
+        # So any consistent orientation automatically satisfies layered color pattern. No separate phase check needed.
+        # Wait, but do all nodes at same depth automatically have same color? In a tree, depth is well-defined 
+        # from root. Color of node = (col[root] + depth) mod 3 by induction along unique path. Yes, all at same depth share color.
+        
+        # So algorithm:
+        # 1. For each edge, determine forced direction; if same color -> return -1.
+        # 2. Compute indegree for each node. 
+        # 3. Find nodes with indegree 0 (sources). Must be exactly 1. If 0 or >1 -> -1.
+        #    Actually in a finite tree orientation, there must be at least one source. If >1 sources -> some node would need two parents? 
+        #    Let's just count indegrees: sum indegrees = n-1. If number of sources (indegree 0) = k, then nodes with indegree>=1 = n-k.
+        #    For a valid rooted tree orientation: exactly one source, all others indegree exactly 1.
+        #    If any node has indegree >= 2 -> invalid (would have two parents). 
+        #    Given sum = n-1 and one source, rest n-1 nodes share n-1 indegrees, so each exactly 1. Good.
+        # 4. Check source has outdegree <= 2 (equiv degree <= 2 since indegree 0). If source degree == 3 -> invalid.
+        #    Wait, source degree could be 3 (three children) -> violates binary. If source degree <=2 fine.
+        #    But also non-source nodes: indegree 1, degree <=3 => outdegree <=2 automatically satisfied.
+        
+        # Edge case n: source degree 0 (n=1) but n>=2 here.
+        
+        indeg = [0]*n
+        outdeg = [0]*n
+        for u, v in edges:
+            d = (col[v] - col[u]) % 3
+            if d == 0:
+                return -1
+            elif d == 1:
+                # u -> v
+                indeg[v] += 1
+                outdeg[u] += 1
+            else:
+                # v -> u
+                indeg[u] += 1
+                outdeg[v] += 1
+        
+        root = -1
+        for i in range(n):
+            if indeg[i] == 0:
+                if root != -1:
+                    return -1  # multiple sources
+                root = i
+            elif indeg[i] > 1:
+                return -1
+        
+        if root == -1:
+            return -1
+        
+        # Binary check
+        for i in range(n):
+            if outdeg[i] > 2:
+                return -1
+        
+        return root
+```

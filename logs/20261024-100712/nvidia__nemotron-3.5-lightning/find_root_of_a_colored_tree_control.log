@@ -1,0 +1,924 @@
+
+Assistant: ```python
+class Solution:
+    def findColoredRoot(self, edges: list[list[int]], colors: str) -> int:
+        n = len(colors)
+        # build adjacency list
+        adj = [[] for _ in range(n)]
+        for u, v in edges:
+            adj[u].append(v)
+            adj[v].append(u)
+
+        # The colors of a valid root must follow one of the three cycles.
+        # For each node, record which cycle start (offset from its own color)
+        # is consistent with all its neighbors seen so far.
+        # There are three possible sequences starting at depth 0:
+        # 0: R -> B -> W
+        # 1: B -> W -> R
+        # 2: W -> R -> B
+        # For a node u with color c, if we go to neighbor v, the required color
+        # of v is the next in the cycle.  So v's color must equal colors[(c+1)%3]
+        # (or (c+2)%3 if the edge goes "backwards"? Actually depth increases by 1,
+        # so child depth = parent depth + 1 => child color = cycle[(parent_color_index+1)%3]).
+        # We will just propagate constraints.
+
+        # For each node we maintain a bitmask of allowed cycle starts (0..2).
+        # Initially all three are possible.
+        possible = [7] * n  # binary 111, bits 0,1,2 set.
+
+        # We'll do a DFS from an arbitrary root (0) to compute constraints.
+        # Since it's a tree, we can just use recursion/stack.
+        # We need to compute for each node the set of cycle starts that are
+        # consistent with the whole tree when that node is root.
+        # However, doing it directly from one root is not enough because
+        # the orientation changes. We'll use rerooting DP.
+
+        # First, root the tree at 0 and compute dp_down[u]: set of cycle starts
+        # consistent with the subtree of u (when tree is rooted at 0).
+        # Also compute parent color info.
+
+        # To simplify, note that the condition "all nodes at same depth have same color"
+        # and "every node has at most two children" heavily restricts the structure.
+        # Since max degree is 3, a node can have at most 2 children (since one neighbor is parent).
+        # So the binary-tree property is automatically satisfied for any root
+        # as long as we don't have a node with 3 children. But degree <=3, so if root has degree 3,
+        # it would have 3 children -> invalid. So root degree must be <=2, and any other node
+        # already has parent, so children <=2 automatically.
+
+        # Thus the only real constraint is the layered color pattern.
+
+        # Let's define for each directed edge u -> v (v is child of u) the required
+        # color of v given u's color and cycle start s:
+        #   child_color = colors[(color_index(u) + 1) % 3] if s=0? Wait.
+        # Actually the sequence is fixed globally once root is chosen.
+        # If root has color c0, then depth 1 must be color c1 = next(c0),
+        # depth 2 = next(c1), etc., where next cycles R->B->W->R...
+        # So if we fix the global sequence (one of 3), then for any node at depth d,
+        # its color must be seq[(start_idx + d) % 3], where start_idx corresponds to root's color index.
+        # Alternatively, we can think: for edge parent->child, child color must be
+        # the successor of parent color in the chosen cycle.
+
+        # Let's map colors to indices: 'R'->0, 'B'->1, 'W'->2.
+        # The three cycles are:
+        # seq0: [0,1,2]  (R->B->W)
+        # seq1: [1,2,0]  (B->W->R)
+        # seq2: [2,0,1]  (W->R->B)
+        # For a given cycle seq (0,1,2), the required child color of a parent with color c
+        # is seq[(idx(c) + 1) % 3].
+
+        # For a node u to be root, for every neighbor v (considered as child),
+        # we need colors[v] == seq[(idx(colors[u]) + 1) % 3].
+        # And recursively, for v's children, etc.
+
+        # We can compute for each node the set of cycles that work for the whole tree
+        # using rerooting.
+
+        # Let's assign idx: color_to_idx = {'R':0, 'B':1, 'W':2}
+        # And nxt[idx] = (idx+1)%3.
+
+        color_to_idx = {'R': 0, 'B': 1, 'W': 2}
+        nxt = [1, 2, 0]  # nxt[0]=1, nxt[1]=2, nxt[2]=0
+
+        # dp_down[u] = bitmask of cycles (0,1,2) that are consistent with the subtree
+        # when tree is rooted at 0 and u is considered with parent direction.
+        # Actually we need to know for each node, given its parent's color and the cycle,
+        # whether its subtree is valid. But since we will reroot, we can compute
+        # for each directed edge u->v the set of cycles valid for v's side.
+
+        # Standard rerooting:
+        # 1. Pick root 0. Do post-order DFS to compute dp_down[u]: mask of cycles
+        #    that make the subtree of u (when parent is p) valid.
+        #    For leaf, dp_down[u] = 7 (all cycles valid) because no children.
+        #    For internal node, a cycle s is valid if for every child v,
+        #    the edge u->v is valid under cycle s, AND dp_down[v] has bit s set.
+        #    Edge u->v valid under cycle s means: colors[v] == nxt[color_to_idx[colors[u]]]? Wait.
+        #    Actually, if cycle is s, then the required color of child is determined by parent's color
+        #    and the cycle's starting point? Let's formalize.
+
+        # If we fix a global cycle index s in {0,1,2}, the sequence of colors with depth is:
+        # depth d color = seq[s][(d) % 3]? But seq[s] is a permutation of [0,1,2].
+        # Actually the three cycles are:
+        # s=0: depth 0: R(0), depth 1: B(1), depth 2: W(2), depth 3: R(0)...
+        # s=1: depth 0: B(1), depth 1: W(2), depth 2: R(0)...
+        # s=2: depth 0: W(2), depth 1: R(0), depth 2: B(1)...
+        # So if root has color c, then for cycle s to be consistent, root's color must equal seq[s][0].
+        # But root's color is given. So only cycles where seq[s][0] == color_of_root are possible.
+        # Alternatively, we can think: given root color c0, the cycle is determined by the
+        # required color of its children. If a child has color c1, then the cycle must be such that
+        # c1 is the successor of c0. There are potentially two successors? No, each color has exactly
+        # one successor in the cycle. But there are three cycles, and for a given c0, exactly one cycle
+        # has c0 at depth 0, and then the successor is fixed. Wait: For c0='R' (0),
+        # s=0 gives successor B(1), s=1 gives successor W(2)? Let's check:
+        # s=1: depth0 B, depth1 W, depth2 R. So if root is R, s=1 would have root at depth2? No,
+        # depth0 is B. So if root is R, s=1 is invalid because root color must be depth0 color.
+        # So for a given root color, only one cycle start s has root at depth 0 with that color.
+        # Let's verify: cycles are sequences starting at depth 0.
+        # s=0: R,B,W,R,B,W...
+        # s=1: B,W,R,B,W,R...
+        # s=2: W,R,B,W,R,B...
+        # So if root color is 'R', only s=0 has root at depth 0 as R. s=1 has B, s=2 has W.
+        # Thus, the cycle is uniquely determined by the root's color! Wait, but the problem says:
+        # "Starting at depth 0, these colors follow one of the three repeating sequences:
+        #  R → B → W → R → B → W → ...
+        #  B → W → R → B → W → R → ...
+        #  W → R → B → W → R → B → ..."
+        # And "All nodes at the same depth have the same color."
+        # So if root is R, then depth 0 is R. Then depth 1 must be B (from first sequence) or W (from second? second starts B at depth0, so depth0 B, depth1 W, depth2 R. If root is R, it would be at depth2, but depth0 is fixed as root. So root must be the start of the sequence.)
+        # Actually, the sequences are fixed patterns starting at depth 0. The root's color must match the first element of the chosen sequence.
+        # Therefore, the chosen sequence is uniquely determined by the root's color!
+        # Because the root is at depth 0, its color must be the first color of the sequence.
+        # The three sequences have first colors R, B, W respectively.
+        # So if root is R, the only possible sequence is R->B->W->R...
+        # If root is B, only B->W->R...
+        # If root is W, only W->R->B...
+        # This is a crucial observation! Let's double-check with example 1.
+        # Example 1: colors = "BRRWB", output root 3. colors[3] = 'W' (since string: 0:B,1:R,2:R,3:W,4:B).
+        # Rooting at 3: depth0 is W. Then sequence must be W -> R -> B -> W -> R -> B...
+        # Indeed, the explanation says: "every edge advances to the next color in the cycle (W → R → B)".
+        # So yes, the cycle is completely determined by the root's color.
+
+        # Therefore, for a candidate root u, there is exactly one allowed cycle sequence:
+        # if colors[u] == 'R': sequence is R->B->W->R...
+        # if 'B': B->W->R->B...
+        # if 'W': W->R->B->W...
+        # Let's map this to a required "next color" function:
+        # next_color(c):
+        #   if c == 'R': return 'B'
+        #   if c == 'B': return 'W'
+        #   if c == 'W': return 'R'
+        # This is independent of the root? Wait, the sequence is R->B->W->R...
+        # So from R next is B, from B next is W, from W next is R.
+        # This is a fixed cyclic order: R -> B -> W -> R.
+        # But the three sequences given are:
+        # 1: R -> B -> W -> R...
+        # 2: B -> W -> R -> B...
+        # 3: W -> R -> B -> W...
+        # These are all the same cyclic order just starting at different points.
+        # So indeed, once root color is fixed, the entire depth-color mapping is fixed:
+        # depth d color must be the d-th element in the cycle starting from root color.
+        # Which is exactly: color at depth d = next^d(root_color), where next cycles R->B->W->R.
+        # So we don't need to consider three different cycles; the cycle is implicitly determined by root color.
+        # Let's verify: If root is R, depth1 must be B, depth2 W, depth3 R, etc.
+        # If root is B, depth1 must be W, depth2 R, depth3 B, etc.
+        # If root is W, depth1 must be R, depth2 B, depth3 W, etc.
+        # This matches the three sequences.
+
+        # So the condition for an edge parent -> child is:
+        # colors[child] must equal next_color(colors[parent]).
+        # And this must hold for all edges in the tree when oriented away from root.
+
+        # Also, binary-tree property: every node has at most two children.
+        # Since max degree is 3, and root has no parent, root can have at most 3 neighbors.
+        # If root has degree 3, it would have 3 children -> violates binary-tree property.
+        # For any other node, it has one parent, so at most 2 children -> automatically satisfied.
+        # So we just need to check that root degree <= 2, and for all edges parent->child,
+        # colors[child] == next_color(colors[parent]).
+
+        # Wait, is that sufficient? "All nodes at the same depth have the same color."
+        # If every edge parent->child satisfies child color = next(parent color),
+        # then by induction, all nodes at depth d have the same color (starting from root color,
+        # then next, etc.). Because the tree is connected and we orient away from root,
+        # every node at depth d is reached by a unique path from root, and the color is determined
+        # by applying next d times to root color. So yes, all nodes at same depth will have same color.
+        # Also the layered color pattern condition is exactly that.
+
+        # So the problem reduces to: find a node r such that:
+        # 1. degree(r) <= 2
+        # 2. For every neighbor v of r, colors[v] == next_color(colors[r])
+        # 3. For every other edge u->v (where u is parent of v when tree rooted at r),
+        #    colors[v] == next_color(colors[u]).
+        # But condition 3 is global: if we just check all edges in the tree (undirected),
+        # and ensure that for the chosen root, the direction from parent to child satisfies the next color,
+        # that is equivalent to: if we root at r, then for every edge, the node closer to r is parent,
+        # and the child color must be next of parent color.
+        # This is not simply a property of the undirected edges, because the "next" relation
+        # depends on direction. For an undirected edge (u,v), if we orient u->v, we need colors[v] == next(colors[u]).
+        # If we orient v->u, we need colors[u] == next(colors[v]).
+        # These two conditions are not symmetric. So for a given root, the orientation is fixed:
+        # parent is the one closer to root. So we need that for every edge, the direction away from root
+        # satisfies the next-color condition.
+
+        # How to find such a root efficiently?
+        # n up to 1e5.
+        # We can try each node as root? O(n^2) too slow.
+        # But maybe we can use the constraints.
+
+        # Let's think: For each node u, and each neighbor v, we can define a directed constraint:
+        # If u is parent of v, then we need colors[v] == next(colors[u]).
+        # If v is parent of u, then we need colors[u] == next(colors[v]).
+        # For a root r, we orient all edges away from r. So for each edge, exactly one direction is chosen
+        # (the one away from r). The condition is that for all edges, the chosen direction satisfies the next-color constraint.
+
+        # This is equivalent to: In the tree, if we direct edges according to the next-color constraint,
+        # we need that the resulting directed graph is exactly the tree oriented away from some root r,
+        # and that r has indegree 0 and outdegree = degree(r) (all edges outgoing), and every other node has indegree 1 and outdegree = degree - 1.
+        # But the next-color constraint defines a set of allowed directed edges.
+        # For each undirected edge (u,v), it can be directed u->v if colors[v] == next(colors[u]),
+        # and/or v->u if colors[u] == next(colors[v]).
+        # It might be that both, one, or none are allowed.
+
+        # We need to find a root r such that when we direct all edges away from r,
+        # every directed edge is allowed by the next-color constraint.
+        # And also degree(r) <= 2.
+
+        # Since the tree is small degree, maybe we can find roots by looking at edges that are "consistent".
+        # Let's analyze the next-color constraint.
+        # next('R') = 'B', next('B') = 'W', next('W') = 'R'.
+        # So for an edge (u,v):
+        # Allowed u->v if colors[v] == next(colors[u]).
+        # Allowed v->u if colors[u] == next(colors[v]).
+        # Note that if colors[v] == next(colors[u]), then colors[u] == prev(colors[v]), where prev is inverse next.
+        # prev('R')='W', prev('B')='R', prev('W')='B'.
+        # So u->v allowed means v->u is NOT allowed unless colors[u] == next(colors[v]) which would mean
+        # colors[u] == next(next(colors[u]))? Let's check: if colors[v] = next(colors[u]),
+        # then next(colors[v]) = next(next(colors[u])). For v->u to be allowed, we need colors[u] == next(colors[v]) = next(next(colors[u])).
+        # But next(next(x)) is not x in a 3-cycle. next(next('R')) = next('B') = 'W'. So colors[u] = 'W',
+        # but colors[u] is the original, so this would mean colors[u] = 'W' and also colors[v] = next('R')='B'.
+        # Then v->u allowed would require colors[u] == next(colors[v]) = next('B')='W', which holds.
+        # So it is possible that both directions are allowed? Let's test: colors[u]='R', colors[v]='B'.
+        # u->v: colors[v]='B' == next('R')='B' -> allowed.
+        # v->u: colors[u]='R' == next('B')='W'? No, next('B')='W', so 'R' != 'W', not allowed.
+        # What about colors[u]='R', colors[v]='W'?
+        # u->v: next('R')='B' != 'W' -> not allowed.
+        # v->u: next('W')='R' == 'R' -> allowed.
+        # What about colors[u]='R', colors[v]='R'?
+        # u->v: next('R')='B' != 'R' -> no.
+        # v->u: next('R')='B' != 'R' -> no.
+        # So for any edge, at most one direction is allowed, unless maybe some special case?
+        # Let's check all pairs:
+        # (R,B): R->B allowed, B->R not.
+        # (R,W): W->R allowed, R->W not.
+        # (B,W): B->W allowed, W->B not.
+        # (B,R): R->B allowed? Wait (B,R): u=B, v=R. u->v: next(B)=W != R -> no. v->u: next(R)=B == B -> yes.
+        # (W,R): u=W, v=R. u->v: next(W)=R == R -> yes. v->u: next(R)=B != W -> no.
+        # (W,B): u=W, v=B. u->v: next(W)=R != B -> no. v->u: next(B)=W == W -> yes.
+        # (R,R): neither.
+        # (B,B): neither.
+        # (W,W): neither.
+        # So indeed, for any edge, exactly one direction is allowed if the two colors are different and adjacent in the cycle R->B->W->R.
+        # If they are the same or not adjacent (i.e., distance 2 in cycle, which is impossible since only 3 colors, adjacent means next or prev),
+        # then neither direction is allowed.
+        # Wait, the three colors are R,B,W. The cycle is R->B->W->R. Adjacent pairs are (R,B), (B,W), (W,R).
+        # Non-adjacent pairs are (R,W) and (B,R) and (W,B)? Actually (R,W) are they adjacent? In cycle R->B->W->R, R is adjacent to B and W (since W->R). So (R,W) is adjacent (W->R). (B,R) is adjacent (R->B). (W,B) is adjacent (B->W). So ANY pair of distinct colors is adjacent in the cycle! Because it's a 3-cycle, every pair of distinct colors are neighbors.
+        # Let's verify: Colors are only R, B, W. Any two distinct colors are either (R,B), (B,W), or (W,R). All are adjacent in the cycle.
+        # So for any edge where the two endpoint colors are DIFFERENT, exactly one direction is allowed.
+        # If the two endpoint colors are the SAME, then neither direction is allowed (since next(x) != x).
+        # Therefore, for each edge, if colors[u] != colors[v], there is a forced direction:
+        # the one where the child color is next(parent color).
+        # If colors[u] == colors[v], then this edge CANNOT be traversed in either direction satisfying the next-color condition.
+        # But wait, if an edge has same colors, can it be part of a valid rooted tree?
+        # If we have an edge with same colors, say both R. If we try to orient it, we need child color = next(parent color). But next(R)=B, so child would need to be B, but it's R. So impossible.
+        # Therefore, any edge with same-colored endpoints makes the whole tree invalid as a valid root tree?
+        # Not necessarily the whole tree, but that edge cannot be part of the tree oriented away from root.
+        # Since the tree must be fully oriented away from root, every edge must have distinct colors and the direction must be the one where child is next of parent.
+        # So if any edge has same colors, no root can work? Let's check example 2.
+        # Example 2: edges = [[0,1],[1,2],[2,3]], colors = "RBRB"
+        # Colors: 0:R, 1:B, 2:R, 3:B.
+        # Edges: (0,1): R-B distinct, direction 0->1 allowed (next(R)=B).
+        # (1,2): B-R distinct, direction 2->1 allowed? next(B)=W != R, next(R)=B == B, so direction 2->1 (i.e., child 1, parent 2) allowed? Wait, edge is (1,2). If parent is 2, child is 1, need colors[1] == next(colors[2]) => B == next(R)=W? No.
+        # Let's re-evaluate: edge (1,2) colors B and R. Allowed directions: u->v if colors[v]==next(colors[u]).
+        # If u=1 (B), v=2 (R): next(B)=W != R -> no.
+        # If u=2 (R), v=1 (B): next(R)=B == B -> yes. So direction 2->1 allowed.
+        # (2,3): R-B distinct, allowed direction 2->3 (next(R)=B).
+        # So allowed directed edges: 0->1, 2->1, 2->3.
+        # Now we need to root the tree at some node such that all edges are directed away from root.
+        # The allowed directed edges form a directed graph. We need a root r such that all edges in the tree are exactly the edges of the tree directed away from r, and each such edge is in the allowed set.
+        # In example 2, allowed edges: 0->1, 2->1, 2->3.
+        # The tree edges are (0,1), (1,2), (2,3). If we root at 2, edges away from 2: 2->1, 2->3, and 1->0? But 1->0 is not allowed (allowed is 0->1). If we root at 2, the path from 2 to 0 goes 2->1->0, so edges are 2->1 and 1->0. But 1->0 is not allowed (only 0->1 is allowed). So root 2 fails.
+        # If root at 0: edges away from 0: 0->1, 1->2, 2->3. 1->2 not allowed (only 2->1 allowed). Fails.
+        # If root at 1: edges away from 1: 1->0, 1->2. 1->0 not allowed. Fails.
+        # If root at 3: edges away from 3: 3->2, 2->1, 1->0. 3->2 not allowed (allowed is 2->3). Fails.
+        # So output -1, matches example.
+
+        # So the problem is: given a tree where each edge has a forced direction if colors differ, or is forbidden if same,
+        # find a node r such that when we direct all tree edges away from r, every directed edge is in the allowed set.
+        # And also degree(r) <= 2.
+
+        # Since each edge with distinct colors has exactly one allowed direction, the allowed directions form a set of directed edges.
+        # We need to find a root r such that the tree oriented away from r is a subgraph of the allowed directed edges.
+        # This is equivalent to: In the allowed directed graph, there is a node r with outdegree = degree(r) (all its incident edges are outgoing and allowed), and for every other node, exactly one incident edge is incoming (from its parent) and the rest outgoing (to children) are allowed. But since the underlying graph is a tree, if we root at r, the orientation is unique: parent is the neighbor closer to r, children are the rest.
+        # So for each node u != r, exactly one neighbor is its parent, and the edge u-parent must be directed parent->u (i.e., allowed direction from parent to u). All other neighbors v of u must have edge u->v allowed (i.e., u is parent of v).
+        # For the root r, all its neighbors v must have edge r->v allowed.
+
+        # So we can rephrase: We need to find a node r such that:
+        # 1. degree(r) <= 2.
+        # 2. For every neighbor v of r, the allowed direction is r->v (i.e., colors[v] == next(colors[r])).
+        # 3. For every other node u, if we consider the tree rooted at r, let p be the parent of u (the neighbor on the path to r). Then the edge p->u must be allowed. And for all other neighbors v of u (children), the edge u->v must be allowed.
+
+        # Notice that the allowed direction for an edge (u,v) with distinct colors is uniquely determined:
+        # it's the direction where the child color is next of parent color.
+        # Let's define for each edge (u,v) with colors[u] != colors[v], a "parent" and "child" based on the cycle.
+        # Actually, we can think of it as: the edge has a natural direction from the color that is "earlier" in the cycle to the "later".
+        # Cycle: R -> B -> W -> R.
+        # So if colors[u] = R, colors[v] = B, allowed direction is u->v.
+        # If colors[u] = B, colors[v] = W, allowed u->v.
+        # If colors[u] = W, colors[v] = R, allowed u->v.
+        # If colors[u] = B, colors[v] = R, allowed v->u (i.e., R->B direction).
+        # In general, the allowed direction is from the color that is one step behind in the cycle to the one that is one step ahead.
+        # Since it's a 3-cycle, we can define a total order? Not total, but we can say: for any two distinct colors, one is next of the other.
+        # Specifically, next(R)=B, next(B)=W, next(W)=R.
+        # So if colors[v] == next(colors[u]), then u->v is allowed.
+        # If colors[u] == next(colors[v]), then v->u is allowed.
+        # As we saw, exactly one of these holds if colors differ.
+
+        # Now, for a root r to be valid, the entire tree must be oriented away from r, and all those directions must match the allowed directions.
+        # This is equivalent to saying: if we direct each edge according to the allowed direction (when colors differ), we get a directed graph. We need to find a node r such that the tree oriented away from r is exactly the reachable subgraph from r in this directed graph, and moreover, the tree is exactly the underlying undirected tree, meaning every edge is directed away from r.
+        # But since the allowed directions might not form a single rooted tree, we need to check.
+
+        # Alternative approach: Since the condition "all nodes at same depth have same color and cycle starts at root" is equivalent to: for the chosen root r, if we BFS/DFS from r, every edge parent->child satisfies child color = next(parent color).
+        # We can just try to find such a root by checking constraints.
+
+        # Observation: The condition child color = next(parent color) means that if we know the color of the root, the colors of all nodes at each depth are forced.
+        # So we can just try each of the three possible root colors? But root color is given by the node's color.
+        # Actually, the root's color is fixed as colors[r]. So the cycle is forced.
+        # So for each candidate root r, we can just do a BFS/DFS from r and check if for every edge parent->child, colors[child] == next(colors[parent]), and also degree(r) <= 2.
+        # But trying all n roots is O(n^2) worst case. n=1e5, too slow.
+
+        # We need a linear or near-linear method.
+        # Let's think about the structure of allowed directions.
+        # For each edge (u,v) with colors[u] != colors[v], there is exactly one allowed direction.
+        # Let's direct all such edges accordingly. Edges with colors[u] == colors[v] are "bad" and cannot be used.
+        # If there is any bad edge, can a root exist? If a bad edge exists, then in any rooting, that edge will be oriented one way or the other, and it will violate the condition. So if there is any edge with same colors, answer is -1? Wait, is that true?
+        # Suppose we have an edge with same colors. If we root the tree, that edge will be either parent->child or child->parent. In either case, we need child color = next(parent color). But both colors are same, say R. next(R)=B, so child would need to be B, but it's R. So indeed, any edge with same colors makes it impossible. So we can immediately return -1 if any edge has same colors.
+        # Let's check: Is it possible that the edge is not used? No, tree has n-1 edges, all must be oriented.
+        # So if any edge has colors[u] == colors[v], return -1.
+
+        # Now assume all edges have distinct colors. Then each edge has a forced direction.
+        # We have a tree with directed edges (some direction for each edge).
+        # We need to find a root r such that when we orient all edges away from r, every directed edge matches the forced direction.
+        # This is equivalent to: In the directed graph formed by forced directions, there is a node r with outdegree = degree(r) (all incident edges outgoing and forced that way), and for every other node, exactly one incident edge is incoming (the one from parent) and the rest outgoing (to children) are forced that way.
+        # But note that the forced directions are on the undirected edges. If we root at r, the orientation of each edge is determined: it's the direction from the node closer to r to the node farther from r.
+        # So we need that for every edge (u,v), the forced direction is the same as the direction away from r.
+        # This means that r must be a source in the directed graph in some sense, and the directed graph must be a directed tree rooted at r.
+
+        # Let's analyze the forced directed graph. Each edge has one direction.
+        # Since it's a tree, the directed graph consists of some nodes with outdegree, indegree, etc.
+        # We need to find a root r such that the tree oriented away from r is a subgraph of the forced directions.
+        # This is equivalent to: r can reach all nodes via forced directed edges, and the path from r to any node is unique (which it is, since it's a tree) and all edges on that path are forced in the direction from r to node.
+        # But wait, if we just root at r, the orientation of an edge (u,v) is away from r. For this to match the forced direction, the forced direction must be exactly away from r.
+        # So for each edge, there is a "natural" direction based on colors. We need that r is on the "sink" side of all edges? Actually, if we think of the forced direction as orienting the edge, we get a directed graph. We need to find a node r such that if we reverse some edges? No, we can't reverse; the orientation away from r must exactly match the forced direction.
+        # So the forced direction of each edge must be consistent with a single root r.
+        # What does it mean for a set of directed edges on a tree to be consistent with a root r?
+        # It means that if we start at r and follow the directed edges, we can reach all nodes, and there are no directed cycles (which is true for a tree with directions), and every node has indegree 1 except r which has indegree 0, and outdegree = degree - 1 (for non-root) or degree (for root).
+        # But the forced directions might not satisfy this for any r.
+
+        # Let's think differently. For a candidate root r, the condition is:
+        # For every edge (u,v) in the tree, if u is closer to r than v, then colors[v] == next(colors[u]).
+        # This is a local condition on each edge relative to r.
+        # We can try to find r by looking at the constraints.
+
+        # Consider the forced direction of each edge. Let's denote for each edge a direction.
+        # If we pick an arbitrary root, say 0, and do a DFS, we can compute for each edge whether the DFS direction matches the forced direction.
+        # But we need to find r.
+
+        # Another perspective: The condition "all nodes at same depth have same color" and "child = next(parent)" means that if we know the color of the root, the color of every node is determined by its depth.
+        # So for a root r, let d(u) be depth of u. Then colors[u] must equal f(d(u)) where f(0)=colors[r], f(d+1)=next(f(d)).
+        # This must hold for all u.
+        # So for any two nodes u and v, if they are at the same depth, they must have the same color.
+        # And if u is parent of v, colors[v] = next(colors[u]).
+        # This is a very strict condition.
+
+        # Maybe we can find all possible roots by checking constraints from leaves?
+        # Since n up to 1e5, we can perhaps do a two-pass DFS (rerooting) to compute for each node if it can be root.
+
+        # Let's design a DP.
+        # We have tree with n nodes. For each node u, we want to know if u can be root.
+        # Conditions for u to be root:
+        # 1. degree(u) <= 2.
+        # 2. For every neighbor v of u, colors[v] == next(colors[u]).
+        # 3. For the rest of the tree, when rooted at u, the condition holds.
+
+        # Condition 2 is easy to check.
+        # Condition 3: For each neighbor v of u, v becomes a child of u. The subtree rooted at v (with u as parent) must satisfy the color condition internally, and also the edge u->v is already satisfied by condition 2.
+        # But wait, the condition for the subtree rooted at v is: all nodes in that subtree must have colors according to the cycle starting from u's color.
+        # Since u's color is fixed, the required color for v is next(colors[u]), which is given by condition 2.
+        # Then for v's children, they must have colors next(colors[v]), etc.
+        # So the subtree rooted at v must be a valid tree where the root is v, its color is colors[v], and the required cycle is such that its parent (u) had color colors[u], and v's color is next(colors[u]).
+        # But note that the cycle is globally determined by the root's color. If u is root, the cycle is fixed.
+        # For the subtree at v, the condition is exactly the same problem but with v as root of that subtree, and the "external" parent u has color colors[u] = prev(colors[v]) (since colors[v] = next(colors[u])).
+        # So we can think of it as: for each directed edge u->v (where v is child of u in the overall rooting), we need the subtree at v to be valid given that u's color is prev(colors[v]).
+        # But since the cycle is fixed by the global root, and u's color is prev(colors[v]), the condition for v's subtree is simply: for every node w in v's subtree, colors[w] must equal the color determined by depth from u.
+        # This is equivalent to: if we root the whole tree at u, the condition holds.
+
+        # We can use rerooting DP.
+        # Let's root the tree arbitrarily at 0.
+        # For each node u, we want to compute two things:
+        # - dp_down[u]: the set of "root colors" (or cycle starts) that make the subtree of u valid when u is considered as root of its subtree (with parent p).
+        # But since the cycle is determined by the global root's color, and the global root's color is the color of the actual root, we can instead compute for each node u, given its parent's color, whether the subtree is valid.
+        # However, the parent's color is not fixed until we choose the global root.
+
+        # Alternative: Since the condition is essentially "for every edge parent->child, colors[child] == next(colors[parent])",
+        # we can just check if the whole tree satisfies this for some root.
+        # Let's define for each node u, a "direction" to its parent in the desired rooting.
+        # Actually, we can think of the tree as having a required direction for each edge.
+        # If we ignore the root degree constraint for a moment, the condition that there exists a root r such that all edges are directed away from r and satisfy child = next(parent) is equivalent to: the directed graph formed by the forced directions (child = next(parent)) has exactly one node with indegree 0 (the root) and all other nodes have indegree 1, and the graph is connected (which it is, as it's a tree underlying undirected).
+        # Wait, is that true?
+        # If we have a tree where each edge has a forced direction (based on colors), and we want to root it at some r such that all edges are directed away from r, then in that rooted tree, every node except r has exactly one incoming edge (from its parent), and r has zero incoming edges. And all edges are directed away from r.
+        # So the forced directed edges must form a graph where there is exactly one node with indegree 0, all others indegree 1, and it's a spanning tree (which it is, since it's a tree with directions). But the forced directions are fixed per edge. If we just look at the forced directions, they might not form such a structure. But if they do, then that unique indegree-0 node is the only possible root.
+        # Let's test this idea.
+        # For each edge (u,v) with colors[u] != colors[v], we have a forced direction: say u->v if colors[v] == next(colors[u]).
+        # We direct all such edges. Edges with same colors are forbidden -> return -1.
+        # Now we have a directed graph on n nodes and n-1 directed edges (each undirected edge becomes one directed edge).
+        # In this directed graph, each node has some indegree and outdegree.
+        # If there exists a root r such that all edges are directed away from r, then in the directed graph, r must have indegree 0, and every other node must have indegree exactly 1. Also, the underlying undirected graph must be a tree (it is), and the directed edges must form a rooted tree (i.e., no cycles, which is automatic if it's a tree with directions and indegrees as described).
+        # So a necessary and sufficient condition for the existence of such a root (ignoring the degree<=2 constraint) is:
+        # - Every node has indegree <= 1 in the forced directed graph.
+        # - There is exactly one node with indegree 0.
+        # - The graph is connected (it is, since it's a tree with one directed edge per undirected edge, and we have n-1 edges; if every node has indegree <=1 and exactly one has indegree 0, then it's a rooted tree).
+        # But wait: Is it possible that the forced directed graph has indegrees <=1 and exactly one indegree 0, but the root r has degree > 2? That would violate binary-tree property, but we can check that separately.
+        # Also, what if there are nodes with indegree 0 other than the candidate? Then no root.
+        # Let's test with examples.
+
+        # Example 1: edges = [[3,1],[3,2],[1,4],[2,0]], colors = "BRRWB"
+        # n=5. colors: 0:B, 1:R, 2:R, 3:W, 4:B.
+        # Edges:
+        # (3,1): colors 3=W, 1=R. next(W)=R -> so 3->1 allowed? Wait, next(W)=R, so if parent=3, child=1, need colors[1]==next(colors[3]) => R==next(W)=R -> yes. So direction 3->1.
+        # (3,2): 3=W, 2=R. next(W)=R -> 3->2.
+        # (1,4): 1=R, 4=B. next(R)=B -> 1->4.
+        # (2,0): 2=R, 0=B. next(R)=B -> 2->0.
+        # Forced directed edges: 3->1, 3->2, 1->4, 2->0.
+        # Indegrees: node 0: from 2->0, indegree 1. node 1: from 3->1, indegree 1. node 2: from 3->2, indegree 1. node 3: indegree 0. node 4: from 1->4, indegree 1.
+        # Exactly one node with indegree 0: node 3.
+        # So root candidate is 3. Degree of 3 is 2 (neighbors 1 and 2). degree <=2 satisfied.
+        # Output 3. Matches.
+
+        # Example 2: edges = [[0,1],[1,2],[2,3]], colors = "RBRB"
+        # colors: 0:R, 1:B, 2:R, 3:B.
+        # Edges:
+        # (0,1): R-B, next(R)=B -> 0->1.
+        # (1,2): B-R, next(B)=W != R, next(R)=B == B -> direction 2->1 (since u=2(R), v=1(B) -> 2->1).
+        # (2,3): R-B, next(R)=B -> 2->3.
+        # Forced directed edges: 0->1, 2->1, 2->3.
+        # Indegrees: node 1: from 0->1 and 2->1 -> indegree 2! So condition "every node indegree <=1" fails.
+        # Also node 0 indegree 0, node 3 indegree 0? Wait, 2->3 gives indegree 1 for 3. 0 indegree 0. Nodes with indegree 0: 0 and? 3 has indegree 1. So indegrees: 0:0, 1:2, 2:0, 3:1.
+        # Two nodes with indegree 0 (0 and 2). So condition fails. Output -1. Matches.
+
+        # Let's test another case. Suppose a simple path of 3 nodes: 0-1-2, colors = "RBR".
+        # n=3. colors: 0:R, 1:B, 2:R.
+        # Edges: (0,1): R-B -> 0->1. (1,2): B-R -> next(B)=W != R, next(R)=B == B -> direction 2->1? Wait, edge (1,2) colors B and R. If u=1(B), v=2(R): next(B)=W != R -> no. u=2(R), v=1(B): next(R)=B == B -> yes. So direction 2->1.
+        # Forced directed edges: 0->1, 2->1.
+        # Indegrees: node 1: from 0 and 2 -> indegree 2. node 0:0, node 2:0. Two indegree 0 nodes. So no root.
+        # But let's manually check: can we root at 0? Root 0: depth0 R, depth1 must be B (child 1), depth2 must be W (child 2). But colors[2]=R, not W. Fails. Root at 2: depth0 R, depth1 B (child 1), depth2 W (child 0). colors[0]=R, fails. Root at 1: depth0 B, depth1 must be W (children 0 and 2). But colors[0]=R, colors[2]=R, fails. So indeed -1.
+
+        # What about a path 0-1-2 with colors "RWB"? But colors only R,B,W. Let's try "R W B"? But cycle is R->B->W->R. If colors are R, W, B? Let's see: 0:R, 1:W, 2:B.
+        # Edges: (0,1): R-W. next(R)=B != W, next(W)=R == R -> direction 1->0? Wait, edge (0,1): u=0(R), v=1(W): next(R)=B != W -> no. u=1(W), v=0(R): next(W)=R == R -> yes. So 1->0.
+        # (1,2): W-B. next(W)=R != B, next(B)=W == W -> direction 2->1? u=1(W), v=2(B): next(W)=R != B -> no. u=2(B), v=1(W): next(B)=W == W -> yes. So 2->1.
+        # Forced directed edges: 1->0, 2->1.
+        # Indegrees: node 0: from 1->0 -> indegree 1. node 1: from 2->1 -> indegree 1. node 2: indegree 0.
+        # Exactly one indegree 0 node: 2. Root candidate 2. Degree of 2 is 1 (neighbor 1). degree <=2 satisfied.
+        # Let's manually check root at 2: depth0 B (color of 2). depth1 must be next(B)=W (child 1). depth2 must be next(W)=R (child 0). colors[0]=R, colors[1]=W. Works! Binary-tree property: root 2 has degree 1 <=2, node 1 has parent 2 and child 0, so children count 1 <=2. All good. Output should be 2.
+        # Our indegree condition gives root 2. Correct.
+
+        # What if the forced directed graph has exactly one indegree 0 node, but that node has degree 3?
+        # Example: star graph: center 0, leaves 1,2,3. colors: 0:R, leaves all B.
+        # n=4. colors: 0:R, 1:B, 2:B, 3:B.
+        # Edges: (0,1): R-B -> 0->1. (0,2): 0->2. (0,3): 0->3.
+        # Forced directed edges: 0->1, 0->2, 0->3.
+        # Indegrees: 0:0, 1:1, 2:1, 3:1. Exactly one indegree 0: node 0.
+        # But degree of 0 is 3 > 2. So binary-tree property fails. We must also check degree(root) <= 2.
+        # So algorithm: 
+        # 1. For each edge (u,v), if colors[u] == colors[v], return -1.
+        # 2. Determine forced direction for each edge: if colors[v] == next(colors[u]), then u->v; else if colors[u] == next(colors[v]), then v->u. (Exactly one of these holds if colors differ.)
+        # 3. Build indegree array for all nodes based on these directed edges.
+        # 4. Check if there is exactly one node with indegree 0. If not, return -1.
+        # 5. Let r be that node. Check if degree(r) <= 2. If not, return -1.
+        # 6. Additionally, we must ensure that the directed edges indeed form a valid rooted tree away from r. But if indegrees are exactly 0 for r and 1 for all others, and the underlying graph is a tree with n-1 edges, then it automatically forms a rooted tree at r (since it's a tree, and every node except r has exactly one incoming edge, so there's a unique path from r to every node following the directed edges, and no cycles). However, we must also ensure that the root r's children all have the correct color condition. But the forced directions already encode the color condition: for each edge u->v, we have colors[v] == next(colors[u]). And since the tree is rooted at r, the parent of any node v != r is the unique neighbor u such that u->v is a forced edge (or the path from r). Actually, if we have exactly one indegree 0 and all others indegree 1, then the directed edges form a spanning arborescence rooted at r. The condition that for every edge parent->child colors[child] == next(colors[parent]) is exactly the forced direction condition. So it should be satisfied.
+        # 7. But wait: Is it possible that the forced directions have exactly one indegree 0 and all others indegree 1, but the root r has degree > 2? We check that and return -1.
+        # 8. Also, what about the binary-tree property for non-root nodes? As argued, since max degree is 3, and non-root nodes have one parent, they have at most 2 children. So that's automatically satisfied. But we must ensure that the root degree <= 2.
+        # 9. Is there any other condition? "All nodes at the same depth have the same color." This is automatically satisfied if every edge parent->child satisfies child = next(parent), because by induction all nodes at depth d have color = next^d(root_color). And we already enforce that for all edges in the rooted tree.
+        # 10. Also, the problem says "A node chosen as root must satisfy both conditions once the tree is oriented away from it: 1. Binary-tree property: Every node has at most two children. 2. Layered color pattern..." We've covered both.
+
+        # Let's test edge cases.
+        # What if the tree is just 2 nodes: n=2. edges = [[0,1]], colors = "RB".
+        # n=2. colors: 0:R, 1:B.
+        # Edge (0,1): R-B, next(R)=B -> 0->1.
+        # Indegrees: 0:0, 1:1. Exactly one indegree 0: 0. degree(0)=1 <=2. So root 0.
+        # Check manually: root at 0, depth0 R, depth1 B. Works. Root at 1? Indegree of 1 would be 0? But forced direction is 0->1, so indegree of 1 is 1, indegree of 0 is 0. So only 0 is candidate. Output 0. Correct.
+        # If colors = "BR": similar, root 1.
+        # If colors = "RR": same colors -> return -1. Correct, because next(R)=B != R.
+
+        # What about a case where forced directions have exactly one indegree 0, degree <=2, but the color pattern fails because of some global issue? Let's try to construct.
+        # Suppose we have a tree where forced directions give indegree 0 at r, indegree 1 elsewhere, degree(r)<=2. Does it always satisfy the layered color pattern?
+        # By construction, for every directed edge u->v in the forced graph, we have colors[v] == next(colors[u]).
+        # The rooted tree at r has exactly these directed edges as parent->child.
+        # So for any node v at depth d, its color is determined by starting at root color and applying next d times.
+        # Since the tree is connected and we have a unique path from r to v, and each step applies next, the color of v is forced to be that.
+        # So all nodes at same depth will have the same color (the d-th iterate of next from root color).
+        # The only potential issue: could there be a node whose color does not match because of some inconsistency? No, because every edge in the tree is directed according to the rule, and the tree spans all nodes.
+        # So it seems the conditions are both necessary and sufficient.
+
+        # Let's double-check with a more complex example.
+        # Suppose tree: 0-1-2-3 path, colors: 0:R, 1:B, 2:W, 3:R.
+        # Edges: (0,1): R-B -> 0->1. (1,2): B-W -> next(B)=W -> 1->2. (2,3): W-R -> next(W)=R -> 2->3.
+        # Forced: 0->1, 1->2, 2->3. Indegrees: 0:0, 1:1, 2:1, 3:1. Root 0, degree 1 <=2. Output 0.
+        # Manual: root 0, depth0 R, depth1 B, depth2 W, depth3 R. Works.
+
+        # What if colors: 0:R, 1:B, 2:R, 3:B? Path 0-1-2-3.
+        # Edges: (0,1): R-B -> 0->1. (1,2): B-R -> next(B)=W != R, next(R)=B == B -> direction 2->1? Wait, edge (1,2) colors B and R. If u=1(B), v=2(R): next(B)=W != R -> no. u=2(R), v=1(B): next(R)=B == B -> yes. So 2->1.
+        # (2,3): R-B -> 2->3.
+        # Forced: 0->1, 2->1, 2->3.
+        # Indegrees: 1: from 0 and 2 -> indegree 2. 0:0, 2:0, 3:1. Two indegree 0 -> -1. Manual check would also fail.
+
+        # What if we have a tree where forced directions have exactly one indegree 0, but the root degree is 2, and it works?
+        # Example: root 0 with children 1 and 2, and 1 has child 3, 2 has child 4.
+        # Colors: 0:R, 1:B, 2:B, 3:W, 4:W.
+        # Edges: (0,1): R-B -> 0->1. (0,2): R-B -> 0->2. (1,3): B-W -> 1->3. (2,4): B-W -> 2->4.
+        # Forced: 0->1, 0->2, 1->3, 2->4. Indegrees: 0:0, 1:1, 2:1, 3:1, 4:1. Root 0 degree 2 <=2. Output 0.
+        # Manual: root 0 depth R, children 1,2 depth B, grandchildren 3,4 depth W. Works.
+
+        # What if we have a case where indegree condition holds but the root degree <=2, yet the color pattern fails because of some node's color not matching its depth? 
+        # Is that possible given the forced directions?
+        # Suppose we have a node v with parent u, and forced edge u->v means colors[v] == next(colors[u]).
+        # If we root at r, the path from r to v goes through u, so colors[v] is next(colors[u]), and colors[u] is next(colors[parent of u]), etc.
+        # So colors[v] = next^depth(v)(colors[r]).
+        # This seems airtight.
+
+        # But wait: The forced direction for an edge (u,v) is determined solely by the colors of u and v.
+        # If we have exactly one indegree 0 node r and all others indegree 1, then the directed edges form a tree rooted at r.
+        # However, is it guaranteed that the root r's degree in the original undirected tree is the same as its outdegree in the directed graph? Yes, because all edges incident to r must be directed away from r (since r has indegree 0, all its incident edges must be outgoing, otherwise some neighbor would have an edge towards r, giving r indegree >0). And since degree(r) <= 2, outdegree(r) <= 2.
+        # For other nodes, indegree 1 means exactly one incoming edge (from parent). The rest of their incident edges must be outgoing (to children). But could there be an edge that is neither? In a tree with n-1 edges, if every node has indegree exactly 1 except root indegree 0, then the sum of indegrees is n-1, which matches the number of edges. So every edge is exactly one directed edge, and every node's incident edges are partitioned into one incoming and the rest outgoing. So the binary-tree property for non-root nodes is automatically: they have one parent, and (degree - 1) children. Since max degree is 3, children <= 2. So satisfied.
+
+        # Therefore, the algorithm seems solid:
+        # 1. If any edge has colors[u] == colors[v], return -1.
+        # 2. For each edge (u,v), determine the forced direction:
+        #    if colors[v] == next(colors[u]): direction u->v
+        #    else: direction v->u (since colors differ, exactly one holds)
+        # 3. Compute indegree for each node from these directed edges.
+        # 4. Count how many nodes have indegree 0. If not exactly 1, return -1.
+        # 5. Let r be the node with indegree 0.
+        # 6. If degree(r) > 2, return -1.
+        # 7. Return r.
+
+        # Wait, is there any other constraint? The problem says: "A node chosen as root must satisfy both conditions once the tree is oriented away from it: 1. Binary-tree property: Every node has at most two children. 2. Layered color pattern: All nodes at the same depth have the same color. Starting at depth 0, these colors follow one of the three repeating sequences..."
+        # We've ensured that the color pattern follows the sequence starting at root color. But does it automatically follow one of the three repeating sequences? Yes, because the sequence is determined by root color: if root is R, sequence is R->B->W->R...; if B, B->W->R->B...; if W, W->R->B->W... These are exactly the three sequences given.
+        # Also, "All nodes at the same depth have the same color." We've ensured this by the edge conditions.
+
+        # Let's test a tricky case: What if the forced directions have exactly one indegree 0, degree <=2, but the tree has a node with degree 3 that is not the root? As argued, max degree is 3 overall, and non-root nodes have one parent, so children <= 2. So binary-tree property holds for all nodes.
+
+        # What about the case where the forced directions have exactly one indegree 0, but that node has degree 2, and it works, but there is another node with indegree 0? We already check exactly one indegree 0.
+
+        # Let's consider if there is any scenario where the forced directions have exactly one indegree 0, degree <=2, but the color pattern fails because of some node's color not matching due to the tree structure? I think it's impossible because the directed edges enforce the color transition at every step.
+
+        # However, there is one subtle point: The problem says "Starting at depth 0, these colors follow one of the three repeating sequences: R → B → W → R → B → W → ... , B → W → R → B → W → R → ... , W → R → B → W → R → B → ...". 
+        # Our next function: next('R')='B', next('B')='W', next('W')='R'. This exactly generates the sequences starting with the root color. But wait: The three sequences are:
+        # 1: R → B → W → R → B → W → ...
+        # 2: B → W → R → B → W → R → ...
+        # 3: W → R → B → W → R → B → ...
+        # If root is R, the sequence must be 1. If root is B, sequence 2. If root is W, sequence 3.
+        # Our next function gives: from R next is B, from B next is W, from W next is R.
+        # So if root is R, depth 1 gets B, depth 2 gets W, depth 3 gets R -> sequence 1.
+        # If root is B, depth 1 gets W, depth 2 gets R, depth 3 gets B -> sequence 2.
+        # If root is W, depth 1 gets R, depth 2 gets B, depth 3 gets W -> sequence 3.
+        # So it matches perfectly.
+
+        # One more check: What if the root has color R, but the forced directions somehow allow a root with color R, but the actual sequence required might be different? No, the sequences are fixed by the root's color.
+
+        # Are there any edge cases where the forced directions have exactly one indegree 0, degree <=2, but the root's color is, say, R, and some node at depth 2 has color R, which is correct (since sequence R->B->W->R, depth 3 is R, depth 2 is W? Wait: depth 0: R, depth 1: B, depth 2: W, depth 3: R. So depth 2 is W, depth 3 is R. If a node at depth 2 has color R, that would violate. But would our forced directions allow that? If a node at depth 2 has color R, then its parent at depth 1 must have color such that next(parent)=R. next(W)=R, so parent must be W. But if root is R, depth 1 must be B. So such a node cannot exist in a valid rooted tree. Would our algorithm catch it? Let's try to construct a counterexample.
+
+        # Suppose we have a tree where forced directions give indegree 0 at r, degree <=2, but the color pattern is violated.
+        # For the forced directions to have indegree 0 at r and indegree 1 elsewhere, every edge must be directed away from r.
+        # That means for every edge (u,v) where u is parent of v (closer to r), we have colors[v] == next(colors[u]).
+        # This is exactly the condition we check. If this holds for all edges in the rooted tree, then by induction colors[v] = next^depth(v)(colors[r]).
+        # So if the forced directions condition holds (indegree 0 at r, indegree 1 elsewhere), then the color pattern automatically holds.
+        # The only way it could fail is if the forced directions condition holds but the actual colors of nodes don't match the induction? But the forced directions are defined based on the actual colors. So if the forced direction for edge (u,v) is u->v, then by definition colors[v] == next(colors[u]). So the induction is exact.
+        # Therefore, if the indegree condition holds, the color pattern is guaranteed.
+
+        # What about the binary-tree property? We check degree(root) <= 2. For other nodes, since max degree is 3 and they have one parent, children <= 2. But wait: The problem says "Every node has at most two children." In a rooted tree, a node's children are its neighbors except its parent. If a non-root node has degree 3, it has one parent and two children -> allowed. If it has degree 4? But constraints say "every node has degree at most three." So non-root nodes have degree <=3, so children <=2. So binary-tree property is automatically satisfied for all nodes except possibly the root. We just need to ensure root degree <= 2.
+
+        # Is there any case where root degree <=2, but some non-root node has more than 2 children because of how we root? No, because in a tree, if you root it, each non-root node has exactly one parent. The number of children is degree - 1. Since degree <=3, children <=2.
+
+        # So the algorithm is:
+        # - Check all edges for same colors -> return -1.
+        # - Build directed edges based on next color.
+        # - Compute indegrees.
+        # - If exactly one node has indegree 0, let that be r.
+        # - If degree(r) > 2, return -1.
+        # - Else return r.
+
+        # Let's test with the examples and some custom cases.
+
+        # Example 1: Already tested, returns 3.
+
+        # Example 2: Already tested, returns -1.
+
+        # Custom: n=2, edges=[[0,1]], colors="RR" -> same colors -> -1.
+
+        # Custom: n=3, edges=[[0,1],[1,2]], colors="RBR" -> we did earlier, indegrees: 0:0, 1:2, 2:0 -> two indegree 0 -> -1.
+
+        # Custom: n=3, edges=[[0,1],[1,2]], colors="RWB"? But colors only R,B,W. "RWB" is R,W,B.
+        # colors: 0:R, 1:W, 2:B.
+        # Edges: (0,1): R-W -> next(R)=B != W, next(W)=R == R -> direction 1->0.
+        # (1,2): W-B -> next(W)=R != B, next(B)=W == W -> direction 2->1.
+        # Forced: 1->0, 2->1.
+        # Indegrees: 0: from 1->0 -> indegree 1. 1: from 2->1 -> indegree 1. 2: indegree 0.
+        # Exactly one indegree 0: node 2. degree(2)=1 <=2. Return 2.
+        # Manual check: root 2 (color B). depth0 B, depth1 must be next(B)=W (child 1), depth2 must be next(W)=R (child 0). colors[0]=R, colors[1]=W. Works. Output 2. Correct.
+
+        # Custom: What if the tree has a node with degree 3 that is not root, but root degree <=2. Our algorithm should still work because non-root indegree condition will handle it? Let's test.
+        # Suppose root 0 degree 2, children 1 and 2. Node 1 has children 3 and 4 (degree 3: parent 0, children 3,4). Node 2 has child 5 (degree 2). All edges must have distinct colors and forced directions.
+        # Let's construct: colors: 0:R, 1:B, 2:B, 3:W, 4:W, 5:W? Wait, need to satisfy forced directions.
+        # Let's set colors such that forced directions work.
+        # 0:R, children 1,2 must be B (next(R)=B). So 1:B, 2:B.
+        # 1 has children 3,4. Forced: 1->3 and 1->4 require colors[3,4] == next(B)=W. So 3:W, 4:W.
+        # 2 has child 5. Forced: 2->5 requires colors[5] == next(B)=W. So 5:W.
+        # Colors: 0:R, 1:B, 2:B, 3:W, 4:W, 5:W.
+        # Edges: (0,1): R-B -> 0->1. (0,2): R-B -> 0->2. (1,3): B-W -> 1->3. (1,4): B-W -> 1->4. (2,5): B-W -> 2->5.
+        # Forced directed edges: 0->1, 0->2, 1->3, 1->4, 2->5.
+        # Indegrees: 0:0, 1:1, 2:1, 3:1, 4:1, 5:1. Exactly one indegree 0: 0. degree(0)=2 <=2. Return 0.
+        # Manual: root 0 depth R, children 1,2 depth B, grandchildren 3,4,5 depth W. Binary-tree: root has 2 children OK; node 1 has 2 children OK; node 2 has 1 child OK. Works.
+
+        # What if we have a node with degree 3 that is not root, but the forced directions somehow make it have indegree 2? Then our algorithm would reject it because indegree would be 2 for some node, violating "exactly one indegree 0 and all others indegree 1". Let's test:
+        # Suppose we have a node v with degree 3, not root. In a valid rooted tree, v has one parent and two children. The edges are v->child1, v->child2, and parent->v. The forced directions must be parent->v, v->child1, v->child2.
+        # If the forced directions are different, indegree might be >1 or 0.
+        # For example, if one of the child edges is directed child->v instead of v->child, then v would have indegree from that child plus from parent, so indegree 2. Our algorithm would catch that (indegree 2 for some node, and we require all others indegree 1 except exactly one indegree 0). So it would return -1, which is correct because that edge violates the color condition.
+
+        # Is there any case where the forced directions have exactly one indegree 0, degree(root)<=2, but the binary-tree property is violated for some non-root node? As argued, non-root nodes have degree <=3, so children = degree - 1 <= 2. So it's automatically satisfied. But wait: The problem says "A tree is a connected undirected graph with no cycles. The degree of a node is the number of edges incident to it. ... Binary-tree property: Every node has at most two children." Since the tree has max degree 3, and we root it, non-root nodes have at most 2 children. So it's fine.
+
+        # One more check: What if the root has degree 2, but one of its children has degree 3, and that child has two children. That's fine, children count 2.
+        # What if the root has degree 1, and there's a node with degree 3 that is a child of root? That node would have parent (root) and two children -> children count 2, fine.
+
+        # So the algorithm seems complete.
+
+        # Let's think about potential pitfalls.
+        # Pitfall 1: The forced direction determination.
+        # We need a function next_color(c):
+        #   if c == 'R': return 'B'
+        #   if c == 'B': return 'W'
+        #   if c == 'W': return 'R'
+        # For edge (u,v), if colors[u] == colors[v], return -1 (or handle separately).
+        # Else, if colors[v] == next_color(colors[u]): direction u->v.
+        # Else: direction v->u. (Since colors differ, exactly one of the two conditions holds.)
+        # Let's verify: next_color(R)=B, next_color(B)=W, next_color(W)=R.
+        # If colors[u]='R', colors[v]='B': next(u)=B == v -> u->v.
+        # If colors[u]='R', colors[v]='W': next(u)=B != W -> v->u (since next(v)=next(W)=R == u). Correct.
+        # If colors[u]='B', colors[v]='W': next(u)=W == v -> u->v.
+        # If colors[u]='B', colors[v]='R': next(u)=W != R -> v->u (next(v)=next(R)=B == u). Correct.
+        # If colors[u]='W', colors[v]='R': next(u)=R == v -> u->v.
+        # If colors[u]='W', colors[v]='B': next(u)=R != B -> v->u (next(v)=next(B)=W == u). Correct.
+        # So the logic is solid.
+
+        # Pitfall 2: What if the tree has n=1? But constraints say n >= 2.
+        # Pitfall 3: The indegree condition exactly one node with indegree 0. Could there be a case where there are zero indegree 0 nodes? That would mean every node has indegree >=1. But sum of indegrees = n-1 (number of edges). If every node has indegree >=1, sum >= n, contradiction. So there is always at least one node with indegree 0. But could there be more than one? Yes, as we saw. We check exactly one.
+        # Pitfall 4: What if the node with indegree 0 has degree > 2? We return -1. But is it possible that there is another root that works? No, because the forced directions uniquely determine the root if it exists. If the unique indegree-0 node has degree >2, no root can work because the binary-tree property would be violated for that root, and any other node would have indegree >1 or indegree 0 multiple. So returning -1 is correct.
+        # Pitfall 5: Could there be a valid root that is NOT the unique indegree-0 node in the forced directed graph? Suppose we have a valid root r. Then when we orient all edges away from r, every edge must satisfy child = next(parent). This means the directed edges away from r are exactly the forced directions (since forced directions are the only allowed directions). So the directed graph away from r must be a subset of forced directions. But since it's a spanning tree (all n-1 edges), it must be exactly the forced directions. And in that rooted tree, r has indegree 0, all others indegree 1. So r must be the unique indegree-0 node in the forced directed graph. So our condition is necessary.
+
+        # Therefore, the algorithm is correct.
+
+        # Let's write the code.
+
+        # Steps in code:
+        # 1. n = len(colors)
+        # 2. Build adjacency list (maybe not needed, we just need to iterate edges).
+        # 3. Initialize indegree = [0]*n
+        # 4. For each edge [u,v] in edges:
+        #       c_u = colors[u], c_v = colors[v]
+        #       if c_u == c_v: return -1
+        #       # determine direction
+        #       nxt = {'R':'B', 'B':'W', 'W':'R'}
+        #       if c_v == nxt[c_u]:
+        #           # u -> v
+        #           indegree[v] += 1
+        #       else:
+        #           # v -> u
+        #           indegree[u] += 1
+        # 5. Count nodes with indegree == 0.
+        #    If count != 1: return -1
+        # 6. Let r be the node with indegree 0.
+        # 7. Compute degree of r: we can just use len(adj[r]) or count how many times r appears in edges. Since we have edges, we can build adjacency list or just count.
+        #    Actually, we can compute degree of each node while building adjacency, or just count from edges.
+        #    Since n up to 1e5, we can build adj list or just count degrees.
+        # 8. If degree[r] > 2: return -1
+        # 9. Return r.
+
+        # Wait: Is degree[r] the number of neighbors in the original undirected tree? Yes.
+        # We can compute degree by: for each edge [u,v], deg[u]++, deg[v]++.
+        # Or we can just use the edges list.
+
+        # Let's double-check with example where root degree is 2 but there are other nodes with degree 3. Our algorithm doesn't explicitly check non-root degrees, but as argued, it's automatic. However, we must ensure that the forced directions don't somehow create a situation where a non-root node has indegree 1 but its children count exceeds 2? No, children count = degree - 1 (since one parent). Since max degree is 3, children <= 2. So it's fine.
+
+        # But wait: What if the tree has a node with degree 4? Constraints say "every node has degree at most three." So max degree 3. So safe.
+
+        # Let's test a custom case where root degree is 2, but the tree has a node with degree 3 that is not root. Our algorithm should return that root if indegree condition holds.
+        # Example: n=5, edges: 0-1, 0-2, 1-3, 1-4. colors: 0:R, 1:B, 2:B, 3:W, 4:W. (We did this, root 0 degree 2, works.)
+        # What if colors: 0:R, 1:B, 2:B, 3:W, 4:R? Let's see if it can still have indegree 0 at 0.
+        # Edges: (0,1): R-B -> 0->1. (0,2): R-B -> 0->2. (1,3): B-W -> 1->3. (1,4): B-R -> next(B)=W != R, next(R)=B == B -> direction 4->1? Wait, edge (1,4) colors B and R. If u=1(B), v=4(R): next(B)=W != R -> no. u=4(R), v=1(B): next(R)=B == B -> yes. So 4->1.
+        # Forced directed edges: 0->1, 0->2, 1->3, 4->1.
+        # Indegrees: 0:0, 1: from 0 and 4 -> indegree 2! So fails indegree condition. Returns -1.
+        # Manual check: root 0? depth0 R, children 1,2 depth B. node 1 has children? In rooted tree at 0, children of 1 would be 3 and 4. But colors: 3=W (next(B) OK), 4=R (but next(B)=W, so 4 should be W, but it's R). So root 0 fails. Root 4? degree 1, but let's see. So -1 is correct.
+
+        # What if we have a valid root but the root degree is 2, and there's a node with degree 3 that has two children and one parent, and all forced directions are correct? Our algorithm will return the root. Let's construct one more carefully.
+        # n=6: 0-1, 0-2, 1-3, 1-4, 2-5. colors: 0:R, 1:B, 2:B, 3:W, 4:W, 5:W.
+        # Edges: (0,1): R-B -> 0->1. (0,2): R-B -> 0->2. (1,3): B-W -> 1->3. (1,4): B-W -> 1->4. (2,5): B-W -> 2->5.
+        # Indegrees: 0:0, 1:1, 2:1, 3:1, 4:1, 5:1. Exactly one indegree 0: 0. degree(0)=2 <=2. Return 0.
+        # This works.
+
+        # Is there any case where the indegree condition holds, degree(root)<=2, but the binary-tree property is violated because some node has more than 2 children? As said, max degree 3, non-root has one parent, so children = degree - 1 <= 2. But what if the tree has a node with degree 3 that is the root? We check degree(root) <= 2, so root degree 3 is rejected. What if root degree is 2, but some non-root node has degree 3 and we count children as 2, which is allowed. So no violation.
+
+        # Wait: The problem says "Binary-tree property: Every node has at most two children." In a rooted tree, children are neighbors with greater depth. If a non-root node has degree 3, it has one parent and two children. That's exactly two children, allowed. If it had degree 4, it would have 3 children, not allowed, but max degree is 3. So fine.
+
+        # One more subtle point: The problem says "A node chosen as root must satisfy both conditions once the tree is oriented away from it: 1. Binary-tree property: Every node has at most two children. 2. Layered color pattern..." We've ensured both.
+
+        # Let's consider if there's any case where the forced directions have exactly one indegree 0, degree(root)<=2, but the layered color pattern fails because the sequence doesn't match one of the three repeating sequences? We already argued it matches by construction.
+
+        # But wait: The three sequences are:
+        # R → B → W → R → B → W → ...
+        # B → W → R → B → W → R → ...
+        # W → R → B → W → R → B → ...
+        # Our next function: R->B, B->W, W->R.
+        # If root is R, sequence is R,B,W,R,B,W... which is the first sequence.
+        # If root is B, sequence is B,W,R,B,W,R... second.
+        # If root is W, sequence is W,R,B,W,R,B... third.
+        # So it's exactly one of the three.
+
+        # What if the root color is, say, R, but the forced directions somehow make the sequence go R, B, W, R, but then at some depth it deviates? No, because every edge enforces the next color.
+
+        # I think the solution is complete.
+
+        # Let's write the Python code.
+
+        # We need to implement the method `findColoredRoot(self, edges: list[list[int]], colors: str) -> int:`
+
+        # Code outline:
+        # class Solution:
+        #     def findColoredRoot(self, edges: list[list[int]], colors: str) -> int:
+        #         n = len(colors)
+        #         indegree = [0] * n
+        #         # We also need degrees of all nodes to check root degree later.
+        #         degree = [0] * n
+        #         # We'll also build adjacency maybe not needed, but we can compute degree from edges.
+        #         for u, v in edges:
+        #             degree[u] += 1
+        #             degree[v] += 1
+        #             c_u = colors[u]
+        #             c_v = colors[v]
+        #             if c_u == c_v:
+        #                 return -1
+        #             nxt = {'R': 'B', 'B': 'W', 'W': 'R'}
+        #             if c_v == nxt[c_u]:
+        #                 indegree[v] += 1
+        #             else:
+        #                 indegree[u] += 1
+        #         
+        #         # Count nodes with indegree 0
+        #         zero_indegree = [i for i in range(n) if indegree[i] == 0]
+        #         if len(zero_indegree) != 1:
+        #             return -1
+        #         r = zero_indegree[0]
+        #         if degree[r] > 2:
+        #             return -1
+        #         return r
+
+        # Let's test with the examples.
+
+        # Example 1:
+        # edges = [[3,1],[3,2],[1,4],[2,0]], colors = "BRRWB"
+        # n=5. degree: 3:2, 1:2, 2:2, 4:1, 0:1.
+        # Process edges:
+        # (3,1): c_u='W', c_v='R'. nxt: W->R. c_v == nxt[c_u]? 'R' == 'R' -> True -> indegree[1] += 1.
+        # (3,2): c_u='W', c_v='R' -> indegree[2] += 1.
+        # (1,4): c_u='R', c_v='B'. nxt: R->B. 'B' == 'B' -> True -> indegree[4] += 1.
+        # (2,0): c_u='R', c_v='B' -> indegree[0] += 1.
+        # indegree: 0:1, 1:1, 2:1, 3:0, 4:1.
+        # zero_indegree = [3]. len=1. r=3. degree[3]=2 <=2. return 3. OK.
+
+        # Example 2:
+        # edges = [[0,1],[1,2],[2,3]], colors = "RBRB"
+        # n=4. degree: 0:1, 1:2, 2:2, 3:1.
+        # (0,1): c_u='R', c_v='B' -> nxt R->B -> indegree[1] += 1.
+        # (1,2): c_u='B', c_v='R'. nxt B->W. 'R' == 'W'? False -> else: indegree[u] += 1 => indegree[1] += 1. (Wait, u=1, v=2. else means v->u? Our code: if c_v == nxt[c_u]: indegree[v] += 1 else: indegree[u] += 1. Here u=1, v=2. c_v='R', nxt[c_u]=nxt['B']='W'. 'R' != 'W', so else: indegree[u] += 1 => indegree[1] += 1. This corresponds to direction v->u i.e., 2->1. Correct.)
+        # (2,3): c_u='R', c_v='B' -> indegree[3] += 1.
+        # indegree: 0:0, 1:2, 2:0, 3:1.
+        # zero_indegree = [0, 2] -> len=2 != 1 -> return -1. OK.
+
+        # Let's test the 2-node RR case:
+        # edges=[[0,1]], colors="RR"
+        # (0,1): c_u='R', c_v='R' -> return -1. OK.
+
+        # Test n=2 RB:
+        # edges=[[0,1]], colors="RB"
+        # (0,1): c_u='R', c_v='B' -> nxt R->B -> indegree[1] += 1.
+        # indegree: 0:0, 1:1. zero_indegree=[0]. degree[0]=1 <=2. return 0. OK.
+
+        # Test n=3 path R-W-B:
+        # edges=[[0,1],[1,2]], colors="RWB" (but wait, colors length 3, "RWB" -> 0:R, 1:W, 2:B)
+        # degree: 0:1, 1:2, 2:1.
+        # (0,1): c_u='R', c_v='W' -> nxt R->B. 'W' == 'B'? False -> else: indegree[u] += 1 => indegree[0] += 1? Wait, u=0, v=1. else means indegree[u] += 1 => indegree[0] += 1. This corresponds to direction v->u i.e., 1->0. Correct.
+        # (1,2): c_u='W', c_v='B' -> nxt W->R. 'B' == 'R'? False -> else: indegree[u] += 1 => indegree[1] += 1. Direction 2->1.
+        # indegree: 0:1, 1:1, 2:0. zero_indegree=[2]. degree[2]=1 <=2. return 2. OK.
+
+        # Everything seems consistent.
+
+        # But wait: Is there any case where the forced directions have exactly one indegree 0, degree(root)<=2, but the root is not valid because the tree has a cycle? No, it's a tree.
+
+        # What about the binary-tree property for non-root nodes? We rely on max degree 3. But what if the tree has a node with degree 3 that is not the root, and in the rooted orientation, that node has two children. That's allowed. But what if the forced directions make that node have indegree 1, but one of its "children" edges is actually directed towards it? That would make indegree >1, which we already catch. So it's fine.
+
+        # One more check: The problem says "The input graph is a tree and every node has degree at most three." So we don't need to worry about degree >3.
+
+        # Is there any edge case where the root degree is 2, but the root has two children, and one of those children has degree 3 (so two children of its own), and the forced directions are all correct, but the layered color pattern fails because of some depth conflict? We already proved it can't fail if indegree condition holds.
+
+        # Let's try to find a counterexample by brute force for small n, but since I can't run code, I'll reason.
+        # Suppose we have a tree where indegree condition holds, but the color pattern somehow violates the "all nodes at same depth have same color". 
+        # For the color pattern to violate, there must be two nodes at the same depth with different colors.
+        # But if every edge parent->child satisfies child = next(parent), then by induction, color of node at depth d is next^d(root_color). So all nodes at depth d have the same color. This induction holds as long as the rooted tree's parent-child relationships are exactly the forced directions.
+        # The forced directions are defined per edge. If the indegree condition holds, the directed edges form a rooted tree at r. The parent of any node v != r is the unique neighbor u such that u->v is a forced edge (and u is closer to r). Since the tree is connected and we have exactly n-1 directed edges with indegrees as described, the parent of v is well-defined and the path from r to v is unique. And each step on that path is a forced edge, so child = next(parent). Thus induction holds perfectly.
+        # So no counterexample exists.
+
+        # Therefore, the solution is correct and O(n) time, O(n) space.
+
+        # Let's write the final code with proper formatting.
+
+        # One minor thing: The method header is `def findColoredRoot(self, edges: list[list[int]], colors: str) -> int:`
+        # We need to output the code block with the class Solution.
+
+        # Code:
+
+```python
+class Solution:
+    def findColoredRoot(self, edges: list[list[int]], colors: str) -> int:
+        n = len(colors)
+        degree = [0] * n
+        indegree = [0] * n
+        
+        nxt = {'R': 'B', 'B': 'W', 'W': 'R'}
+        
+        for u, v in edges:
+            degree[u] += 1
+            degree[v] += 1
+            c_u = colors[u]
+            c_v = colors[v]
+            if c_u == c_v:
+                return -1
+            if c_v == nxt[c_u]:
+                indegree[v] += 1
+            else:
+                indegree[u] += 1
+        
+        zero_indegree = [i for i in range(n) if indegree[i] == 0]
+        if len(zero_indegree) != 1:
+            return -1
+        
+        r = zero_indegree[0]
+        if degree[r] > 2:
+            return -1
+        
+        return r
+```
+
+        # Wait: I should double-check the `else` branch logic.
+        # if c_v == nxt[c_u]: indegree[v] += 1
+        # else: indegree[u] += 1
+        # This correctly assigns the direction: if child color is next of parent, then parent->child, so child gets indegree increment.
+        # If not, then the other direction is forced: child->parent, so parent gets indegree increment.
+        # Yes.
+
+        # Let's test with a case where colors are B and R, u=B, v=R.
+        # nxt['B'] = 'W'. c_v = 'R' != 'W' -> else -> indegree[u] += 1. u is B, so indegree[B] increases. This means direction is v->u, i.e., R->B. So indegree of R increases? Wait, u=B, v=R. else adds indegree to u=B. But the direction is v->u, i.e., R->B. So the child is B, parent is R. Child is B, so indegree of B should increase. Yes, u=B, so indegree[B] increases. Correct.
+
+        # What if u=R, v=B? nxt['R']='B'. c_v='B' == 'B' -> if branch: indegree[v] += 1 => indegree[B] += 1. Direction R->B, child B, indegree[B] increases. Correct.
+
+        # So the logic is correct.
+
+        # One more thing: The problem statement says "Return the index of any root that satisfies both conditions, or -1 if no such root exists." Our algorithm returns the unique root if it exists, else -1. That's fine.
+
+        # I think this is the complete solution.```python
+class Solution:
+    def findColoredRoot(self, edges: list[list[int]], colors: str) -> int:
+        n = len(colors)
+        degree = [0] * n
+        indegree = [0] * n
+        
+        # next color in the cycle R -> B -> W -> R
+        nxt = {'R': 'B', 'B': 'W', 'W': 'R'}
+        
+        for u, v in edges:
+            degree[u] += 1
+            degree[v] += 1
+            c_u = colors[u]
+            c_v = colors[v]
+            
+            # If two adjacent nodes have the same color, no root can work
+            if c_u == c_v:
+                return -1
+            
+            # Determine the forced direction of the edge
+            if c_v == nxt[c_u]:
+                # parent -> child: u -> v, so child v gets an incoming edge
+                indegree[v] += 1
+            else:
+                # the only other valid direction is v -> u, so parent u gets an incoming edge
+                indegree[u] += 1
+        
+        # Exactly one node must have indegree 0 (the root candidate)
+        zero_indegree = [i for i in range(n) if indegree[i] == 0]
+        if len(zero_indegree) != 1:
+            return -1
+        
+        r = zero_indegree[0]
+        
+        # The root must have at most two children (degree <= 2)
+        if degree[r] > 2:
+            return -1
+        
+        return r
+```
+[finish_reason: stop | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 763, 'completion_tokens': 22222, 'total_tokens': 22985, 'cost': 0.00449781, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00449781, 'upstream_inference_prompt_cost': 5.341e-05, 'upstream_inference_completions_cost': 0.0044444}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

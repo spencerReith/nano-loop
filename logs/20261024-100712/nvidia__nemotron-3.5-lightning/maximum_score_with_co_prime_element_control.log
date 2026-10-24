@@ -1,0 +1,1324 @@
+
+Assistant: ```python
+import math
+from collections import Counter
+from typing import List
+
+class Solution:
+    def maxScore(self, nums: List[int], maxVal: int) -> int:
+        """
+        Return the maximum possible score.
+        The score is: selectedValue - modificationCost.
+        selectedValue must be chosen from the final array and be co-prime
+        with all other elements after modifications.
+        We may change any element to any positive integer <= maxVal, each change costs 1.
+        """
+        n = len(nums)
+        # frequency of each value in the original array
+        freq = Counter(nums)
+
+        # For each possible selected value v (1..maxVal) we need to know
+        # how many original elements are NOT co-prime with v.
+        # If we keep those elements unchanged, they would violate the co-prime condition,
+        # so we must change all of them (cost 1 each).
+        # The best we can do is pick one element with value v (if any exists) as the selected one,
+        # and change all other incompatible elements.
+        # The modification cost for a fixed v is therefore:
+        #     cost(v) = (total incompatible elements) - (1 if v appears in nums else 0)
+        # And the score would be: v - cost(v).
+
+        # To compute "total incompatible elements" efficiently for all v,
+        # we count for each d>1 how many numbers in nums are multiples of d.
+        # Then by inclusion–exclusion (or Mobius transform) we can get for each v
+        # the number of elements that share a common divisor > 1 with v.
+        # However, a simpler approach works because maxVal <= 1e5 and n <= 1e5:
+        # we can just iterate over all v and compute the incompatible count
+        # using the pre‑computed multiples lists.
+
+        # Pre‑compute for each d the list of values in nums that are multiples of d.
+        # Since maxVal <= 1e5, we can use an array of size maxVal+1.
+        max_val = maxVal
+        # multiples[d] will store the count of numbers in nums divisible by d
+        multiples = [0] * (max_val + 1)
+
+        for val, cnt in freq.items():
+            # add cnt to all divisors of val that are <= max_val
+            # we only need to iterate up to sqrt(val) to find divisors
+            # but it's simpler to just iterate over all d <= max_val that divide val
+            # given constraints, O(max_val log max_val) is acceptable.
+            # We'll use a sieve‑like approach:
+            for d in range(1, max_val + 1):
+                if val % d == 0:
+                    multiples[d] += cnt
+
+        # Now for each candidate selected value v from 1 .. max_val:
+        best = -10**9  # sufficiently small
+        for v in range(1, max_val + 1):
+            # count of elements that are NOT co‑prime with v
+            # those are elements that share at least one prime factor with v.
+            # Using the multiples array we can sum counts of all d>1 dividing v,
+            # but inclusion‑exclusion over prime factors is needed for exact count.
+            # Instead, we compute the number of elements that ARE co‑prime with v
+            # by Mobius inversion, or simply note:
+            #   incompatible = total_elements - co_prime_count
+            # We'll compute co_prime_count via the classic formula:
+            #   co_prime(v) = sum_{d|v} mu(d) * multiples[d]
+            # where mu is the Mobius function.
+            # We precompute mu up to max_val.
+
+        # Precompute smallest prime factor (spf) and Mobius function up to max_val
+        spf = list(range(max_val + 1))  # smallest prime factor
+        mu = [0] * (max_val + 1)
+        mu[1] = 1
+        primes = []
+        for i in range(2, max_val + 1):
+            if spf[i] == i:
+                primes.append(i)
+                mu[i] = -1
+            for p in primes:
+                if i * p > max_val:
+                    break
+                spf[i * p] = p
+                if i % p == 0:
+                    mu[i * p] = 0
+                    break
+                else:
+                    mu[i * p] = -mu[i]
+
+        total_n = n
+        # For each v, compute number of elements co‑prime with v
+        # using: co_prime_count = sum_{d|v} mu[d] * multiples[d]
+        # We need the divisors of v. We can generate them from prime factorization,
+        # or simply iterate d from 1 to v and check if v % d == 0 and mu[d] != 0.
+        # Since max_val <= 1e5, O(max_val^2) is too big (1e10), but we can iterate
+        # over divisors more efficiently.
+
+        # Alternative: for each v, we can compute incompatible count directly
+        # by counting how many nums share a prime factor with v.
+        # Because maxVal <= 1e5, we can precompute for each number its distinct prime factors.
+        # Then for a given v, incompatible = sum_{p|v} cnt_multiples[p] - overlaps ...
+        # Inclusion‑exclusion over distinct prime factors of v (at most ~6 for 1e5).
+        # That is fast enough.
+
+        # Precompute distinct prime factors for every number up to max_val
+        prime_factors = [[] for _ in range(max_val + 1)]
+        for i in range(2, max_val + 1):
+            if not prime_factors[i]:  # i is prime
+                for j in range(i, max_val + 1, i):
+                    prime_factors[j].append(i)
+
+        # Also precompute cnt_multiples[d] = number of elements in nums divisible by d
+        # we already have multiples[d] from above.
+
+        # For each v, compute number of elements that are NOT co‑prime with v
+        # using inclusion‑exclusion over the distinct prime factors of v.
+        best = -10**9
+        for v in range(1, max_val + 1):
+            # get distinct prime factors of v
+            pf = prime_factors[v]
+            k = len(pf)
+            # inclusion–exclusion over subsets of pf
+            # number of elements sharing at least one prime factor with v
+            incompatible = 0
+            # iterate over non‑empty subsets
+            for mask in range(1, 1 << k):
+                # product of primes in subset
+                prod = 1
+                bits = 0
+                for i in range(k):
+                    if mask & (1 << i):
+                        prod *= pf[i]
+                        bits += 1
+                cnt = multiples[prod]
+                if bits % 2 == 1:
+                    incompatible += cnt
+                else:
+                    incompatible -= cnt
+            # Now incompatible = number of elements that share a prime factor with v
+            # The number of elements we MUST change if we pick v as selectedValue:
+            # we can keep one element with value v (if present) without changing it,
+            # and we must change all other incompatible elements.
+            # Also we must change any element that has value v but is not the selected one.
+            # Let's compute cost precisely:
+            # total elements = n
+            # elements that are co‑prime with v = n - incompatible
+            # among those, if there is an element with value v, we can select it.
+            # If there is no element with value v, we must also change one element
+            # to become v (cost 1) and also change all incompatible elements.
+            # Actually, the problem allows us to change any element to any value <= maxVal.
+            # So we can always change some element to v if needed, paying 1 cost.
+            # The optimal strategy for a fixed v:
+            # - We want exactly one element to have value v (the selected one).
+            # - All other elements must be co‑prime with v.
+            # - Changing an element costs 1.
+            # So we should keep as many original elements that are already co‑prime with v
+            # and also have value != v (or if value == v, keep exactly one of them).
+            # Let's compute:
+            #   keep = number of elements that are co‑prime with v AND (value != v or we keep one v)
+            # Actually simpler:
+            #   We need exactly one element with value v.
+            #   All other n-1 elements must be co‑prime with v.
+            #   We can keep an element unchanged if it is co‑prime with v and its value != v,
+            #   or if its value == v we keep exactly one such element.
+            #   All remaining elements must be changed (cost 1 each) to some value co‑prime with v
+            #   (we can always change to 1, which is co‑rime with everything, as long as 1 <= maxVal,
+            #    which is true since maxVal >= 1).
+            # Therefore, for a given v:
+            #   Let cnt_v = frequency of value v in nums.
+            #   Let cnt_coprime_excl_v = number of elements with value != v that are co‑prime with v.
+            #   We can keep all cnt_coprime_excl_v elements unchanged.
+            #   For the cnt_v elements with value v:
+            #       we keep exactly 1 of them as the selected element (cost 0 for that one),
+            #       the remaining cnt_v - 1 must be changed (cost cnt_v - 1).
+            #   Additionally, all elements that are NOT co‑prime with v AND have value != v
+            #   must be changed. Their count = (n - cnt_v) - cnt_coprime_excl_v.
+            #   So total modification cost = (cnt_v - 1) + ((n - cnt_v) - cnt_coprime_excl_v)
+            #                               = n - 1 - cnt_coprime_excl_v.
+            #   Wait, check: if cnt_v = 0, formula gives cost = n - 1 - cnt_coprime_excl_v.
+            #   But if cnt_v = 0, we have no element with value v originally.
+            #   We must change one element to v (cost 1), and also change all incompatible elements.
+            #   Let's re‑derive carefully.
+            pass
+        # The derivation got messy; let's do a clean brute‑force check for each v.
+        # Since maxVal <= 1e5 and n <= 1e5, we can afford O(max_val * something_small).
+        # We'll compute for each v:
+        #   - how many original elements are co‑prime with v (call it good)
+        #   - how many original elements have value exactly v (call it freq_v)
+        # Then the minimum modification cost to make v the selected value:
+        #   We need exactly one element with value v.
+        #   All other n-1 elements must be co‑prime with v.
+        #   We can keep unchanged:
+        #       * all elements that are co‑prime with v and value != v
+        #       * exactly one element with value v (if freq_v > 0)
+        #   All other elements must be changed (cost 1 each).
+        #   So cost = n - 1 - (number of elements we can keep unchanged)
+        #   Number we can keep unchanged =
+        #       (good - (freq_v if v is counted in good else 0))   # good counts co‑prime including possibly v
+        #       + (1 if freq_v > 0 else 0)                       # we keep one v
+        #   But good counts elements co‑prime with v. An element with value v is NOT co‑prime with v
+        #   unless v == 1 (gcd(1,1)=1). For v > 1, gcd(v,v)=v>1, so v is not co‑prime with itself.
+        #   So for v > 1, good does NOT include any element with value v.
+        #   For v = 1, gcd(1,1)=1, so 1 is co‑prime with 1.
+        #   Let's treat v = 1 separately if needed, but the formula can be unified.
+        #
+        #   Let's define:
+        #     co_prime_count = number of elements in nums that are co‑prime with v.
+        #     This includes elements with value v only if v == 1.
+        #   We can keep:
+        #     * all co_prime_count elements (they are co‑prime with v)
+        #     * plus possibly one element with value v if v > 1 and freq_v > 0,
+        #       but those are NOT in co_prime_count, so we add 1 if freq_v > 0 and v > 1.
+        #   However, we must have exactly one selected element with value v.
+        #   If freq_v > 0, we can keep one of them, and we must ensure all other elements are co‑prime.
+        #   If freq_v == 0, we must change one element to v (cost 1), and that changed element will have value v,
+        #   which is fine as long as it's the selected one; the rest must be co‑prime.
+        #
+        #   Let's compute keep = number of elements we can leave unchanged.
+        #   Case 1: v == 1.
+        #       1 is co‑prime with everything, including itself.
+        #       We can keep all elements unchanged, and just pick one element with value 1 as selected.
+        #       But we might need exactly one element with value 1; if there are multiple, we keep one,
+        #       change the rest? Actually if we keep all elements, and there are multiple 1's,
+        #       we can just choose any one as selected; the others remain 1 and are co‑prime with everything,
+        #       so no changes needed. So cost = 0 if there is at least one 1,
+        #       else we must change one element to 1 (cost 1), and all other elements are already co‑prime with 1,
+        #       so cost = 1 if no 1 exists, else 0.
+        #       Score = 1 - cost.
+        #   Case 2: v > 1.
+        #       We need exactly one element with value v.
+        #       Let co = number of elements co‑prime with v (these have value != v because v>1).
+        #       Let f = freq[v] (number of elements with value v).
+        #       We can keep:
+        #           - all 'co' elements (they are co‑prime with v, value != v)
+        #           - exactly one element with value v (if f > 0), else we must change one element to v (cost 1).
+        #       So if f > 0:
+        #           keep = co + 1
+        #           cost = n - keep = n - co - 1
+        #       else (f == 0):
+        #           we must change one element to v (cost 1), and keep all 'co' elements unchanged.
+        #           keep = co
+        #           cost = (n - co) - 1 + 1? Wait:
+        #           total elements n. We keep 'co' unchanged.
+        #           We need one element to be v. We change one element (any) to v. That costs 1.
+        #           The remaining n - co - 1 elements must also be changed to be co‑prime with v
+        #           (we can change them to 1, cost 1 each).
+        #           So total cost = 1 + (n - co - 1) = n - co.
+        #           But wait, is the changed element to v counted in the n - co - 1? 
+        #           We have n elements total. 'co' are kept. The remaining n - co elements must be altered.
+        #           Among those, we want exactly one to end up as v. We can change one of them to v (cost 1),
+        #           and change the other n - co - 1 to something co‑prime (cost 1 each).
+        #           Total cost = 1 + (n - co - 1) = n - co.
+        #           So if f == 0, cost = n - co.
+        #           If f > 0, cost = n - co - 1.
+        #       Score = v - cost.
+        #
+        #   Let's verify with examples.
+        #   Example 1: nums = [3,4,6], maxVal = 5
+        #       v = 5: co = elements co‑prime with 5: 3 and 4 are co‑prime (gcd(3,5)=1, gcd(4,5)=1), 6 is not (gcd(6,5)=1 actually 6 and 5 are co‑prime! gcd(6,5)=1. Wait 6 and 5 are co‑prime. So all 3 are co‑prime with 5. co = 3. freq[5] = 0. So cost = n - co = 3 - 3 = 0? But example says change nums[2] from 6 to 5 cost 1, selectedValue=5, score=4.
+        #       Let's recompute: nums = [3,4,6], maxVal=5.
+        #       If we pick v=5, we need selectedValue=5. Original nums have no 5. We must change one element to 5 (cost 1). The other two elements must be co‑prime with 5. 3 and 4 are co‑prime with 5, 6 is also co‑prime with 5 (gcd(6,5)=1). So actually all three are co‑prime with 5. So we change one element to 5 (cost 1), and the other two remain as is (they are co‑prime with 5). So total cost = 1. Score = 5 - 1 = 4. My formula gave cost = n - co = 3 - 3 = 0, which is wrong.
+        #       Why? Because if f == 0, I said cost = n - co. But here n=3, co=3, cost=0 according to formula, but actual cost is 1 (we must change one element to 5). The error is: we need exactly one element with value v. If there is no element with value v originally, we must change *some* element to v, which costs 1, regardless of whether other elements are co‑prime. My formula n - co assumed we change all non‑co elements, but we also need to introduce v. So cost should be: (number of elements we must change to make all others co‑prime) + (1 if we need to introduce v and don't have it).
+        #       Let's re‑derive cleanly.
+        #
+        #   We have array of n elements. We will perform some changes. After changes,
+        #   there is exactly one element with value v (the selected one), and all other n-1 elements are co‑prime with v.
+        #   We want to minimize the number of changes.
+        #   For each original element, we can either keep it (cost 0) or change it (cost 1).
+        #   If we keep it, its final value is its original value, and it must satisfy the conditions:
+        #       - If it is the selected element, its value must be v.
+        #       - If it is not selected, its value must be co‑prime with v.
+        #   So we can keep an element unchanged iff:
+        #       (it is selected and original value == v) OR (it is not selected and original value is co‑prime with v).
+        #   We want to maximize the number of kept elements (to minimize changes).
+        #   We choose exactly one element to be the selected one. Its final value is v.
+        #   For the selected element, if its original value is v, we keep it (cost 0 for it).
+        #   If its original value is not v, we must change it to v (cost 1).
+        #   For the other n-1 elements, we can keep them unchanged iff their original value is co‑prime with v.
+        #   So the maximum number of elements we can keep unchanged is:
+        #       keep = (1 if we pick a selected element with original value v else 0) + (number of other elements with original value co‑prime with v).
+        #   We can choose which element is selected to maximize keep.
+        #   If there is at least one element with original value v, we can select one of them,
+        #   then keep = 1 + (number of other elements co‑prime with v).
+        #   The number of other elements co‑prime with v = (total elements co‑prime with v) - (1 if the selected element was counted in co‑prime count else 0).
+        #   Since selected element has value v, and v > 1 implies v is NOT co‑prime with v,
+        #   so co‑prime count does NOT include it. So keep = 1 + co, where co = number of elements co‑prime with v.
+        #   If there is no element with value v, we must select some other element and change it to v.
+        #   Then keep = 0 (for selected, we change it) + (number of all elements co‑prime with v).
+        #   But wait, if we change the selected element to v, its original value might have been co‑prime with v or not.
+        #   We want to maximize keep, so we should choose the selected element to change such that we lose as few co‑prime elements as possible.
+        #   Actually, if we change an element to v, we can pick any element. If we pick an element that is co‑prime with v,
+        #   we lose that element from the "co‑prime pool". If we pick one that is not co‑prime, we lose it anyway because it wasn't co‑prime.
+        #   To maximize keep, we should pick an element that is NOT co‑prime with v to be the selected one (and change it to v),
+        #   thereby preserving all co‑prime elements unchanged.
+        #   If there exists at least one element not co‑prime with v, we can select that one, change it to v (cost 1),
+        #   and keep all co‑prime elements unchanged. keep = co.
+        #   If all elements are co‑prime with v, then any we pick to change will reduce the co‑prime count by 1,
+        #   so keep = co - 1, and we pay 1 change for the selected element.
+        #   Additionally, we might need to change some elements that are not co‑prime? But we assumed we pick a non‑co‑prime one if exists.
+        #   Let's formalize:
+        #
+        #   Let co = number of elements in nums that are co‑prime with v.
+        #   Let f = freq[v] (number of elements with value v).
+        #   Note: for v > 1, elements with value v are NOT co‑prime with v, so they are not counted in co.
+        #   Total elements n.
+        #   We want to choose one element to be the selected (final value v), and change the rest as needed
+        #   so that all other n-1 elements are co‑prime with v.
+        #
+        #   Strategy:
+        #   - We will keep unchanged all elements that are co‑prime with v.
+        #   - For the selected element:
+        #       * If we pick an element with value v (f > 0), we keep it unchanged (cost 0 for it),
+        #         and we must change all other f-1 elements with value v, plus all elements not co‑prime with v
+        #         (there are n - co - f of them, since non‑co‑prime and not v are n - co - f).
+        #         Total changes = (f - 1) + (n - co - f) = n - co - 1.
+        #       * If f == 0 (no element originally v):
+        #           We must change one element to v. To minimize changes, we should change an element
+        #           that is NOT co‑prime with v (if any), so that we don't lose a co‑prime element.
+        #           If there is at least one element not co‑prime with v (i.e., n - co > 0),
+        #           we can change such an element to v. Then we keep all co elements unchanged.
+        #           Changes: 1 (for the selected element) + (n - co - 1) (for the remaining non‑co elements, since we already changed one of them to v,
+        #           the rest n - co - 1 must be changed to be co‑prime; we can change them to 1).
+        #           Total changes = 1 + (n - co - 1) = n - co.
+        #           If all elements are co‑prime with v (n - co == 0, i.e., co == n),
+        #           then any element we change to v will reduce the co‑prime pool by 1.
+        #           We change one element to v (cost 1), and the other n-1 elements are already co‑prime,
+        #           but one of them was changed? Wait, if co == n, all elements are co‑prime with v.
+        #           We need exactly one element to be v. We change one element to v (cost 1).
+        #           The remaining n-1 elements are still co‑prime with v (their values unchanged).
+        #           So total changes = 1.
+        #           According to n - co formula, n - n = 0, which is wrong.
+        #           So we need to handle co == n separately.
+        #           If co == n (all elements co‑prime with v) and f == 0:
+        #               we just change one element to v, cost = 1.
+        #               keep = n - 1 (all others unchanged and co‑prime).
+        #           If co < n and f == 0:
+        #               we change one non‑co element to v, cost = 1 + (n - co - 1) = n - co.
+        #               keep = co (all co‑prime elements unchanged; the changed non‑co element becomes v, so it's no longer co‑prime but it's the selected one).
+        #
+        #   Let's test this logic with examples.
+        #
+        #   Example 1: nums = [3,4,6], maxVal = 5, v = 5.
+        #       co = elements co‑prime with 5: 3,4,6 all gcd 1 with 5 => co = 3.
+        #       f = freq[5] = 0.
+        #       n = 3, co = 3 => co == n.
+        #       So cost = 1 (change one element to 5). Score = 5 - 1 = 4. Matches example.
+        #
+        #   Example 2: nums = [1,2,3], maxVal = 4, output 3.
+        #       We can pick v = 3. nums have 3. co = elements co‑prime with 3: 1 and 2 are co‑prime (gcd(1,3)=1, gcd(2,3)=1). 3 is not co‑prime. So co = 2. f = freq[3] = 1. n = 3.
+        #       f > 0: cost = n - co - 1 = 3 - 2 - 1 = 0. Score = 3 - 0 = 3. Matches.
+        #
+        #   Example 3: nums = [2,2], maxVal = 1, output 1.
+        #       maxVal = 1, so only possible v is 1.
+        #       v = 1: all elements co‑prime with 1. f = freq[1] = 0. n = 2. co = 2 (since gcd(x,1)=1 for all x).
+        #       v=1 special case? Let's apply general logic if possible, or handle v=1 separately.
+        #       For v=1: we need selected value 1. All other elements must be co‑prime with 1 (always true).
+        #       We can keep all elements unchanged, and pick one 1 as selected. But original nums are [2,2], no 1.
+        #       So we must change one element to 1 (cost 1). The other element remains 2, co‑prime with 1.
+        #       Score = 1 - 1 = 0? But example output is 1. Wait example 3 output is 1, explanation: change nums[0] from 2 to 1 (cost 1). Choose nums[1] = 2, since it is co‑prime with 1.
+        #       selectedValue = 2, not 1! The selected value is 2, not 1.
+        #       So in example 3, they picked selectedValue = 2, not 1.
+        #       Let's check: nums = [2,2], maxVal = 1. They change nums[0] from 2 to 1 (cost 1). Then array becomes [1,2]. Choose nums[1] = 2. selectedValue = 2. modificationCost = 1. Score = 2 - 1 = 1.
+        #       So v = 2 is selected, but maxVal = 1? Wait maxVal = 1, but they changed nums[0] to 1 (<= maxVal), and selected nums[1] = 2. But 2 > maxVal = 1! How is that allowed?
+        #       Re-read problem: "You may change any element in nums to any positive integer less than or equal to maxVal."
+        #       "After all modifications, you must choose an index i such that nums[i] is co-prime with every other element nums[j]."
+        #       It does NOT say the selected element must be <= maxVal! It says you may change elements to <= maxVal.
+        #       The selected element is chosen from the final array. Its value could be original value > maxVal, as long as it wasn't changed, or if it was changed it must be <= maxVal.
+        #       In example 3, they changed nums[0] to 1 (<=1), and kept nums[1] = 2 (original, not changed). Then selected nums[1] = 2. So selectedValue can be > maxVal.
+        #       This is a crucial point! The selectedValue is the final value of nums[i] after modifications.
+        #       Modifications only apply to elements we choose to change. We can leave some elements unchanged even if their original value > maxVal.
+        #       So v (selectedValue) can be any value that appears in the final array. It could be > maxVal if we don't change it.
+        #       But wait, the problem says: "You may change any element in nums to any positive integer less than or equal to maxVal."
+        #       It doesn't restrict the final values of unmodified elements. So selectedValue can be any original nums[i] that we don't change, or any value we change to (<= maxVal).
+        #       Therefore, the candidate selectedValue v can be any integer from 1 to max( maxVal, max(nums) )? Actually it can be any value that is either an original element or <= maxVal.
+        #       But to maximize score = v - modificationCost, we would generally consider v up to maybe maxVal or larger original values.
+        #       However, the constraints: nums[i] <= 1e5, maxVal <= 1e5. So values can be up to 1e5.
+        #       And we can also change elements to any positive integer <= maxVal.
+        #       So the possible selected values are: any value that is either an original nums[i] (which could be up to 1e5) or any integer in [1, maxVal].
+        #       But note: if we don't change an element, its value stays as original, which could be > maxVal.
+        #       So we must consider all possible v that are either in the original array or <= maxVal.
+        #       Actually, we can also change an element to some value <= maxVal and then select it. So v can be any integer in [1, maxVal], or any original nums[i].
+        #       But original nums[i] could be > maxVal. If we keep it, v = nums[i] > maxVal.
+        #       So the search space for v is: all integers from 1 to max(maxVal, max(nums)), but also we might consider v > max(nums)? No, because to have selectedValue v, we need an element with value v in the final array. If v > max(nums) and v > maxVal, we would have to change some element to v, but we can only change to <= maxVal. So v cannot exceed max(maxVal, max(nums)).
+        #       Actually, if v > maxVal and v > max(nums), we can't get it. So v <= max(maxVal, max(nums)).
+        #       Since maxVal <= 1e5 and nums[i] <= 1e5, v <= 1e5.
+        #       So we can just iterate v from 1 to max_val_possible = max(maxVal, max(nums)).
+        #       But wait: what if we change an element to <= maxVal, and that becomes selectedValue? Then v <= maxVal.
+        #       What if we keep an original element > maxVal as selected? Then v = original > maxVal.
+        #       So v range: 1 .. max(maxVal, max(nums)).
+        #       Let's denote M = max(maxVal, max(nums)).
+        #       We need to compute for each v in 1..M the minimum modification cost to make v the selected value,
+        #       with the rule that we can only change elements to values <= maxVal,
+        #       and we can keep original elements > maxVal unchanged.
+        #
+        #   Let's re-express the cost calculation considering this.
+        #
+        #   We have original array nums of length n. Some elements may be > maxVal.
+        #   We can change any element to any value in [1, maxVal], cost 1 per change.
+        #   After changes, we pick one index i, its final value is selectedValue v.
+        #   All other n-1 elements must be co‑prime with v.
+        #   We want to minimize number of changes.
+        #
+        #   For a candidate selected value v:
+        #   - If v > maxVal: we cannot change any element to v (since changes only allow <= maxVal).
+        #     So we must have an element with original value v that we keep unchanged.
+        #     If no such element exists, v is impossible as selectedValue (unless we change an element to something else? No, we can't change to > maxVal).
+        #     So if v > maxVal, we require freq_original[v] >= 1.
+        #   - If v <= maxVal: we can change an element to v, or keep an original element with value v.
+        #
+        #   Let's define for each v:
+        #     freq[v] = number of original elements with value v. (v can be > maxVal, but we only care up to M)
+        #     co[v] = number of original elements that are co‑prime with v.
+        #        Note: an element with value v is co‑prime with v only if v == 1 (since gcd(v,v)=v>1 for v>1).
+        #        For v > 1, elements with value v are NOT co‑prime with v.
+        #   We also need to know for v <= maxVal, whether we can change an element to v.
+        #   But actually, the cost formula can be derived uniformly:
+        #
+        #   We need to end up with exactly one element having value v, and all other n-1 elements co‑prime with v.
+        #   We can keep an element unchanged if:
+        #       - it is the selected element and its original value == v, OR
+        #       - it is not selected and its original value is co‑prime with v.
+        #   We want to maximize kept elements.
+        #
+        #   Let's consider two cases for v:
+        #
+        #   Case A: v > maxVal.
+        #       We must keep an original element with value v as selected.
+        #       If freq[v] == 0: impossible, skip.
+        #       If freq[v] >= 1:
+        #           We will select one of the elements with value v. Keep it unchanged (cost 0 for it).
+        #           The other freq[v] - 1 elements with value v must be changed (they can be changed to some value co‑prime with v, cost 1 each).
+        #           All other elements (n - freq[v] of them) must be co‑prime with v.
+        #           Among those, we can keep unchanged those that are already co‑prime with v.
+        #           The rest must be changed (cost 1 each).
+        #           So total changes = (freq[v] - 1) + (number of non‑co‑prime elements among the rest).
+        #           Number of non‑co‑prime among rest = (n - freq[v]) - (number of co‑prime among rest).
+        #           But note: the co‑prime count co[v] includes elements co‑prime with v.
+        #           Since selected element has value v (v>1), it is NOT co‑prime with v, so it is not in co[v].
+        #           So co[v] counts only elements with value != v.
+        #           Therefore, among the rest (n - freq[v] elements), the number co‑prime with v is exactly co[v].
+        #           (Because all elements with value v are excluded, and they are not co‑prime anyway.)
+        #           So number of non‑co‑prime among rest = (n - freq[v]) - co[v].
+        #           Total changes = (freq[v] - 1) + (n - freq[v] - co[v]) = n - co[v] - 1.
+        #           Score = v - (n - co[v] - 1).
+        #
+        #   Case B: v <= maxVal.
+        #       We have two subcases: we can either keep an original element with value v, or change an element to v.
+        #       To minimize changes, we should choose the option that gives fewer changes.
+        #
+        #       Subcase B1: we keep an original element with value v as selected (if freq[v] > 0).
+        #           Same as Case A but v <= maxVal. Changes = n - co[v] - 1.
+        #           (Here co[v] does not include the selected v, as before.)
+        #
+        #       Subcase B2: we change some element to v (so we don't need an original v).
+        #           We can change any element to v (cost 1). We want to maximize kept elements.
+        #           We will keep all elements that are co‑prime with v unchanged.
+        #           For the selected element, we change it to v. We should choose which element to change to minimize loss of co‑prime elements.
+        #           Let co = co[v] = number of elements co‑prime with v.
+        #           Let f = freq[v] (original elements with value v; for v <= maxVal, these exist possibly).
+        #           Note: elements with value v are NOT co‑prime with v (since v>1; if v=1, special).
+        #           If f > 0: we could instead use Subcase B1, but let's see B2.
+        #           If we change an element to v, we pick one element to change.
+        #           - If we pick an element that is NOT co‑prime with v (i.e., its value is not co‑prime, which includes any element with value v, and others sharing factors),
+        #             then we lose that element from the co‑prime pool, but it wasn't co‑prime anyway.
+        #           - If we pick an element that IS co‑prime with v, we lose one co‑prime element.
+        #           To maximize kept, we should pick a non‑co‑prime element to change to v, if one exists.
+        #           When does a non‑co‑prime element exist?
+        #               - If f > 0, we have elements with value v, which are non‑co‑prime.
+        #               - If f == 0, there might be other elements sharing a factor with v.
+        #           Let non_co = n - co. (elements not co‑prime with v)
+        #           If non_co > 0:
+        #               We can change one non‑co element to v. Then we keep all co elements unchanged.
+        #               The changed element becomes v (selected). The remaining non_co - 1 elements must be changed to be co‑prime (cost 1 each).
+        #               Total changes = 1 (for selected) + (non_co - 1) = non_co.
+        #               Keep = co.
+        #           If non_co == 0 (i.e., co == n, all elements co‑prime with v):
+        #               Then any element we change to v will reduce the co‑prime pool by 1.
+        #               We change one element to v (cost 1). The other n-1 elements are still co‑prime (unchanged).
+        #               Total changes = 1.
+        #               Keep = n - 1.
+        #           So if non_co > 0: cost = non_co.
+        #           If non_co == 0: cost = 1.
+        #           But wait, what if f > 0 and we are in B2? We wouldn't choose B2 if B1 is better.
+        #           Let's compare B1 and B2 costs.
+        #
+        #       Now, what about v = 1?
+        #           gcd(x,1)=1 for all x. So co[1] = n (all elements co‑prime with 1).
+        #           non_co = 0 always.
+        #           For v=1, we can pick selected value 1.
+        #           If we keep an original 1 as selected (freq[1] > 0):
+        #               Case A formula: changes = n - co[1] - 1 = n - n - 1 = -1? That's wrong.
+        #           Let's re-derive v=1 carefully.
+        #           v=1: we need selected value 1, all other n-1 elements co‑prime with 1 (always true).
+        #           We can keep all elements unchanged, and just pick one element with value 1 as selected.
+        #           If there is at least one 1 in original array, we can keep it and all others unchanged, cost = 0.
+        #           If there is no 1, we must change one element to 1 (cost 1). The other elements remain unchanged (they are co‑prime with 1). So cost = 1.
+        #           So for v=1:
+        #               if freq[1] > 0: cost = 0
+        #               else: cost = 1
+        #           Score = 1 - cost.
+        #
+        #       Let's check if our general formulas can produce this.
+        #       For v=1, co[1] = n, non_co = 0.
+        #       Case A (v > maxVal) doesn't apply since 1 <= maxVal (maxVal >= 1).
+        #       Subcase B1: keep original 1. changes = n - co[1] - 1 = -1 (invalid, formula assumed v>1 probably).
+        #       Subcase B2: change element to 1. non_co = 0, so cost = 1 if non_co == 0. But if freq[1] > 0, we could do cost 0. So we need to handle v=1 separately or adjust formulas.
+        #
+        #   Let's re-derive all cases from scratch with clear state.
+        #
+        #   We have n elements. We will perform a set of changes. After changes, exactly one element has value v,
+        #   and the other n-1 elements have values co‑prime with v.
+        #   We can change any element to any value in [1, maxVal]. Cost = number of changes.
+        #   Original elements > maxVal can be kept unchanged (they stay > maxVal).
+        #   We want to minimize changes for a given v.
+        #
+        #   Let's define for each element its "status" relative to v:
+        #       - If we keep it unchanged, its value is its original value orig.
+        #       - If we change it, we can set it to any value in [1, maxVal]. We will always set changed elements to values that help satisfy the co‑prime condition.
+        #         Since we can always change an element to 1 (which is co‑prime with everything, as long as 1 <= maxVal, which is true),
+        #         we can always make any changed element co‑prime with v by setting it to 1.
+        #         (If maxVal >= 1, which it is.)
+        #   So the only constraint for an unchanged element is that its original value must be co‑prime with v
+        #   (unless it is the selected element, in which case its value must be v).
+        #
+        #   Therefore, the problem reduces to:
+        #   Choose one element to be the selected one. Its final value will be v.
+        #       - If its original value == v, we keep it (cost 0 for it).
+        #       - If its original value != v, we must change it to v (cost 1). (If v > maxVal, we cannot change it to v, so we can only select it if original value == v.)
+        #   For all other n-1 elements, we can keep them unchanged iff their original value is co‑prime with v.
+        #       - If we keep them, cost 0.
+        #       - If we change them, cost 1, and we set them to 1 (or any co‑prime value <= maxVal).
+        #
+        #   So for a fixed v and a choice of which element is selected, the minimum changes is:
+        #       changes = (1 if selected element's original value != v else 0) + (number of other elements with original value NOT co‑prime with v).
+        #   We want to minimize this over the choice of selected element.
+        #
+        #   Let's denote:
+        #       co = number of elements in nums that are co‑prime with v.
+        #       Note: this count includes elements with value v only if v == 1 (since gcd(1,1)=1).
+        #       For v > 1, elements with value v are NOT co‑prime with v, so they are excluded from co.
+        #   Let f = freq[v] = number of elements with original value exactly v.
+        #   We have n total elements.
+        #   The number of elements NOT co‑prime with v is n - co.
+        #   Among these n - co elements, some have value v (if v>1, all f of them; if v=1, none because they are co‑prime).
+        #   Now, we choose one element to be selected.
+        #   Option 1: Select an element with original value v (if f > 0).
+        #       - Selected element kept unchanged (cost 0 for it).
+        #       - The other f-1 elements with value v are "other elements". They are NOT co‑prime with v (since v>1), so they will be counted in the "must change" set.
+        #       - All other n - f elements: we keep those that are co‑prime with v, change the rest.
+        #         Number of co‑prime among the rest = co (since the selected v was not in co).
+        #         Number of non‑co‑prime among the rest = (n - f) - co.
+        #       - Total changes = 0 (for selected) + (f - 1) + ((n - f) - co) = n - co - 1.
+        #       This formula works for v > 1. For v = 1, f = freq[1], co = n (since all co‑prime with 1).
+        #           changes = n - n - 1 = -1, which is wrong. Why? Because for v=1, elements with value 1 ARE co‑prime with 1,
+        #           so they are included in co. So co already counts them. The formula assumed v>1 where v elements are not co‑prime.
+        #           So we must treat v=1 separately, or adjust co definition.
+        #           Let's keep v=1 as a special case.
+        #
+        #   Option 2: Select an element with original value != v.
+        #       - We must change this selected element to v. Cost 1.
+        #       - We want to choose which element to change to minimize total changes.
+        #         We should prefer to change an element that is NOT co‑prime with v, so that we don't lose a co‑prime element from the "keep" set.
+        #         If there exists at least one element not co‑prime with v (i.e., n - co > 0),
+        #         we can change such an element. Then we keep all co elements unchanged.
+        #         The changed element becomes v. The remaining n - co - 1 elements that are not co‑prime (excluding the one we changed) must be changed (cost 1 each).
+        #         Total changes = 1 + (n - co - 1) = n - co.
+        #         Keep = co.
+        #       - If all elements are co‑prime with v (n - co == 0, i.e., co == n),
+        #         then any element we change to v will reduce the co‑prime pool by 1.
+        #         We change one element to v (cost 1). The other n-1 elements are still co‑prime (unchanged).
+        #         Total changes = 1.
+        #         Keep = n - 1.
+        #       - What if we change an element that is co‑prime, but there are also non‑co‑prime elements? We already covered picking a non‑co‑prime one.
+        #       - Edge case: what if we have f > 0 (some elements with value v), but we choose Option 2 (change some other element to v)?
+        #         Then we have f elements with value v originally. We change one other element to v.
+        #         The f original v elements: we can keep all of them unchanged? But we need exactly one selected element with value v.
+        #         If we keep multiple elements with value v, then we have more than one element with value v, but we only pick one as selected.
+        #         The problem says: "you must choose an index i such that nums[i] is co-prime with every other element nums[j]."
+        #         It does NOT say that there can be only one element with the selected value.
+        #         "Let selectedValue be the final value of nums[i] after modifications."
+        #         It implies we pick one index i, and its value is selectedValue. Other elements can have any values as long as they are co‑prime with selectedValue.
+        #         If there are other elements with value equal to selectedValue, are they co‑prime with selectedValue?
+        #         For v > 1, gcd(v, v) = v > 1, so they are NOT co‑prime.
+        #         So we cannot have any other element with value v if v > 1, because they would violate the co‑prime condition with the selected element.
+        #         For v = 1, gcd(1,1)=1, so multiple 1's are allowed.
+        #         Therefore, for v > 1, we must ensure that after modifications, exactly one element has value v (the selected one),
+        #         and all other elements have values co‑prime with v (which implies they cannot have value v).
+        #         For v = 1, we can have multiple 1's, but we just pick one as selected.
+        #
+        #         This is a crucial point! Let's re-read the problem statement carefully:
+        #         "After all modifications, you must choose an index i such that, nums[i] is co-prime with every other element nums[j]."
+        #         It does not explicitly say that no other element can have the same value as nums[i],
+        #         but if another element has the same value v, and v > 1, then gcd(v, v) = v > 1, so they are NOT co‑prime.
+        #         So indeed, for v > 1, all other elements must have values co‑prime with v, which means they cannot have value v.
+        #         For v = 1, they can have value 1.
+        #
+        #         So our earlier assumption that we must have exactly one element with value v is correct for v > 1.
+        #         For v = 1, we can have multiple 1's, but we only need one selected.
+        #
+        #         Let's re-evaluate Option 2 for v > 1:
+        #         We need exactly one element with value v. All other n-1 elements must be co‑prime with v (value != v).
+        #         If we choose Option 2: select an element with original value != v, and change it to v.
+        #         Then we have exactly one element with value v (the selected one).
+        #         The other n-1 elements must be co‑prime with v.
+        #         Among the original n-1 elements (excluding the selected one), we can keep those that are co‑prime with v,
+        #         and change the rest to 1 (or any co‑prime value <= maxVal).
+        #         To minimize changes, we should choose the selected element such that the number of other elements that are NOT co‑prime with v is minimized.
+        #         The other elements are all original elements except the selected one.
+        #         Let's formalize:
+        #         We have n original elements. We pick one to be selected, change it to v (cost 1).
+        #         The remaining n-1 elements we can keep unchanged if they are co‑prime with v.
+        #         So total changes = 1 + (number of remaining elements that are NOT co‑prime with v).
+        #         We want to minimize this by choosing which element is selected.
+        #         The number of remaining elements not co‑prime with v = (total not co‑prime with v) - (1 if the selected element was not co‑prime with v else 0).
+        #         Total not co‑prime with v = n - co.
+        #         If we select an element that is NOT co‑prime with v, then remaining not co‑prime = (n - co) - 1.
+        #         Total changes = 1 + (n - co - 1) = n - co.
+        #         If we select an element that IS co‑prime with v, then remaining not co‑prime = n - co.
+        #         Total changes = 1 + (n - co) = n - co + 1.
+        #         So to minimize, we should select an element that is NOT co‑prime with v, if such exists.
+        #         When does such an element exist?
+        #             - If there is any element with value v (f > 0), those are NOT co‑prime with v (for v>1).
+        #             - If f == 0, there might be other elements sharing factors with v.
+        #         If f > 0, we can select one of the elements with value v. Then changes = n - co.
+        #         If f == 0 but there are other non‑co‑prime elements (n - co > 0), we can select one of those, changes = n - co.
+        #         If f == 0 and n - co == 0 (all elements co‑prime with v), then any element we select will be co‑prime,
+        #         so changes = n - co + 1 = 1. And we must change that one element to v.
+        #
+        #         Now, what about the case where we select an element with value v (Option 1) vs Option 2?
+        #         Option 1 (select original v, keep it): changes = n - co - 1.
+        #         Option 2 (change some other element to v): changes = n - co (if we can pick a non‑co‑prime to change),
+        #         or 1 if all are co‑prime.
+        #         Compare: Option 1 cost = n - co - 1. Option 2 cost = n - co (if f>0 or non_co>0) or 1 (if co==n).
+        #         Since n - co - 1 < n - co, Option 1 is always better if f > 0.
+        #         If f == 0, Option 1 is impossible (we can't keep an original v because there is none).
+        #         So for f == 0, we must use Option 2.
+        #         And if co == n (all co‑prime) and f == 0, Option 2 cost = 1.
+        #         If f == 0 and co < n, Option 2 cost = n - co.
+        #
+        #         Let's summarize for v > 1:
+        #         Let co = number of elements co‑prime with v.
+        #         Let f = freq[v].
+        #         If f > 0:
+        #             We can keep one original v as selected, cost = n - co - 1.
+        #             (We could also change some other element to v, but that costs more or equal, so we take min, which is n - co - 1.)
+        #         Else (f == 0):
+        #             If co == n (all elements co‑prime with v):
+        #                 cost = 1 (change one element to v).
+        #             Else (co < n):
+        #                 cost = n - co (change one non‑co element to v, and change the rest non‑co elements).
+        #
+        #         Let's test this with examples.
+        #
+        #         Example 1: nums = [3,4,6], maxVal = 5, v = 5.
+        #             v=5 > 1. co = elements co‑prime with 5: 3,4,6 all gcd 1 => co = 3. f = freq[5] = 0.
+        #             n = 3, co = 3 => co == n => cost = 1. Score = 5 - 1 = 4. Matches.
+        #
+        #         Example 2: nums = [1,2,3], maxVal = 4, output 3.
+        #             Try v = 3. v=3 > 1. co = elements co‑prime with 3: 1 and 2 => co = 2. f = freq[3] = 1.
+        #             f > 0 => cost = n - co - 1 = 3 - 2 - 1 = 0. Score = 3 - 0 = 3. Matches.
+        #
+        #         Example 3: nums = [2,2], maxVal = 1, output 1.
+        #             maxVal = 1. So v can be 1 or 2? But v=2 > maxVal=1. However, we can keep original 2 unchanged.
+        #             Since maxVal=1, we can only change elements to 1. Original 2's are > maxVal, but we can keep them unchanged.
+        #             So v=2 is possible (selected value 2, not changed). Let's evaluate v=2.
+        #             v=2 > 1. nums = [2,2]. co = elements co‑prime with 2: gcd(2,2)=2>1, so none are co‑prime. co = 0.
+        #             f = freq[2] = 2.
+        #             f > 0 => cost = n - co - 1 = 2 - 0 - 1 = 1.
+        #             Score = v - cost = 2 - 1 = 1. Matches example output 1.
+        #             What about v=1? v=1 <= maxVal. co = n = 2. f = freq[1] = 0.
+        #             For v=1 special case: cost = 1 (since no 1 originally). Score = 1 - 1 = 0.
+        #             So max score is 1 from v=2. Correct.
+        #
+        #         Let's test another case: nums = [6], maxVal = 10. n=1.
+        #         We can pick v=6 (original). v=6 > 1. co = elements co‑prime with 6: only 6 itself? gcd(6,6)=6>1, so co = 0.
+        #         f = 1. cost = n - co - 1 = 1 - 0 - 1 = 0. Score = 6 - 0 = 6.
+        #         Is that valid? Array [6], choose index 0, selectedValue=6, co‑prime with every other element? There are no other elements, so vacuously true. Modification cost 0. Score 6. Correct.
+        #
+        #         Another: nums = [4, 9], maxVal = 10. n=2.
+        #         Possible v: 4, 9, or <=10.
+        #         v=4: co = elements co‑prime with 4: 9 is co‑prime (gcd(9,4)=1), 4 is not. co=1. f=1. cost = 2 - 1 - 1 = 0. Score = 4.
+        #         v=9: co = elements co‑prime with 9: 4 is co‑prime, 9 not. co=1. f=1. cost=0. Score=9.
+        #         v=5 (not original, <=10): co = elements co‑prime with 5: 4 and 9 both co‑prime (gcd(4,5)=1, gcd(9,5)=1) => co=2. f=0. co==n => cost=1. Score=5-1=4.
+        #         v=7: similar cost=1, score=6.
+        #         v=10: cost=1, score=9.
+        #         Max score = 9 (from v=9 or v=10). Let's verify v=9 score 9: no changes, select 9, 4 is co‑prime with 9. Score 9-0=9. v=10: change one element to 10 (cost 1), the other is co‑prime? 4 and 9 both co‑prime with 10, so change one to 10, other stays, score 10-1=9. Both give 9.
+        #
+        #         What about v where we might have co count including the selected element? Our formulas seem consistent.
+        #
+        #         Now, we must also consider v <= maxVal where we might have f > 0 but we could also change an element to v and maybe get different cost?
+        #         We already took min: if f > 0, cost = n - co - 1. Could there be a case where changing an element to v gives cost n - co - 1 as well? Let's check: if f > 0 and we change an element to v, cost = n - co (if we pick a non‑co element) or 1 (if co==n). n - co - 1 is strictly less than n - co, so keeping original v is always better or equal (if co==n? if co==n and f>0, cost keeping = n - n - 1 = -1 invalid, but co cannot be n if f>0 because elements with value v are not co‑prime with v for v>1. So co <= n - f. So n - co - 1 >= f - 1 >= 0. So it's valid.)
+        #         For v=1, we have special case.
+        #
+        #         Now, what about v > maxVal? Our Case A formula: if v > maxVal, we must have f > 0 (original v present).
+        #         Then cost = n - co - 1. (Same as Option 1 for v>1).
+        #         But wait: if v > maxVal, we cannot change any element to v. So we must keep an original v.
+        #         Is the cost formula still n - co - 1?
+        #         Let's test: nums = [5], maxVal = 3. v=5 > maxVal. f=1, co = elements co‑prime with 5: none (only 5) => co=0. n=1. cost = 1 - 0 - 1 = 0. Score = 5. Valid: keep 5, no other elements.
+        #         nums = [5, 10], maxVal = 3. v=5 > maxVal. f=1 (only one 5). co = elements co‑prime with 5: 10 is not co‑prime (gcd(10,5)=5>1), 5 is not. co=0. n=2. cost = 2 - 0 - 1 = 1. Score = 5 - 1 = 4.
+        #         Let's manual: nums = [5, 10], maxVal=3. We must keep 5 as selected (since v>maxVal). 10 must be changed (cost 1) to some value <=3 co‑prime with 5. We can change 10 to 1,2,3. gcd(1,5)=1, gcd(2,5)=1, gcd(3,5)=1. So change 10 to 1. Cost 1. Score 5-1=4. Correct.
+        #         What if we had nums = [5, 3], maxVal = 3. v=5 > maxVal. f=1. co = elements co‑prime with 5: 3 is co‑prime (gcd(3,5)=1). So co=1. n=2. cost = 2 - 1 - 1 = 0. Score = 5.
+        #         Manual: nums = [5, 3], maxVal=3. Keep 5 selected. 3 is already co‑prime with 5. No changes needed. Score 5. Correct.
+        #         So Case A formula works for v > maxVal as well, provided f > 0.
+        #
+        #         Now, what if v > maxVal and f == 0? Then v is impossible as selected value, because we can't create v by changes (changes only allow <= maxVal).
+        #         So we skip such v.
+        #
+        #         Now, we have a complete cost formula for any candidate v.
+        #
+        #         Candidate v values:
+        #         - All integers from 1 to maxVal.
+        #         - All original nums[i] values (which could be > maxVal).
+        #         But note: if an original nums[i] <= maxVal, it's already included in 1..maxVal.
+        #         So we can just consider v in the set: {1, 2, ..., maxVal} ∪ {original nums[i] | nums[i] > maxVal}.
+        #         However, since maxVal <= 1e5 and nums[i] <= 1e5, the total distinct v to check is at most max(maxVal, max(nums)) + 1, which is <= 1e5 + 1e5 = 2e5, but actually maxVal and max(nums) are both <= 1e5, so v in 1..1e5 covers all? Wait, if maxVal = 1e5 and max(nums) = 1e5, then v up to 1e5 covers everything. If maxVal < max(nums), then nums[i] > maxVal are > maxVal, so we need to consider those v > maxVal. But those v are original nums[i] values, which are at most 1e5. So the maximum possible v is max(maxVal, max(nums)) <= 1e5. So we can just iterate v from 1 to M = max(maxVal, max(nums)).
+        #         But wait: what if maxVal > max(nums)? Then M = maxVal, and v up to maxVal covers all original nums (since they are <= maxVal). So iterating v from 1 to M is sufficient.
+        #         However, we must be careful: if we iterate v from 1 to M, we will evaluate all v in that range.
+        #         For v <= maxVal, we use the general formula (with v=1 special).
+        #         For v > maxVal, we only consider v if freq[v] > 0 (i.e., v appears in original nums).
+        #         But since M = max(maxVal, max(nums)), if maxVal >= max(nums), then v > maxVal never occurs because M = maxVal and v <= maxVal. So the condition freq[v] > 0 for v > maxVal is only relevant if maxVal < max(nums).
+        #         So we can just iterate v from 1 to M, and for each v:
+        #             if v > maxVal and freq[v] == 0: skip (impossible)
+        #             else compute cost and score.
+        #
+        #         Let's detail the cost computation for each v:
+        #
+        #         Given v (1 <= v <= M):
+        #         if v == 1:
+        #             if freq[1] > 0: cost = 0
+        #             else: cost = 1
+        #         else:  # v > 1
+        #             if v > maxVal and freq[v] == 0: continue (impossible)
+        #             co = number of elements in nums co‑prime with v.
+        #             f = freq[v]  (note: if v > maxVal, f is just the count of v in nums, which is >=1 if we didn't skip)
+        #             if f > 0:
+        #                 cost = n - co - 1
+        #             else:  # f == 0
+        #                 if co == n:
+        #                     cost = 1
+        #                 else:
+        #                     cost = n - co
+        #         score = v - cost
+        #         Keep track of maximum score.
+        #
+        #         Now we need to compute co = number of elements in nums co‑prime with v, for all v up to M (M <= 1e5).
+        #         n up to 1e5.
+        #         We can precompute for each v the count of elements co‑prime with v.
+        #         How to compute co[v] efficiently?
+        #         co[v] = number of i such that gcd(nums[i], v) == 1.
+        #         We can use Mobius inversion as discussed earlier, or we can compute it by iterating over multiples.
+        #         Since M <= 1e5, we can do:
+        #         - Count frequency of each value in nums: freq_val[x] = count of value x in nums.
+        #         - For each v, co[v] = sum_{d | v} mu[d] * (number of nums divisible by d).
+        #         We can precompute multiples count: for each d, cnt[d] = sum_{x multiple of d} freq_val[x].
+        #         Then co[v] = sum_{d | v} mu[d] * cnt[d].
+        #         We need divisors of each v up to M. We can precompute divisors or iterate d from 1 to M and add mu[d]*cnt[d] to all multiples of d.
+        #         That is: initialize co[v] = 0 for all v. For d from 1 to M: if mu[d] != 0, for multiple v of d, co[v] += mu[d] * cnt[d].
+        #         This is O(M log M) which is fine for M=1e5.
+        #         Alternatively, we can compute co[v] directly by iterating over prime factors using inclusion-exclusion, but Mobius is simpler.
+        #
+        #         Let's outline the algorithm:
+        #
+        #         1. Read nums, maxVal.
+        #         2. n = len(nums).
+        #         3. M = max(maxVal, max(nums)) if nums else 0 (but n>=1).
+        #         4. Compute freq_val array of size M+1 (or up to max element, but M covers it).
+        #            Also compute freq[v] for v up to M? We need freq[v] for candidate v.
+        #            Actually we need freq[v] for v that are candidates. We can just use a dictionary or array of size M+1 for frequencies of all values in nums.
+        #            Let's create an array freq of size M+1, initialized 0.
+        #            For each x in nums: if x <= M: freq[x] += 1. (All x <= M by definition of M).
+        #         5. Precompute Mobius function mu up to M.
+        #         6. Precompute cnt[d] = number of elements in nums divisible by d, for d = 1..M.
+        #            We can do: for d in 1..M: for multiple m = d; m <= M; m += d: cnt[d] += freq[m].
+        #            This is O(M log M).
+        #         7. Precompute co[v] = number of elements co‑prime with v, for v = 1..M.
+        #            Initialize co = [0]*(M+1).
+        #            For d in 1..M:
+        #                if mu[d] != 0:
+        #                    for v in range(d, M+1, d):
+        #                        co[v] += mu[d] * cnt[d]
+        #            This is O(M log M) as well.
+        #         8. Initialize best_score = -infinity.
+        #         9. For v in 1..M:
+        #             if v == 1:
+        #                 if freq[1] > 0: cost = 0
+        #                 else: cost = 1
+        #             else:
+        #                 if v > maxVal and freq[v] == 0: continue
+        #                 f = freq[v]
+        #                 if f > 0:
+        #                     cost = n - co[v] - 1
+        #                 else:
+        #                     if co[v] == n:
+        #                         cost = 1
+        #                     else:
+        #                         cost = n - co[v]
+        #             score = v - cost
+        #             if score > best_score: best_score = score
+        #         10. Return best_score.
+        #
+        #         Let's test this algorithm on the examples and some edge cases.
+        #
+        #         Example 1: nums = [3,4,6], maxVal = 5.
+        #         M = max(5, 6) = 6.
+        #         freq: 3:1, 4:1, 6:1, others 0.
+        #         mu up to 6: mu[1]=1, mu[2]=-1, mu[3]=-1, mu[4]=0, mu[5]=-1, mu[6]=1.
+        #         cnt[d]: 
+        #           d=1: cnt=3
+        #           d=2: nums divisible by 2: 4,6 => 2
+        #           d=3: 3,6 => 2
+        #           d=4: none => 0
+        #           d=5: none => 0
+        #           d=6: 6 => 1
+        #         co[v] computation:
+        #           d=1 mu=1: add 3 to co[1..6] => co=[3,3,3,3,3,3]
+        #           d=2 mu=-1: subtract 2 from co[2,4,6] => co[2]=1, co[4]=1, co[6]=1
+        #           d=3 mu=-1: subtract 2 from co[3,6] => co[3]=1, co[6]= -1? wait co[6] was 1, subtract 2 => -1? That's wrong. Mobius formula: co[v] = sum_{d|v} mu[d] * cnt[d].
+        #           Let's compute manually for v=6: divisors of 6: 1,2,3,6. mu[1]=1, mu[2]=-1, mu[3]=-1, mu[6]=1. cnt[1]=3, cnt[2]=2, cnt[3]=2, cnt[6]=1.
+        #           co[6] = 1*3 + (-1)*2 + (-1)*2 + 1*1 = 3 -2 -2 +1 = 0.
+        #           But earlier I thought 3,4,6 all co‑prime with 5? Wait v=6. Elements: 3,4,6. co‑prime with 6: gcd(3,6)=3>1, gcd(4,6)=2>1, gcd(6,6)=6>1. So none are co‑prime. co[6] should be 0. My manual step had error because I added/subtracted incorrectly.
+        #           Let's trust the algorithm: co[v] = sum_{d|v} mu[d] * cnt[d].
+        #         Now iterate v=1..6:
+        #         v=1: freq[1]=0 => cost=1, score=1-1=0.
+        #         v=2: v<=maxVal(5). f=freq[2]=0. co[2]=? let's compute: divisors of 2: 1,2. mu[1]*cnt[1] + mu[2]*cnt[2] = 3 - 2 = 1. So co[2]=1. f=0. co[2]=1, n=3. co != n => cost = n - co = 3 - 1 = 2. score = 2 - 2 = 0.
+        #         v=3: f=freq[3]=1 > 0. co[3]: divisors 1,3. mu[1]*3 + mu[3]*cnt[3] = 3 - 2 = 1. cost = n - co - 1 = 3 - 1 - 1 = 1. score = 3 - 1 = 2.
+        #         v=4: f=freq[4]=1 > 0. co[4]: divisors 1,2,4. mu[1]*3 + mu[2]*2 + mu[4]*0 = 3 - 2 = 1. cost = 3 - 1 - 1 = 1. score = 4 - 1 = 3.
+        #         v=5: f=0. co[5]: divisors 1,5. mu[1]*3 + mu[5]*cnt[5] = 3 - 0 = 3. co=3, n=3 => co==n => cost=1. score = 5 - 1 = 4.
+        #         v=6: f=freq[6]=1 > 0. co[6]=0 (as computed). cost = n - co - 1 = 3 - 0 - 1 = 2. score = 6 - 2 = 4.
+        #         Best score = 4 (v=5 or v=6). Matches example output 4.
+        #
+        #         Example 2: nums = [1,2,3], maxVal = 4.
+        #         M = max(4, 3) = 4.
+        #         freq: 1:1, 2:1, 3:1.
+        #         mu up to 4: mu[1]=1, mu[2]=-1, mu[3]=-1, mu[4]=0.
+        #         cnt: d=1:3, d=2: nums div by 2: 2 =>1, d=3: 3=>1, d=4:0.
+        #         co[v]:
+        #           v=1: co[1] = mu[1]*3 = 3 (but we handle v=1 separately).
+        #           v=2: divisors 1,2 => 3 - 1 = 2.
+        #           v=3: divisors 1,3 => 3 - 1 = 2.
+        #           v=4: divisors 1,2,4 => 3 - 1 + 0 = 2.
+        #         Iterate v=1..4:
+        #         v=1: freq[1]=1 => cost=0, score=1.
+        #         v=2: f=freq[2]=1 > 0. co[2]=2. cost = n - co - 1 = 3 - 2 - 1 = 0. score = 2 - 0 = 2.
+        #         v=3: f=1 > 0. co[3]=2. cost = 3 - 2 - 1 = 0. score = 3 - 0 = 3.
+        #         v=4: f=0. co[4]=2. n=3, co!=n => cost = n - co = 3 - 2 = 1. score = 4 - 1 = 3.
+        #         Best score = 3 (v=3 or v=4). Matches example output 3.
+        #
+        #         Example 3: nums = [2,2], maxVal = 1.
+        #         M = max(1, 2) = 2.
+        #         freq: 2:2.
+        #         mu up to 2: mu[1]=1, mu[2]=-1.
+        #         cnt: d=1:2, d=2: nums div by 2: 2 =>2.
+        #         co[v]:
+        #           v=1: co[1]=2 (but special)
+        #           v=2: divisors 1,2 => 2 - 2 = 0.
+        #         Iterate v=1..2:
+        #         v=1: freq[1]=0 => cost=1, score=0.
+        #         v=2: v=2 > maxVal=1, f=freq[2]=2 > 0. co[2]=0. cost = n - co - 1 = 2 - 0 - 1 = 1. score = 2 - 1 = 1.
+        #         Best score = 1. Matches.
+        #
+        #         Edge case: nums = [1], maxVal = 1.
+        #         M=1. freq[1]=1.
+        #         v=1: freq[1]>0 => cost=0, score=1. Output 1. Correct? Let's check: array [1], choose nums[0]=1, co‑prime with every other (none), score 1-0=1.
+        #
+        #         Edge case: nums = [2], maxVal = 1.
+        #         M=2. freq[2]=1.
+        #         v=1: cost=1, score=0.
+        #         v=2: v>maxVal, f=1, co[2]=0 (since gcd(2,2)=2). cost = 1 - 0 - 1 = 0. score = 2 - 0 = 2.
+        #         But wait: nums=[2], maxVal=1. Can we select value 2? Yes, we don't change it. Score 2. Is that allowed? Problem says we may change elements to <= maxVal. We don't have to change everything. So yes, score 2.
+        #         Let's verify: array [2], choose index 0, selectedValue=2, no other elements, score 2-0=2. Correct.
+        #
+        #         Edge case: nums = [6], maxVal = 5.
+        #         M=6. freq[6]=1.
+        #         v=6: v>maxVal, f=1, co[6]=0. cost = 1 - 0 - 1 = 0. score = 6.
+        #         v=5: v<=maxVal, f=0, co[5]: elements co‑prime with 5: 6 is co‑prime? gcd(6,5)=1 yes. So co[5]=1. n=1, co==n => cost=1. score=5-1=4.
+        #         v=1: cost=1, score=0.
+        #         Best score 6. Correct: keep 6, no changes.
+        #
+        #         Edge case: nums = [2,3], maxVal = 1.
+        #         M=3. freq: 2:1, 3:1.
+        #         v=1: cost=1, score=0.
+        #         v=2: v>maxVal, f=1, co[2]: elements co‑prime with 2: 3 is co‑prime, 2 is not. co[2]=1. n=2. f>0 => cost = 2 - 1 - 1 = 0. score = 2.
+        #         v=3: similarly score = 3.
+        #         Best score 3. Manual: keep 3, change 2? Wait v=3: selected 3, other element 2 is co‑prime with 3. No changes needed. Score 3. Correct.
+        #
+        #         Edge case: nums = [4, 6], maxVal = 5.
+        #         M=6. freq: 4:1, 6:1.
+        #         v=5: f=0, co[5]: 4 and 6 both co‑prime with 5? gcd(4,5)=1, gcd(6,5)=1 => co=2, n=2 => co==n => cost=1, score=4.
+        #         v=4: f=1, co[4]: 6 is not co‑prime with 4 (gcd=2), 4 not. co=0. cost = 2 - 0 - 1 = 1. score = 3.
+        #         v=6: f=1, co[6]: 4 not co‑prime, 6 not. co=0. cost = 2 - 0 - 1 = 1. score = 5.
+        #         Best score 5 (v=6). Manual: keep 6, change 4 to something co‑prime with 6, e.g., 5 (cost 1). Score 6-1=5. Or keep 6, change 4 to 1. Score 5. Correct.
+        #
+        #         Edge case: nums = [2,4], maxVal = 3.
+        #         M=4. freq: 2:1, 4:1.
+        #         v=3: f=0, co[3]: 2 and 4 both co‑prime with 3? gcd(2,3)=1, gcd(4,3)=1 => co=2, n=2 => co==n => cost=1, score=2.
+        #         v=4: f=1, co[4]: 2 not co‑prime, 4 not => co=0. cost = 2 - 0 - 1 = 1. score = 3.
+        #         v=2: f=1, co[2]: 4 not co‑prime => co=1. cost = 2 - 1 - 1 = 0. score = 2.
+        #         Best score 3 (v=4). Manual: keep 4, change 2 to 1 or 3 (cost 1). Score 3. Correct.
+        #
+        #         Edge case: nums = [2,2,2], maxVal = 1.
+        #         M=3? maxVal=1, max(nums)=2 => M=2.
+        #         freq[2]=3.
+        #         v=2: v>maxVal, f=3, co[2]=0. cost = 3 - 0 - 1 = 2. score = 2 - 2 = 0.
+        #         v=1: cost=1, score=0.
+        #         Best score 0. Manual: nums=[2,2,2], maxVal=1. We must change two elements to 1? Let's see: we need one selected value. If we pick v=2, we keep one 2, the other two must be co‑prime with 2, so change to 1. Cost 2. Score 2-2=0. If we pick v=1, change one element to 1 (cost 1), others remain 2, but 2 not co‑prime with 1? Actually gcd(2,1)=1, so they are co‑prime. But we need selected value 1. If we change one to 1, we have [1,2,2]. Select the 1. Other two 2's are co‑prime with 1. Cost 1. Score 1-1=0. So max score 0. Correct.
+        #
+        #         Everything seems consistent.
+        #
+        #         Now, let's consider possible issues:
+        #         - The formula for cost when f > 0: cost = n - co - 1.
+        #           Is it always valid that we can keep one original v and change the rest as described?
+        #           We need to ensure that after changes, all other n-1 elements are co‑prime with v.
+        #           We change the other f-1 elements with value v to something co‑prime with v (cost 1 each).
+        #           We change all elements not co‑prime with v and not the selected v (there are n - f - co such elements? Wait: total elements n. f have value v. co are co‑prime with v. These co are among the n - f elements (since v elements are not co‑prime). So the remaining elements are n - f - co, which are neither v nor co‑prime. We change them to 1 (cost 1 each). Total changes = (f - 1) + (n - f - co) = n - co - 1. Correct.
+        #           And we keep the selected v unchanged, and all co elements unchanged. All other elements changed. The changed elements: we set the f-1 v's to some value co‑prime with v (e.g., 1), and the n - f - co others to 1. All these new values are 1, which is co‑prime with v (since v>1, gcd(1,v)=1). So condition satisfied.
+        #           What if v=1? Handled separately.
+        #
+        #         - The formula for f == 0:
+        #           If co == n: cost = 1.
+        #           This means all n elements are co‑prime with v. We need to select one element to be v. We change one element to v (cost 1). The other n-1 elements are already co‑prime with v (unchanged). But wait: if we change one element to v, that element's new value is v. The other elements are unchanged and co‑prime with v. Is there any issue with the changed element being v and others co‑prime? Yes, the selected element is v, others co‑prime. That's exactly what we want. Cost 1. Correct.
+        #           If co < n: cost = n - co.
+        #           This means there are n - co elements not co‑prime with v. We change one of them to v (cost 1), and change the remaining n - co - 1 non‑co elements to 1 (cost 1 each). Total cost = 1 + (n - co - 1) = n - co. The changed element becomes v, others become 1 (co‑prime). The original co elements remain unchanged and co‑prime. Correct.
+        #           But wait: what if f == 0 and co < n, but there are elements with value v? No, f=0 means no element has value v originally.
+        #           What if some elements have value v but we are in f==0? Contradiction.
+        #
+        #         - What about v <= maxVal and f > 0? We used cost = n - co - 1.
+        #           Could there be a better cost by changing an element to v instead of keeping original v?
+        #           As argued, keeping original v gives n - co - 1. Changing some other element to v gives at best n - co (if we pick a non‑co element) or 1 (if co==n). Since n - co - 1 < n - co, keeping original v is always better or equal. If co==n and f>0, but co==n implies all elements co‑prime with v, which is impossible if f>0 because elements with value v are not co‑prime with v for v>1. So n - co - 1 is always the minimum.
+        #           For v=1, we have special case cost 0 if freq[1]>0 else 1.
+        #
+        #         - What about v > maxVal and f > 0? We used same formula n - co - 1.
+        #           But wait: if v > maxVal, we cannot change any element to v. So we must keep an original v.
+        #           The changes we make: we change the other f-1 v's to some value <= maxVal that is co‑prime with v.
+        #           Can we always change them to a value <= maxVal that is co‑prime with v?
+        #           We need to ensure such a value exists. We can always change to 1, and 1 <= maxVal (since maxVal >= 1). And gcd(1, v) = 1. So yes, we can always change to 1.
+        #           So the formula holds.
+        #
+        #         - What if maxVal = 1 and we have v=1? Handled.
+        #         - What if n = 1? Then for any v with freq[v] >= 1 (or v <= maxVal with f=0 and co=n? n=1, co=n means the single element is co‑prime with v. If we pick v = that element, f=1, cost = 1 - co - 1. co: if v equals the element, co = elements co‑prime with v. The single element has value v, so it is NOT co‑prime with v (unless v=1). So co = 0. cost = 1 - 0 - 1 = 0. score = v. If v=1 and element is 1, f=1, cost=0, score=1. If v != element and v <= maxVal, f=0, co = 1 if element co‑prime with v else 0. If co=1 (element co‑prime with v), then co == n => cost = 1, score = v - 1. If co=0, then cost = n - co = 1 - 0 = 1, score = v - 1. But we could also just keep the element and select it if v equals it, giving score v. So the max will naturally pick v = element. Correct.
+        #
+        #         Now, we need to compute co[v] for all v up to M efficiently.
+        #         M = max(maxVal, max(nums)).
+        #         Since maxVal and nums[i] <= 1e5, M <= 1e5.
+        #         We'll precompute mu up to M.
+        #         We'll precompute cnt[d] = number of nums divisible by d.
+        #         Then co[v] = sum_{d|v} mu[d] * cnt[d].
+        #         We can compute this by iterating d from 1 to M, and for each multiple v of d, add mu[d] * cnt[d] to co[v].
+        #         This is O(M log M) time, which for M=1e5 is about 1e5 * log(1e5) ~ 1e6 operations, well within 2s.
+        #         Memory: arrays of size M+1 for freq, mu, cnt, co. All ~ 1e5 ints, very small.
+        #
+        #         Let's double-check the co[v] computation.
+        #         co[v] = number of elements in nums with gcd(nums[i], v) == 1.
+        #         By Mobius inversion: 
+        #           Let g[d] = number of elements divisible by d. (This is our cnt[d].)
+        #           Then the number of elements coprime to v is sum_{d|v} mu[d] * g[d].
+        #         Yes, this is a standard identity.
+        #         So co[v] = sum_{d|v} mu[d] * cnt[d].
+        #         We can compute it by:
+        #           co = [0]*(M+1)
+        #           for d in range(1, M+1):
+        #               if mu[d] != 0:
+        #                   add = mu[d] * cnt[d]
+        #                   for v in range(d, M+1, d):
+        #                       co[v] += add
+        #         This correctly computes the sum over divisors.
+        #
+        #         Let's test with a small example manually to ensure co[v] is correct.
+        #         nums = [2,3], M=3.
+        #         freq: 2:1, 3:1.
+        #         cnt[1]=2, cnt[2]=1 (only 2), cnt[3]=1 (only 3).
+        #         mu: mu[1]=1, mu[2]=-1, mu[3]=-1.
+        #         co computation:
+        #           d=1 mu=1 add=2: co[1]+=2, co[2]+=2, co[3]+=2 => co=[2,2,2]
+        #           d=2 mu=-1 add=-1: for v in 2..3 step 2: v=2 => co[2] -=1 => co[2]=1. v=4? M=3 so only v=2.
+        #           d=3 mu=-1 add=-1: for v in 3..3 step 3: v=3 => co[3] -=1 => co[3]=1.
+        #         Result: co[1]=2, co[2]=1, co[3]=1.
+        #         Manual: co‑prime with 1: both 2 and 3 => 2. co‑prime with 2: 3 is co‑prime, 2 not => 1. co‑prime with 3: 2 is co‑prime => 1. Correct.
+        #
+        #         Now, what about v values that are not in 1..M? We already argued M covers all.
+        #         But wait: what if maxVal is very large, like 1e5, and nums[i] are also up to 1e5. M = max(maxVal, max(nums)) <= 1e5.
+        #         However, the problem says: 1 <= maxVal <= 10^5 (actually constraints say 1 <= maxVal <= 10^​​​​​​​5, but typical limits maybe 1e5? The text says "1 <= maxVal <= 10^​​​​​​​5" which might be 10^5 or 10^? Let's check constraints: "1 <= maxVal <= 10^​​​​​​​5" – the formatting might be a typo for 10^5. Usually these problems have maxVal up to 1e5. Also nums[i] <= 1e5. And n <= 1e5. Time limit 2s. So M <= 1e5 is safe. If maxVal could be up to 1e9, then M could be 1e9, which is too large for O(M log M). But the constraint says 10^​​​​​​​5, which in the problem statement is likely 10^5. I'll assume M <= 1e5. If it's 10^5, it's 100000. If it's 10^? the formatting "10^​​​​​​​5" might be 10^5 with extra spaces. I'll proceed with M up to 1e5. If maxVal can be larger, we'd need a different approach, but given typical Codeforces/LeetCode style, 1e5 is standard.
+        #         Actually, looking at constraints: "1 <= maxVal <= 10^​​​​​​​5" – the weird spacing might be a copy-paste artifact. Often it's 10^5. I'll assume maxVal <= 1e5. But to be safe, I'll note that if maxVal > 1e5, the algorithm might need adjustment, but I'll write code for M up to max(maxVal, max(nums)) and hope it's within limits. If maxVal is up to 1e9, we'd need a different method, but the problem says "Hard" and time 2s, likely 1e5.
+        #         Let's re-read: "1 <= nums.length <= 10^5", "1 <= nums[i] <= 10^5", "1 <= maxVal <= 10^​​​​​​​5". The last one might be 10^5 as well, just poorly formatted. I'll assume M <= 1e5.
+        #
+        #         Now, let's write the Python code.
+        #
+        #         Steps in code:
+        #         class Solution:
+        #             def maxScore(self, nums: list[int], maxVal: int) -> int:
+        #                 n = len(nums)
+        #                 if n == 0: return 0 (but n>=1)
+        #                 max_num = max(nums)
+        #                 M = max(maxVal, max_num)
+        #                 # freq array size M+1
+        #                 freq = [0] * (M + 1)
+        #                 for x in nums:
+        #                     if x <= M:
+        #                         freq[x] += 1
+        #                 # Precompute mu up to M
+        #                 mu = [0] * (M + 1)
+        #                 mu[1] = 1
+        #                 spf = list(range(M + 1))  # smallest prime factor
+        #                 primes = []
+        #                 for i in range(2, M + 1):
+        #                     if spf[i] == i:
+        #                         primes.append(i)
+        #                         mu[i] = -1
+        #                     for p in primes:
+        #                         if i * p > M:
+        #                             break
+        #                         spf[i * p] = p
+        #                         if i % p == 0:
+        #                             mu[i * p] = 0
+        #                             break
+        #                         else:
+        #                             mu[i * p] = -mu[i]
+        #                 # cnt[d] = number of nums divisible by d
+        #                 cnt = [0] * (M + 1)
+        #                 for d in range(1, M + 1):
+        #                     # iterate multiples
+        #                     for m in range(d, M + 1, d):
+        #                         cnt[d] += freq[m]
+        #                 # co[v] = number of elements co-prime with v
+        #                 co = [0] * (M + 1)
+        #                 for d in range(1, M + 1):
+        #                     if mu[d] != 0:
+        #                         add = mu[d] * cnt[d]
+        #                         for v in range(d, M + 1, d):
+        #                             co[v] += add
+        #                 # Now iterate v from 1 to M
+        #                 best = -10**9
+        #                 for v in range(1, M + 1):
+        #                     if v == 1:
+        #                         if freq[1] > 0:
+        #                             cost = 0
+        #                         else:
+        #                             cost = 1
+        #                     else:
+        #                         if v > maxVal and freq[v] == 0:
+        #                             continue
+        #                         f = freq[v]
+        #                         if f > 0:
+        #                             cost = n - co[v] - 1
+        #                         else:
+        #                             if co[v] == n:
+        #                                 cost = 1
+        #                             else:
+        #                                 cost = n - co[v]
+        #                     score = v - cost
+        #                     if score > best:
+        #                         best = score
+        #                 return best
+        #
+        #         Let's test this code mentally on examples.
+        #         Example 1: nums=[3,4,6], maxVal=5 -> M=6. We already traced and got best=4.
+        #         Example 2: nums=[1,2,3], maxVal=4 -> M=4. best=3.
+        #         Example 3: nums=[2,2], maxVal=1 -> M=2. best=1.
+        #         Edge: nums=[2], maxVal=1 -> M=2. v=2: f=1>0, cost=1-0-1=0, score=2. v=1: freq[1]=0 => cost=1, score=0. best=2. Correct.
+        #         Edge: nums=[1], maxVal=1 -> M=1. v=1: freq[1]=1 => cost=0, score=1. best=1. Correct.
+        #         Edge: nums=[6], maxVal=5 -> M=6. v=6: f=1>0, co[6]=0, cost=1-0-1=0, score=6. v=5: f=0, co[5]=1 (since 6 co-prime with 5), n=1, co==n => cost=1, score=4. best=6. Correct.
+        #
+        #         One potential issue: In the computation of cnt[d], we iterate m from d to M step d, and add freq[m]. This is O(M log M). For M=1e5, it's fine.
+        #         Similarly, co computation: for d in 1..M, if mu[d]!=0, for v in range(d, M+1, d): co[v] += add. This is also O(M log M).
+        #         The Mobius precomputation is O(M).
+        #         Total time O(M log M) which is ~ 1e5 * 12 ~ 1.2e6 operations, very fast.
+        #         Space O(M) ~ few arrays of size 1e5+1, negligible.
+        #
+        #         Let's double-check the cost formula for v > maxVal and f > 0.
+        #         In code: `if v > maxVal and freq[v] == 0: continue`
+        #         Then `f = freq[v]` (which is >0 because we didn't continue).
+        #         `cost = n - co[v] - 1`
+        #         This matches our derivation.
+        #
+        #         What about v <= maxVal and f > 0? Same cost formula.
+        #         What about v <= maxVal and f == 0? We have `if co[v] == n: cost = 1 else: cost = n - co[v]`.
+        #         But wait: is it possible that for v <= maxVal and f == 0, we could have cost 0? No, because we need to introduce v, and if all elements are already co‑prime with v, we still need to change one element to v (cost 1). If not all are co‑prime, we need to change at least one non‑co element to v and the rest non‑co elements to 1, cost >= 1. So cost >= 1 always when f==0. Our formula gives cost 1 or n-co which is >=1 (since co < n). Correct.
+        #
+        #         What about v=1? We have separate handling: if freq[1]>0 cost=0 else cost=1.
+        #         But what if v=1 and maxVal=1? freq[1] might be >0 or not. Handled.
+        #         What if v=1 and we are in the loop? The loop goes v=1..M. We have if v==1 branch. Good.
+        #
+        #         Is there any case where v > maxVal and f > 0 but we cannot achieve cost n - co - 1 because we might need to change some elements to values > maxVal? We argued we can always change to 1, which is <= maxVal (since maxVal >= 1). So yes.
+        #
+        #         One subtlety: The problem says "You may change any element in nums to any positive integer less than or equal to maxVal." It does not explicitly say we can change an element to 1 if maxVal >= 1. Since maxVal >= 1, 1 is always allowed. So yes.
+        #
+        #         Another subtlety: When we change elements, we might change an element that was originally > maxVal. We can change it to <= maxVal. Our cost formula counts each change as 1, regardless of original value. That's correct.
+        #
+        #         Let's test a tricky case: nums = [2, 3, 5], maxVal = 10. M=10.
+        #         All nums are primes. We can pick v=5 (original). f=1, co[5]: elements co‑prime with 5: 2 and 3 are co‑prime, 5 not. co=2. n=3. cost = 3 - 2 - 1 = 0. score = 5.
+        #         v=7 (not original, <=10): f=0, co[7]: 2,3,5 all co‑prime with 7 => co=3, n=3 => co==n => cost=1, score=6.
+        #         v=11? M=10, so not considered.
+        #         Best score 7? Wait v=7 score 6, v=5 score 5, what about v=10? f=0, co[10]: 2,3,5 all co‑prime with 10? gcd(2,10)=2>1, so 2 not co‑prime. 3 co‑prime, 5 co‑prime. So co=2. n=3, co!=n => cost = n - co = 3 - 2 = 1. score = 10 - 1 = 9.
+        #         Let's verify v=10 manually: nums=[2,3,5], maxVal=10. We want selectedValue=10. We can change one element to 10 (cost 1). The other two must be co‑prime with 10. 3 and 5 are co‑prime with 10. 2 is not. So we must change 2 as well? Wait, if we change 2 to something co‑prime with 10, e.g., 1 or 3 or 7 or 9. Cost 1. Total changes: change 2 to 1 (cost 1), change one element to 10 (cost 1). Total cost 2. Score = 10 - 2 = 8. But my formula gave cost 1, score 9. There's a discrepancy!
+        #         Let's trace carefully.
+        #         nums = [2,3,5], maxVal=10. v=10.
+        #         v=10 <= maxVal. f = freq[10] = 0.
+        #         co[10] = elements co‑prime with 10: 3 and 5 are co‑prime (gcd(3,10)=1, gcd(5,10)=1). 2 is not. So co = 2. n = 3.
+        #         f == 0, co = 2, n = 3 => co != n => cost = n - co = 3 - 2 = 1.
+        #         But manual says we need to change 2 and also one element to 10, total 2 changes.
+        #         Why does formula say cost 1?
+        #         Let's re-derive the f == 0, co < n case.
+        #         We have n elements. We need exactly one element with value v, and all other n-1 elements co‑prime with v.
+        #         We change one element to v (cost 1). We want to keep as many unchanged as possible.
+        #         We should change a non‑co element to v. The non‑co elements are those not co‑prime with v. Here, non‑co = n - co = 1 (the element 2).
+        #         So we change the element 2 to v=10. Cost 1.
+        #         After this change, the element 2 becomes 10. The other elements 3 and 5 remain unchanged. Are they co‑prime with 10? Yes, gcd(3,10)=1, gcd(5,10)=1.
+        #         Now, what about the selected element? We changed 2 to 10. We now have elements: one 10 (the changed one), 3, and 5.
+        #         We need to choose an index i such that nums[i] is co‑prime with every other element nums[j].
+        #         If we pick the changed element (now 10) as selected, then the other elements are 3 and 5. Are they co‑prime with 10? Yes.
+        #         So we only needed to change one element (2 to 10). The other elements 3 and 5 were already co‑prime with 10, so we didn't need to change them.
+        #         Wait, but originally 2 was not co‑prime with 10. We changed it to 10. The other elements 3 and 5 were already co‑prime with 10. So after one change, we have array [10, 3, 5]. We select the 10. The other elements 3 and 5 are co‑prime with 10. Score = 10 - 1 = 9.
+        #         But earlier I thought we need to change 2 and also change one element to 10, but actually the element we change to 10 IS the 2. So we only do one change. The score is 9.
+        #         Let's verify: original nums = [2,3,5]. Change nums[0] from 2 to 10 (cost 1). Now array is [10,3,5]. Choose nums[0] = 10. selectedValue = 10. modificationCost = 1. The other elements 3 and 5 are co‑prime with 10 (gcd(3,10)=1, gcd(5,10)=1). Score = 10 - 1 = 9.
+        #         Is that allowed? "You may change any element in nums to any positive integer less than or equal to maxVal." 10 <= maxVal=10, yes. "After all modifications, you must choose an index i such that nums[i] is co-prime with every other element nums[j]." 10 is co‑prime with 3 and 5, yes. So score 9 is correct!
+        #         My earlier manual thought was wrong: I assumed we needed to change one element to 10 and keep 2 unchanged, but 2 is not co‑prime with 10, so we would have to change 2 as well. But we don't keep 2 unchanged; we change 2 to 10, so 2 is gone. The other elements 3 and 5 remain and are co‑prime with 10. So only one change needed. Excellent! The formula is correct.
+        #
+        #         So the algorithm works perfectly.
+        #
+        #         Let's test another: nums = [6, 10, 15], maxVal = 20. M=20.
+        #         We can trust the math.
+        #
+        #         Now, consider possible overflow or negative scores? Score = v - cost. v >= 1, cost >= 0, so score can be negative? But we can always achieve at least some score. The problem asks for maximum possible score. Our best initialized to -10**9 will be updated.
+        #         Is it possible that best remains negative? Maybe if all scores negative, but we can always pick v=1 and cost 0 or 1, score 1 or 0. So best will be at least 0 or 1. But we can initialize best = -inf.
+        #
+        #         One more check: In the loop, for v > maxVal and freq[v] == 0, we `continue`. But what if v > maxVal and freq[v] > 0? We compute cost = n - co[v] - 1. This is correct.
+        #         However, note that for v > maxVal, we must have freq[v] > 0. But what if v > maxVal and freq[v] > 0, but co[v] is computed based on all nums. Is there any issue with v > maxVal and the fact that we can only change elements to <= maxVal? We already argued we can change to 1. But what if co[v] counts elements that are co‑prime with v, and we change some elements to 1, that's fine.
+        #         But wait: if v > maxVal, and we have an element with value v, we keep it. We change other v's to 1. We change non‑co elements to 1. All changed elements become 1, which is <= maxVal. So valid.
+        #
+        #         What about the case where v > maxVal, f > 0, but co[v] includes some elements that are actually not co‑prime? No, co[v] is correctly computed.
+        #
+        #         Let's test a case where maxVal is small but nums has large values.
+        #         nums = [100], maxVal = 10. M = max(10, 100) = 100.
+        #         freq[100] = 1.
+        #         v=100 > maxVal, f=1, co[100] = elements co‑prime with 100: only 100 itself? gcd(100,100)=100>1 => co=0. n=1. cost = 1 - 0 - 1 = 0. score = 100.
+        #         v=10 <= maxVal: f=0, co[10]: 100 is not co‑prime with 10 (gcd=10). co=0. n=1, co!=n => cost = n - co = 1 - 0 = 1. score = 10 - 1 = 9.
+        #         Best score 100 (keep 100). Correct.
+        #
+        #         What if nums = [100, 3], maxVal = 10. M=100.
+        #         freq: 100:1, 3:1.
+        #         v=100 > maxVal, f=1. co[100]: 3 is not co‑prime with 100 (gcd(3,100)=1? Wait gcd(3,100)=1! 3 and 100 are co‑prime. So co[100] includes 3. Also 100 itself is not co‑prime. So co = 1 (only 3). n=2. cost = n - co - 1 = 2 - 1 - 1 = 0. score = 100.
+        #         Manual: keep 100 selected. 3 is co‑prime with 100. No changes needed. Score 100. Correct.
+        #         v=10: f=0, co[10]: 100 not co‑prime (gcd=10), 3 co‑prime => co=1. n=2, co!=n => cost = 2 - 1 = 1. score = 9.
+        #         Best 100.
+        #
+        #         All good.
+        #
+        #         Now, let's consider if there's any case where the formula might give a cost that is not achievable because we might need to change an element to a value that is not <= maxVal, but we can always change to 1.
+        #         The only potential issue: what if we need to change an element to v (when f==0 and we change a non‑co element to v). We change that element to v. v <= maxVal by our loop condition (if v > maxVal and f==0 we skip, but if v <= maxVal we are fine). If f==0 and v > maxVal, we skip entirely. So v <= maxVal when we change to v. Good.
+        #         What if f > 0 and we change other v's to 1? 1 <= maxVal. Good.
+        #         What if f > 0 and we change non‑co elements to 1? 1 <= maxVal. Good.
+        #
+        #         So the algorithm seems solid.
+        #
+        #         Let's write the final Python code with proper imports and structure.
+        #         We'll include the class Solution with method maxScore.
+        #         We'll use typing.List for type hints.
+        #
+        #         One minor optimization: we can compute M = max(maxVal, max(nums)). But if nums is large, max(nums) is O(n). Fine.
+        #         We need to compute freq up to M. Note: nums[i] could be > M? No, M >= max(nums), so all nums[i] <= M.
+        #         So freq array size M+1 is sufficient.
+        #
+        #         Let's code it carefully.
+        #
+        #         Potential bug: In Mobius precomputation, we use `spf` and `primes`. Standard linear sieve for mu.
+        #         Let's ensure mu computation is correct.
+        #         mu[1] = 1.
+        #         For i from 2 to M:
+        #             if spf[i] == i: # i is prime
+        #                 primes.append(i)
+        #                 mu[i] = -1
+        #             for p in primes:
+        #                 if i * p > M: break
+        #                 spf[i * p] = p
+        #                 if i % p == 0:
+        #                     mu[i * p] = 0
+        #                     break
+        #                 else:
+        #                     mu[i * p] = -mu[i]
+        #         This is correct.
+        #
+        #         Then cnt[d]: we can just do:
+        #         cnt = [0]*(M+1)
+        #         for d in range(1, M+1):
+        #             for m in range(d, M+1, d):
+        #                 cnt[d] += freq[m]
+        #         This is O(M log M). For M=1e5, inner loop runs M/d times, total ~ M * H_M ~ M ln M ~ 1e5 * 12 = 1.2e6.
+        #
+        #         Then co[v]:
+        #         co = [0]*(M+1)
+        #         for d in range(1, M+1):
+        #             if mu[d] != 0:
+        #                 add = mu[d] * cnt[d]
+        #                 for v in range(d, M+1, d):
+        #                     co[v] += add
+        #         Same complexity.
+        #
+        #         Then loop v 1..M.
+        #
+        #         Let's test with a random small case by brute force to be absolutely sure.
+        #         But since I'm an AI, I can't execute code, but I can reason.
+        #         I'll do a mental brute force for nums=[2,4], maxVal=3 (M=4).
+        #         n=2. freq: 2:1, 4:1.
+        #         mu up to 4: mu[1]=1, mu[2]=-1, mu[3]=-1, mu[4]=0.
+        #         cnt: d=1: freq[1]+freq[2]+freq[3]+freq[4] = 0+1+0+1=2. d=2: freq[2]+freq[4]=2. d=3: freq[3]=0. d=4: freq[4]=1.
+        #         co: 
+        #           d=1 mu=1 add=2: co[1..4] +=2 => co=[2,2,2,2]
+        #           d=2 mu=-1 add=-2: v=2,4 => co[2]-=2 =>0, co[4]-=2 =>0.
+        #           d=3 mu=-1 add=-0: no change.
+        #           d=4 mu=0: skip.
+        #         co = [?, 2, 0, 2, 0] (indices 1..4: co[1]=2, co[2]=0, co[3]=2, co[4]=0)
+        #         Manual: co‑prime with 1: both 2 and 4? gcd(2,1)=1, gcd(4,1)=1 => 2. co‑prime with 2: 2 not, 4 not (gcd=2) => 0. co‑prime with 3: 2 co‑prime (gcd=1), 4 co‑prime (gcd=1) => 2. co‑prime with 4: 2 not, 4 not => 0. Matches.
+        #         Now loop v=1..4:
+        #         v=1: freq[1]=0 => cost=1, score=0.
+        #         v=2: v<=maxVal(3), f=freq[2]=1 >0. cost = n - co[2] - 1 = 2 - 0 - 1 = 1. score = 2 - 1 = 1.
+        #         v=3: v<=maxVal, f=freq[3]=0. co[3]=2. n=2, co==n => cost=1. score = 3 - 1 = 2.
+        #         v=4: v=4 > maxVal=3? maxVal=3, so v=4 > maxVal. f=freq[4]=1 >0. cost = n - co[4] - 1 = 2 - 0 - 1 = 1. score = 4 - 1 = 3.
+        #         Best score = 3 (v=4).
+        #         Manual: nums=[2,4], maxVal=3. We can pick v=4. 4 > maxVal, so we must keep original 4. Change 2 to something co‑prime with 4, e.g., 1 or 3. Cost 1. Score 4-1=3. Correct. v=3 score 2: change 4 to 3? But 4 > maxVal? Actually we could change 4 to 3 (cost 1), keep 2 (co‑prime with 3). Score 3-1=2. v=2 score 1: keep 2, change 4 to 1 (cost 1). Score 1. v=1 score 0. Max 3. Correct.
+        #
+        #         Everything is consistent.
+        #
+        #         Now, let's consider if there's any edge case with n=1 and v > maxVal and freq[v]==0? We skip those. For n=1, we always have at least one original value. If maxVal is smaller, we keep the original. If maxVal larger, we might have v <= maxVal with f=0, cost=1, score v-1, but we could also keep original and get score original. So max will pick original if it's larger.
+        #
+        #         One more check: In the loop, for v > maxVal and freq[v] > 0, we compute cost = n - co[v] - 1.
+        #         But what if n - co[v] - 1 is negative? That would mean co[v] > n - 1. Since co[v] <= n, and for v>1, elements with value v are not co‑prime, so co[v] <= n - f. If f=1, co[v] <= n-1. So n - co[v] - 1 >= 0. If f>1, co[v] <= n - f <= n-2, so cost >= 1. So cost is always >= 0. Good.
+        #
+        #         What about v=1? cost 0 or 1, score 1 or 0.
+        #
+        #         Now, implement.
+        #         We'll write the code with clear comments.
+        #         Ensure we use `from typing import List`.
+        #
+        #         Final code structure:
+
+```python
+from typing import List
+
+class Solution:
+    def maxScore(self, nums: List[int], maxVal: int) -> int:
+        n = len(nums)
+        max_num = max(nums)
+        M = max(maxVal, max_num)
+        
+        # frequency of each value in nums (up to M)
+        freq = [0] * (M + 1)
+        for x in nums:
+            # all x are <= M by definition
+            freq[x] += 1
+            
+        # Precompute Mobius function mu up to M
+        mu = [0] * (M + 1)
+        mu[1] = 1
+        spf = list(range(M + 1))  # smallest prime factor
+        primes = []
+        for i in range(2, M + 1):
+            if spf[i] == i:
+                primes.append(i)
+                mu[i] = -1
+            for p in primes:
+                if i * p > M:
+                    break
+                spf[i * p] = p
+                if i % p == 0:
+                    mu[i * p] = 0
+                    break
+                else:
+                    mu[i * p] = -mu[i]
+        
+        # cnt[d] = number of elements in nums divisible by d
+        cnt = [0] * (M + 1)
+        for d in range(1, M + 1):
+            for m in range(d, M + 1, d):
+                cnt[d] += freq[m]
+                
+        # co[v] = number of elements in nums co-prime with v
+        co = [0] * (M + 1)
+        for d in range(1, M + 1):
+            if mu[d] != 0:
+                add = mu[d] * cnt[d]
+                for v in range(d, M + 1, d):
+                    co[v] += add
+                    
+        best = -10**9
+        
+        for v in range(1, M + 1):
+            if v == 1:
+                if freq[1] > 0:
+                    cost = 0
+                else:
+                    cost = 1
+            else:
+                # if v > maxVal and v does not appear in original nums, impossible
+                if v > maxVal and freq[v] == 0:
+                    continue
+                f = freq[v]
+                if f > 0:
+                    cost = n - co[v] - 1
+                else:
+                    if co[v] == n:
+                        cost = 1
+                    else:
+                        cost = n - co[v]
+            score = v - cost
+            if score > best:
+                best = score
+                
+        return best
+```
+
+# Let's quickly double-check if there's any off-by-one or missing case.
+# What if maxVal is very large, like 10^5, and nums also up to 10^5. M = 10^5. Arrays of size 100001 are fine.
+# What if maxVal is 1 and nums has values > 1? M = max(1, max(nums)) = max(nums). Then we iterate v up to max(nums). That's fine.
+# What if nums has duplicate values? freq array handles counts.
+# The formula for cost when f > 0: n - co - 1. We assume we can always keep one original v and change the rest. Is it possible that co[v] includes the selected v? For v > 1, elements with value v are not co‑prime with v, so they are not in co[v]. So co[v] counts only elements with value != v. So keeping one v leaves co[v] unchanged elements co‑prime with v, and the other f-1 v's must be changed. Correct.
+# For v = 1, handled separately.
+# What if maxVal < some nums[i] and we pick v = nums[i] > maxVal, but that v might have co[v] computed including elements that are > maxVal? We can keep those > maxVal elements unchanged. The co‑prime condition only depends on values, not on maxVal. So it's fine.
+# The only place maxVal matters is: we can only change elements to <= maxVal. We argued we can always change to 1. Is 1 always <= maxVal? Yes, constraint says 1 <= maxVal. So 1 is always allowed.
+# What if maxVal = 1? Then 1 is the only allowed changed value. Our formulas still hold because we change to 1. For v > maxVal, we change to 1. For v <= maxVal (which is only v=1), we handle separately.
+# In v <= maxVal case, when we change elements to v, v <= maxVal. When we change to 1, 1 <= maxVal. So always valid.
+# One potential issue: In the f == 0, co < n case, we change one non‑co element to v. But what if the non‑co element we change to v was originally > maxVal? We can still change it to v (since v <= maxVal). That's allowed.
+# What if all non‑co elements are > maxVal? We can still change them to v or 1, as long as the target <= maxVal. Since v <= maxVal and 1 <= maxVal, it's fine.
+# So no issue.
+
+# The solution seems complete and correct.
+```
+[finish_reason: stop | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 656, 'completion_tokens': 30164, 'total_tokens': 30820, 'cost': 0.00607872, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00607872, 'upstream_inference_prompt_cost': 4.592e-05, 'upstream_inference_completions_cost': 0.0060328}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

@@ -1,0 +1,90 @@
+
+Assistant: ```python
+class Solution:
+    def distantSubarrays(self, nums: list[int], goal: int, k: int) -> int:
+        total_subarrays = len(nums) * (len(nums) + 1) // 2
+        
+        # Count subarrays with |sum - goal| < k
+        count_near = 0
+        
+        # Map to store prefix sums and their frequencies from left side
+        left_counts = {}
+        
+        current_sum = 0
+        
+        for j in range(len(nums)):
+            current_sum += nums[j]
+            # We need to find i such that sum(i..j) = S satisfies |S - goal| < k
+            # Let left_prefix = sum(0..i-1), then S = current_sum - left_prefix
+            # Condition: |current_sum - left_prefix - goal| < k  => goal - k < current_sum - left_prefix < goal + k
+            # => current_sum - goal - k < left_prefix < current_sum - goal + k
+            lower = current_sum - goal - k
+            upper = current_sum - goal + k
+            
+            # Query left_counts for left_prefix in (lower, upper)
+            # Since we are using integer prefix sums, we need strict inequalities.
+            # We'll count left_prefix such that left_prefix > lower and left_prefix < upper.
+            # We can use binary search if we store sorted list, but here we can use a balanced BST approach? 
+            # However, typical solution: use a balanced structure? But time limit 3s, n up to 1e5.
+            # We'll use a dictionary and binary search on sorted list of prefix sums seen so far.
+            # But updating sorted list per iteration would be O(n log n) overall if we use bisect.insort (O(n) per insertion).
+            # Instead, we can use two pointers with sorted list? Actually, we need to query all left prefixes seen before j.
+            # Standard approach for subarray sum in range: use prefix sum array and for each j, count i < j such that
+            # prefix[j+1] - prefix[i] in [goal-k+1, goal+k-1]? But careful: |sum - goal| < k  <=> goal - k < sum < goal + k.
+            # Since sum and goal are integers? nums[i] integers, so sum integer. But k can be integer? yes, k integer per constraints (0 <= k <= 1e9).
+            # So |sum - goal| < k  <=> goal - k < sum < goal + k.
+            # Because k integer, sum integer, we have:
+            # sum <= goal + k - 1  and sum >= goal - k + 1? Let's check:
+            # |s - goal| < k  => -k < s - goal < k  => goal - k < s < goal + k.
+            # Since s integer, s ∈ [goal - k + 1, goal + k - 1] if goal and k integers? Example: goal=4, k=1 -> |s-4|<1 => s in (3,5) integers -> s=4 only. But in example 1, they counted only subarrays with abs(sum-goal) >=1, so near subarrays are those with abs<1 i.e., abs=0 -> only sum=4. Indeed, they didn't list sum=4 subarray? Let's check: nums=[1,2,1], goal=4, k=1. Sum=4 subarray? [1,2,1] sum=4 -> abs=0 <1, so it's NOT distant. So near subarray includes sum=4. They listed 5 distant subarrays, total subarrays = 6 (n=3 -> 6), so near subarrays = 1 ([1,2,1]). That matches: only sum=4 is near.
+            # So yes, near condition: |sum - goal| < k  <=> sum in (goal-k, goal+k) open interval. Since integers, sum ∈ [goal - k + 1, goal + k - 1] when k>=1? But if k=0, then |sum-goal| < 0 is impossible (only equal), so near = 0? Actually k>=0, if k=0, distant means |sum-goal|>=0 which is always true, so answer = total subarrays. But near = |sum-goal|<0 => false for all, so count_near=0.
+            # So we can define:
+            # lower_bound = goal - k + 1  (if k>=1), but careful when k=0: goal - 0 + 1 = goal+1, goal+0-1=goal-1, so range empty -> correct.
+            # However, to avoid off-by-one, we can use real inequalities and binary search on integer prefix sums with strict bounds.
+            # We'll maintain a sorted list of prefix sums seen so far (from index 0 to j-1), and for current prefix[j+1] = current_sum, we want to count left_prefix such that:
+            # goal - k < current_sum - left_prefix < goal + k
+            # => current_sum - goal - k < left_prefix < current_sum - goal + k
+            # Let L = current_sum - goal - k + 1? No, because left_prefix integer, we need left_prefix > current_sum - goal - k and left_prefix < current_sum - goal + k.
+            # So left_prefix >= floor(current_sum - goal - k) + 1? Since left_prefix integer, the smallest integer satisfying > X is floor(X)+1. Similarly, largest integer satisfying < Y is ceil(Y)-1.
+            # But to avoid floating, we can use bisect:
+            # Find index of first left_prefix > L = current_sum - goal - k
+            # and index of last left_prefix < U = current_sum - goal + k
+            # We can do:
+            # lo = bisect_right(left_list, L)  # first index where left_list[i] > L
+            # hi = bisect_left(left_list, U) - 1  # last index where left_list[i] < U
+            # Actually:
+            #   count = bisect_left(left_list, U) - bisect_right(left_list, L)
+            # because:
+            #   bisect_right(left_list, L) returns index of first element > L
+            #   bisect_left(left_list, U) returns index of first element >= U
+            #   so elements with index in [bisect_right(L), bisect_left(U)-1] are those > L and < U.
+            #   count = bisect_left(U) - bisect_right(L)
+            L_val = current_sum - goal - k
+            U_val = current_sum - goal + k
+            
+            # Query current left_counts (which is the sorted list of prefix sums from previous indices)
+            # We need to include prefix sum 0 for subarray starting at index 0.
+            # We start with left_counts containing prefix sum 0 before the loop.
+            # So at j=0, we have left_list = [0] and current_sum = nums[0], then we count left_prefix that satisfy condition.
+            
+            # Find number of left_prefix in (L_val, U_val)
+            # Use bisect from sorted list left_list
+            # left_list is maintained as sorted list of prefix sums from indices 0..j-1
+            import bisect
+            idx_low = bisect.bisect_right(left_list, L_val)
+            idx_high = bisect.bisect_left(left_list, U_val)
+            count_near_j = idx_high - idx_low
+            count_near += count_near_j
+            
+            # Insert current_sum into left_list for future iterations
+            bisect.insort(left_list, current_sum)
+        
+        # After loop, left_list contains all prefix sums from 0 to last, but we didn't insert after last query? 
+        # We insert after counting for current j, so at the end we have inserted all prefix sums except the very last? Actually we insert after counting for j, so for j=last, we count using left_list that includes prefix sums up to j-1, then insert current_sum. That's correct.
+        
+        # However, note: we also need to count the prefix sum 0 at the beginning. We initialized left_list = [0] before loop.
+        
+        result = total_subarrays - count_near
+        return result
+```
+[finish_reason: stop | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 810, 'completion_tokens': 1996, 'total_tokens': 2806, 'cost': 0.0003764, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 80, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0003764, 'upstream_inference_prompt_cost': 7.7e-05, 'upstream_inference_completions_cost': 0.0002994}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

@@ -1,0 +1,201 @@
+
+Assistant: ```python
+class Solution:
+    def numberOfPairs(self, nums1: list[int], nums2: list[int], queries: list[list[int]]) -> list[int]:
+        n1 = len(nums1)
+        n2 = len(nums2)
+
+        # Frequency of each value in nums2 (values up to max possible)
+        # maximum value after updates: nums2[i] + 5*1e5 (at most 5e4 updates with val=1e5)
+        # But we can bound by 2e5+1e5 = 3e5 roughly; however to be safe we use a dict.
+        from collections import defaultdict, Counter
+
+        # count2[v] = how many elements in nums2 have value v
+        count2 = Counter(nums2)
+
+        # freq1[t] = how many elements in nums1 have value t
+        freq1 = Counter(nums1)
+
+        # Since values can grow, we keep count2 as a dict and update lazily.
+        # But we need to answer queries of type 2 quickly.
+        # We'll maintain count2 and update it directly for range adds.
+        # Because n2 <= 5e4 and queries <= 5e4, a direct update per range is okay if we
+        # use a difference array or just loop. However looping over range per type-1 query
+        # could be O(n2 * queries) worst-case 2.5e9, too large.
+        # Instead we use a lazy approach: keep an array add[i] for pending additions,
+        # and when answering type-2, we compute current value on the fly.
+        # But type-2 needs count of pairs; we can compute by iterating over freq1 and
+        # for each v in freq1 we need count of (tot - v) in current nums2.
+        # To get count of (tot - v) efficiently we maintain a freq map of nums2 values
+        # that we update lazily using a difference array over indices, then rebuild freq map
+        # when needed. Since type-2 queries are interleaved, we can rebuild the freq map
+        # after each type-1 query, but that would be O(n2) per type-1, okay because
+        # n2=5e4 and queries=5e4 => 2.5e9 again.
+        # Better: use a Fenwick tree / segment tree over values? Values up to 1e5 + 5e5 = 6e5.
+        # We can maintain an array cnt of size MAX_VAL+1, and for range add [x,y] val,
+        # we need to add val to cnt for each index in [x,y]. That's range update point query
+        # on the array values. But we need frequency of each value in nums2 to compute pairs.
+        # Alternative: Because n1 <= 5, we can invert the problem.
+        # For each element a in nums1, we need count of b in nums2 such that a + b == tot.
+        # So answer = sum_{a in nums1} freq2[tot - a].
+        # Since |nums1| <= 5, we only need to query freq2[target] for at most 5 targets per type-2 query.
+        # So we just need a data structure that supports:
+        #   - range add val to nums2[x..y]
+        #   - point query: what is the current value of nums2[i]? Or we need freq2[val] i.e. count of indices i with current value == val.
+        # But we only need freq2[target] for specific targets.
+        # We can maintain an array cur_val[i] = nums2[i] + added[i].
+        # To support range add and point query we can use a difference array diff of size n2+1,
+        # and maintain a running prefix sum to get added[i]. Then cur_val[i] = nums2[i] + prefix[i].
+        # To get freq2[target] we would need to count how many i have nums2[i] + prefix[i] == target.
+        # This is equivalent to counting i with nums2[i] == target - prefix[i].
+        # Since prefix[i] changes with range adds, we cannot easily maintain freq2 without scanning.
+        # However, n2 <= 5e4 and queries <= 5e4, and type-2 only needs at most 5 lookups.
+        # We can answer each type-2 by iterating over all i in nums2 and checking cur_val[i] == target?
+        # That would be O(n2) per type-2, worst-case 5e4 * 5e4 = 2.5e9, too slow.
+        # We need a faster way.
+
+        # Let's reconsider constraints: n1 <= 5 is very small.
+        # nums2 length up to 5e4, values up to 1e5, queries up to 5e4.
+        # We can use a sqrt-decomposition (blocks) on nums2.
+        # Divide nums2 into blocks of size B ~ sqrt(n2) ≈ 224.
+        # For each block maintain:
+        #   - base values of elements in the block (original nums2[i] plus any additions applied to the whole block)
+        #   - a lazy_add tag for the block.
+        #   - a frequency map of (base_value + lazy_add) -> count within the block.
+        # When a range add [x, y] comes:
+        #   - For fully covered blocks: just lazy_add += val, and update the frequency map
+        #     (we can just shift the keys, but shifting all keys is expensive; instead we keep lazy_add
+        #      and when querying we add lazy_add to the target).
+        #   - For partially covered blocks: we push down the lazy_add to individual elements,
+        #     update the specific elements, rebuild the block's frequency map.
+        # For a type-2 query with target tot:
+        #   ans = 0
+        #   For each a in freq1 (at most 5 distinct values):
+        #       need = tot - a
+        #       For each block, the effective value of an element is base + lazy_add.
+        #       So we need count of elements with base + lazy_add == need  => base == need - lazy_add.
+        #       So we just look up freq_map[need - lazy_add] for each block and sum.
+        # This gives O(sqrt(n2)) per type-2, and O(sqrt(n2)) per type-1.
+        # With n2=5e4, sqrt≈224, queries=5e4 => ~1.1e7 operations, well within 12s in Python.
+
+        # Let's implement sqrt decomposition.
+
+        B = int(n2 ** 0.5) + 1  # block size
+        nb = (n2 + B - 1) // B   # number of blocks
+
+        # block_lazy[b] = value added to all elements in block b
+        block_lazy = [0] * nb
+
+        # block_freq[b] = dict mapping base_value -> count within block b
+        # base_value = original nums2[i] plus any individual adjustments that are not covered by lazy.
+        # Initially, base_value = nums2[i].
+        block_freq = [defaultdict(int) for _ in range(nb)]
+        for i, val in enumerate(nums2):
+            b = i // B
+            block_freq[b][val] += 1
+
+        # We also keep the original nums2 array to know base values when pushing down.
+        # Actually we can just keep an array base[i] = nums2[i] initially, and when we push down
+        # we update base[i] and rebuild block_freq. But we can also just store the original nums2
+        # and apply lazy on top. When we push down a block, we add block_lazy[b] to each element's
+        # base value, reset block_lazy[b] = 0, and rebuild block_freq from the updated bases.
+        # To avoid O(n2) rebuild, we only push down when needed (partial overlap).
+
+        # We'll maintain an array `val` which is the current base value for each index,
+        # initially nums2[i]. When we push down block b, we do:
+        #   for i in range(b*B, min(n2, (b+1)*B)):
+        #       val[i] += block_lazy[b]
+        #   block_lazy[b] = 0
+        #   then rebuild block_freq[b] from val[i] for i in block.
+
+        # However, we need to be able to add val to individual elements during partial updates.
+        # So we keep `base[i]` = current base value (without block lazy).
+        base = nums2[:]  # copy
+
+        # Function to rebuild block_freq for block b
+        def rebuild_block(b):
+            d = block_freq[b]
+            d.clear()
+            start = b * B
+            end = min(n2, (b + 1) * B)
+            for i in range(start, end):
+                d[base[i]] += 1
+
+        # Process queries
+        ans = []
+        for q in queries:
+            if q[0] == 1:
+                # type 1: add val to nums2[x..y]
+                _, x, y, val = q
+                # find blocks covering x and y
+                bx = x // B
+                by = y // B
+                if bx == by:
+                    # same block: push down lazy, update individual elements, rebuild
+                    # push down block bx
+                    # Actually we can just add val to base[i] for i in [x, y] and rebuild block bx.
+                    # But we must first apply any existing lazy to base.
+                    # We'll push down block bx:
+                    start = bx * B
+                    end = min(n2, (bx + 1) * B)
+                    for i in range(start, end):
+                        base[i] += block_lazy[bx]
+                    block_lazy[bx] = 0
+                    # now update individual elements in [x, y]
+                    for i in range(x, y + 1):
+                        base[i] += val
+                    rebuild_block(bx)
+                else:
+                    # left partial block bx
+                    # push down block bx
+                    start = bx * B
+                    end = min(n2, (bx + 1) * B)
+                    for i in range(start, end):
+                        base[i] += block_lazy[bx]
+                    block_lazy[bx] = 0
+                    # update from x to end of block bx
+                    for i in range(x, end):
+                        base[i] += val
+                    rebuild_block(bx)
+
+                    # right partial block by
+                    start = by * B
+                    end = min(n2, (by + 1) * B)
+                    for i in range(start, end):
+                        base[i] += block_lazy[by]
+                    block_lazy[by] = 0
+                    # update from start of block by to y
+                    for i in range(start, y + 1):
+                        base[i] += val
+                    rebuild_block(by)
+
+                    # fully covered blocks between bx+1 and by-1
+                    for b in range(bx + 1, by):
+                        block_lazy[b] += val
+                        # We do NOT update block_freq here; the lazy tag handles it.
+                        # However, the frequency map still maps base values.
+                        # Since we added val to all elements via lazy, the effective value is base + lazy.
+                        # The freq map keys are base values, so they are still correct as long as we
+                        # remember to add lazy when querying. No need to rebuild.
+            else:
+                # type 2: compute pairs
+                _, tot = q
+                # For each distinct value a in freq1, need = tot - a
+                # We sum over blocks: count of elements with base + block_lazy == need  => base == need - block_lazy
+                total = 0
+                # freq1 may have duplicates? nums1 length <=5, we can just iterate over nums1 list or use set.
+                # Using set to avoid duplicate counting if nums1 has same value multiple times?
+                # The problem says: number of pairs (j, k) such that nums1[j] + nums2[k] == tot.
+                # If nums1 has duplicates, each j is distinct index, so we must count each occurrence.
+                # So we should iterate over all j in range(n1), i.e., each element of nums1.
+                for a in nums1:
+                    need = tot - a
+                    # sum over blocks
+                    for b in range(nb):
+                        target_base = need - block_lazy[b]
+                        total += block_freq[b].get(target_base, 0)
+                ans.append(total)
+
+        return ans
+```
+[finish_reason: stop | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 1101, 'completion_tokens': 2780, 'total_tokens': 3881, 'cost': 0.00063307, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00063307, 'upstream_inference_prompt_cost': 7.707e-05, 'upstream_inference_completions_cost': 0.000556}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

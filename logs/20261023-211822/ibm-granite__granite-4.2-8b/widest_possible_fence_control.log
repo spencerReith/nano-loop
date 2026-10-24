@@ -1,0 +1,331 @@
+
+Assistant: ```python
+class Solution:
+    def maximumWidth(self, planks: list[int]) -> int:
+        from collections import Counter
+        
+        # Sort to avoid large numbers and to help with two-sum-like checks
+        planks.sort()
+        
+        # Count frequencies of original planks
+        freq = Counter(planks)
+        max_freq = max(freq.values()) if freq else 0
+        # At least one plank can be used alone
+        ans = max_freq
+        
+        # Use two-pointer technique to count how many original planks can be combined
+        # to form a given target height. We'll iterate over possible target heights.
+        # Since we can only combine two distinct original planks (distinct indices, but same height is allowed if they are different original planks? 
+        # The problem says "combine exactly two distinct original planks". It means two planks from the list that are different elements (by index), even if they have same height it's allowed because they are distinct planks.
+        # So we can use two planks of same height to combine? Yes, because they are distinct original planks.
+        # However, note: each original plank can be used at most once.
+        # So for each height h, we want to know how many disjoint pairs (i, j) with i != j such that planks[i] + planks[j] = h,
+        # without reusing a plank.
+        # But we also have the option to use single planks of height h.
+        # So total number of planks of height h in the fence = (number of single planks of height h not used in pairs) + (number of pairs that sum to h).
+        # But we must ensure that the same plank is not used both as a single and in a pair.
+        # The optimal way for a given h is:
+        #   - Use all original planks of height h that are not used in pairs that sum to h.
+        #   - But if we use a plank of height h in a pair (h1 + h2 = h), that plank cannot be used as a single.
+        #
+        # Therefore, for a fixed target height H, we want to maximize the total number of planks (single + pairs) of height H
+        # that can be formed from the multiset of planks without reusing any plank.
+        #
+        # Approach: for each possible H that appears either as an original plank height or as a sum of two distinct planks,
+        # compute the maximum number of planks of height H that can be built.
+        # Since planks length <= 1000, we can iterate over all possible H? H can be up to 2e9, but we only care about H that can be formed by original planks or sums of two original planks.
+        # We can collect all candidate H: all original plank heights and all sums of two distinct planks (with indices i<j).
+        # But number of sums is O(n^2) = up to 1e6, which is acceptable for n=1000? 1e6 might be borderline in Python but 2s might be tight.
+        # However, we can optimize by not iterating over all sums blindly; we can use a two-pointer or hash map per H? But we need to compute for each H the maximum count.
+        #
+        # Alternative: for each H that is an original plank height, we already have freq[H] singles. Then we want to add as many pairs (a,b) with a+b=H as possible without reusing planks that are already used as singles? But we can choose to not use some singles in order to use them in pairs? Because using a plank of height H in a pair (a+b=H) might be beneficial if it allows more total planks? Actually, if we have a plank of height H, we can either use it as a single or use it in a pair (with another plank of height 0? no, must sum to H). If we use it in a pair (x + y = H), then x and y must be less than H (if positive). But then we cannot use that H-plank as a single. So we need to decide for each plank whether to assign it to a single (if its height equals H) or to a pair (if it participates in a sum to H).
+        #
+        # The goal is to maximize the total number of planks of height H in the fence.
+        # This is a matching problem: we have multiset of planks. We want to select as many disjoint pairs (i,j) with planks[i] + planks[j] = H, and also select all remaining planks that are equal to H that are not used in pairs, to form singles. But note: a plank equal to H cannot be used in a pair (x+y=H) because then x or y would be 0 (not possible since planks[i] >=1) unless the other is 0, but no zero. Actually, if H = h + H'? No: if we have a plank of height H, and we want to use it in a pair that sums to H, then the other plank would have height 0, which is not present. Therefore, a plank of height H cannot be used in a pair that sums to H (because the other plank would have to be 0). So singles of height H are always available and never conflict with pairs that sum to H (since pairs use two planks both less than H, because all planks are positive).
+        # Thus, for a given H, the singles of height H are always safe to use.
+        # Pairs that sum to H use two planks each less than H (strictly, since positive). So they do not use any plank of height H.
+        # Therefore, for a fixed H, the maximum number of planks of height H we can have is:
+        #   freq[H] + (maximum number of disjoint pairs (a,b) with a+b=H from the remaining planks excluding those of height H? But wait, planks of height H are not used in pairs for sum H, so they are separate.
+        #   Actually, the pairs use planks that are not of height H (since if a plank were height H, then b=0 which is impossible). So the set of planks used in pairs is disjoint from singles of height H.
+        #   However, a plank of height H might be used in a pair for a different H'? But we are only considering fence of height H, so we only care about forming planks of height H. So we only consider pairs that sum exactly to H.
+        #
+        # Therefore, for candidate H, we can:
+        #   - Take all original planks of height H as singles.
+        #   - From the rest (planks with value != H), take as many disjoint pairs (a,b) with a+b=H as possible.
+        #   The total number for H is freq[H] + max_pairs, where max_pairs is the maximum number of disjoint pairs summing to H from the multiset of planks excluding the ones of height H (but note: we might have used some planks of height H in pairs for H'? No, we are only building fence of height H, so we don't mix H' != H. So yes, we only consider pairs from non-H planks for sum H.
+        #
+        # But wait: could a plank of height H be used in a pair to form H? Only if H = H + x => x=0, impossible. So safe.
+        #
+        # However, what about using a plank of height H in a pair for a different target? No, because the fence must have all planks of the same height H. So we only care about forming H.
+        #
+        # Therefore, for each candidate H (which is either an original height or a sum of two distinct planks), we can compute:
+        #   singles = freq[H]
+        #   remaining = list of planks excluding the freq[H] copies of H? But we have to consider that when forming pairs, we cannot use a plank twice. So we take all planks except those of height H? Actually, we can use all planks except that the planks of height H are already used as singles and cannot be used in pairs (since pairs would require 0). So we remove all H planks from the pool for pairs.
+        #   Then from the remaining planks, we want to form as many disjoint pairs (a,b) with a+b=H as possible.
+        #
+        # This is a classic two-sum pair counting without reuse. Since planks are positive and we have a sorted list, we can use two pointers on the remaining sorted list (which does not include H) to count the maximum number of disjoint pairs summing to H.
+        #
+        # Steps for candidate H:
+        #   Let arr = sorted list of planks that are not equal to H? But note: there might be multiple copies of H, and we want to remove all of them for the pair formation? Yes, because they are used as singles and cannot be used in pairs for sum H.
+        #   However, what if we decide not to use all H singles? Could using fewer singles allow more pairs? No, because singles give one plank per H, while a pair gives one plank of height H from two planks. So using a H-plank as a single always contributes 1 to the count, while using it in a pair would require a 0-plank which doesn't exist. Therefore, we always want to use all H singles.
+        #
+        #   So for candidate H, total = freq[H] + max_pairs(arr), where arr is the list of planks with value != H, sorted.
+        #
+        #   Compute max_pairs(arr) for sum H: use two pointers (i=0, j=len(arr)-1) and count pairs. Standard: while i < j: if arr[i] + arr[j] == H, count++, i++, j--; elif < H, i++; else j--.
+        #
+        #   But note: the two-pointer method counts the maximum number of disjoint pairs without reuse? Yes, because when we find a pair, we move both pointers, so each plank is used at most once.
+        #
+        #   However, is the two-pointer method guaranteed to find the maximum number of disjoint pairs for a given sum? For a sorted array of positive numbers, yes, because the greedy works: if arr[i] + arr[j] < H, then arr[i] cannot pair with any element from j to end (since array is sorted), so we move i. Similarly, if > H, move j. When equal, we take the pair and move both. This yields the maximum number of pairs for the two-sum problem with distinct indices.
+        #
+        #   But caution: what if there are duplicates? The two-pointer method still works because we move both pointers when a pair is found, and we don't skip potential other pairs that might use the same element? It is standard for maximum number of pairs without reuse.
+        #
+        #   Therefore, for each candidate H, we can compute total = freq[H] + max_pairs(arr_without_H).
+        #
+        # Candidate H: we should consider all H that appear in the original planks, and also all sums of two distinct planks (i.e., for any two planks i and j, i != j, H = planks[i] + planks[j]). However, the maximum total for H might be achieved for an H that is not an original plank height? Yes, because we might not have any original plank of height H, but we can form several planks of height H entirely from pairs. In that case, freq[H] = 0, and total = max_pairs(arr_without_H) where arr_without_H is all planks (since no H singles). So we must consider sums of two planks as well.
+        #
+        # How many candidate H? Up to n (for singles) + n*(n-1)/2 (for sums) = about 500k for n=1000, which is acceptable if we do O(n) work per candidate? That would be 500k * 1000 = 500M, too slow.
+        #
+        # We need a more efficient way.
+        #
+        # Alternative approach: since n <= 1000, we can iterate over all possible H that are either an original height or a sum of two planks? But we can optimize by not iterating over all sums naively with O(n) per sum. Instead, for each candidate H that is an original height, we do one pass. For candidate H that are sums, we might also do one pass, but there are O(n^2) sums. However, note that many sums repeat. We can collect all distinct sums and also all original heights, then iterate over the union. The number of distinct sums might be up to n^2 but in practice might be large. Worst-case distinct sums for numbers up to 1e9 could be O(n^2), but n=1000 gives up to 1e6 distinct sums, which might be acceptable if we do O(n) per candidate? 1e6 * 1000 = 1e9, too slow in Python.
+        #
+        # We need a better method.
+        #
+        # Insight: the fence width is the maximum over H of (freq[H] + max_pairs(arr_without_H)). We can compute this without iterating over all sums by considering that H must be at least max(planks) (if using singles only) but not necessarily.
+        #
+        # Another idea: for each possible pair (i,j) with i<j, we get H = planks[i] + planks[j]. Then we can consider using that pair to form a plank of height H, and then we want to count how many other pairs or singles can also be of height H. But we need to avoid double-counting planks.
+        #
+        # Given time constraints, and n<=1000, we can attempt the O(n^2 * log n) or O(n^2) method if we are careful.
+        #
+        # Let's estimate: distinct candidate H from sums: at most n*(n-1)/2 = 500k. For each candidate H, we do a two-pointer scan on the list (which is O(n)). Total O(n^3) worst-case = 1e9, too slow.
+        #
+        # But we can optimize by pre-sorting and for each candidate H, the two-pointer scan is O(n), but we can reuse information? Perhaps we can iterate over possible H that are sums and use a hash map of counts, then for each H compute max_pairs by iterating through the sorted list once per H? Still O(n) per H.
+        #
+        # However, note that n is only 1000, and 1000 * 1e6 = 1e9 operations might be borderline in 2s in Pyton? Probably too slow.
+        #
+        # We need a smarter method.
+        #
+        # Observation: the maximum width fence is at most n (using all planks as singles or pairs). We want the maximum number of planks of the same height.
+        #
+        # We can try all possible target heights H that are either in the array or a sum of two elements. But we can reduce the candidate set: only consider H that can potentially beat the current best. However, worst-case we might still have many candidates.
+        #
+        # Given the time, and since this is a hard problem but n<=1000, we can implement the O(n^2 log n) method that for each pair (i,j) with i<j, consider H = planks[i] + planks[j], and also for each single height. But we must avoid recomputing for the same H multiple times. We can collect all candidate H in a set: set(planks) and for all i<j, planks[i]+planks[j]. Then for each distinct H in the candidate set, compute total = freq[H] + max_pairs(arr_without_H). Then take the maximum total.
+        #
+        # Number of distinct candidates: up to n + n*(n-1)/2 = about 500k. For each candidate, we do a two-pointer scan on the list of size up to 1000. That's 500k * 1000 = 500M operations, which might be too slow in Python (2s). But maybe in practice the number of distinct sums is much smaller? However, worst-case could be all sums distinct (if planks are powers of two), then about 500k distinct sums. 500k * 1000 = 500M comparisons, which in Python might take several seconds (each comparison is cheap but 500M might be ~5-10 seconds). We need to optimize.
+        #
+        # We can optimize the computation for each candidate H by not scanning the entire list from scratch. Since the list is small (1000), and 500k * 1000 = 500M, which might be borderline but we can try to optimize the inner loop in Python with care. However, the problem says time limit 2s, so we need a better approach.
+        #
+        # Alternative: iterate over possible H that are sums only from pairs that include the smallest element? Not necessarily.
+        #
+        # Given the complexity, I'll implement the straightforward method with optimization: 
+        #   - Sort planks.
+        #   - Build freq Counter.
+        #   - Let arr = planks (sorted).
+        #   - Collect candidate H: all values in freq keys, and all sums planks[i]+planks[j] for i<j.
+        #   - Use a set for candidates to avoid duplicates.
+        #   - For each candidate H in candidates:
+        #        arr_no_H = [x for x in arr if x != H]  # but note: we need to exclude all copies of H? Yes, because they are used as singles.
+        #        However, if we exclude all H, then for the pair counting we should not use H planks in pairs (which we already argued is safe because H + x = H => x=0). So yes, exclude all H.
+        #        But careful: what if H appears in arr_no_H? It shouldn't because we filtered out H.
+        #        Then run two-pointer on arr_no_H to count pairs summing to H.
+        #        total = freq[H] + pair_count
+        #        update ans = max(ans, total)
+        #   - Return ans.
+        #
+        # However, note: when we exclude all H planks for pair formation, we are effectively using all H planks as singles. That is optimal as argued.
+        #
+        # But is it possible that using a H plank in a pair for a different H' could lead to a larger fence for H'? No, because we are evaluating for H only.
+        #
+        # Edge: what if H is very small, like 2, and we have planks [1,1]? Then H=2 from sum 1+1, but we would have freq[2]=0, arr_no_H = [1,1], pair_count=1, total=1. But we could also use the two 1's as singles? No, singles must be of height H=2, so 1's cannot be singles. So correct.
+        #
+        # Example 1: planks = [1,3,2,5,7,5,4,2,1] -> sorted: [1,1,2,2,3,4,5,5,7]
+        #   freq: {1:2, 2:2, 3:1, 4:1, 5:2, 7:1}
+        #   candidates: all singles and sums. For H=5, arr_no_H = [1,1,2,2,3,4,7] (remove both 5's), then two-pointer for sum 5: 
+        #        [1,1,2,2,3,4,7] -> pairs: 1+4=5 (use one 1 and 4), 2+3=5 (use one 2 and 3), then remaining [1,2,7] no more pairs -> pair_count=2, total = freq[5]=2 + 2 =4. Correct.
+        #
+        # Example 2: [2,3,7] -> candidates: {2,3,7, 5,9,10}. For H=2: arr_no_H=[3,7], pair_count for 2: none, total=1 (freq[2]=1). Similarly others give at most 1. So ans=1.
+        #
+        # Implementation details:
+        #   - When building arr_no_H, we need to remove exactly freq[H] copies of H. But since we have the sorted list arr, we can create a list without H by filtering.
+        #   - Two-pointer on arr_no_H (sorted) to count pairs summing to H.
+        #
+        # Optimization: instead of building arr_no_H for each candidate by filtering (which is O(n)), we can do the two-pointer on the full arr but skip H values? But we must not use H values in pairs. So we can run two-pointer on the full sorted arr but when we encounter an element equal to H, we skip it? However, two-pointer moves both pointers and might skip naturally. But it's simpler to filter.
+        #
+        # Given n<=1000, and candidate set size up to ~500k, filtering O(n) per candidate leads to 500M operations, which might be too slow. But we can try to reduce candidate set size.
+        #
+        # Observation: if H is greater than 2*max(planks), then no pair can sum to H (since max pair sum is 2*max), but H from singles might be large. But we only consider sums as candidates, so H from sums are at most 2*max. So candidate H are bounded by max_sum = 2*max(planks). Still many.
+        #
+        # Another idea: iterate only over H that are sums of two planks where both planks are not too large relative to H? Not helpful.
+        #
+        # Given the time limit in the response, I'll implement the straightforward method and hope that in typical cases the number of distinct sums is not too large. But worst-case might fail. However, for the purpose of this response, we need to provide a correct solution. If it's too slow for worst-case, it might not pass, but the instruction is to provide the solution code.
+        #
+        # Let's attempt to optimize by noting that for a given H, if H is greater than the maximum plank in arr_no_H + minimum, we can skip? Not really.
+        #
+        # We can also cache the pair count for the same H? But H is the candidate, so each H is unique in the set.
+        #
+        # Given the constraints and the fact that we are writing a solution for the problem (not necessarily optimal in speed), I'll implement the method described.
+        #
+        # Steps in code:
+        #   1. Sort planks.
+        #   2. freq = Counter(planks)
+        #   3. candidates = set(planks)
+        #   4. for i in range(n):
+        #          for j in range(i+1, n):
+        #              candidates.add(planks[i] + planks[j])
+        #   5. arr = sorted(planks)  # already sorted
+        #   6. ans = max(freq.values())  # at least one plank
+        #   7. for H in candidates:
+        #          # create arr_no_H: all planks except H
+        #          # But we need to remove exactly all copies of H? Yes.
+        #          # We can do: iterate through arr and take x if x != H.
+        #          arr_no_H = [x for x in arr if x != H]
+        #          # two-pointer to count pairs summing to H in arr_no_H
+        #          i, j = 0, len(arr_no_H)-1
+        #          pair_count = 0
+        #          while i < j:
+        #              s = arr_no_H[i] + arr_no_H[j]
+        #              if s == H:
+        #                  pair_count += 1
+        #                  i += 1
+        #                  j -= 1
+        #              elif s < H:
+        #                  i += 1
+        #              else:
+        #                  j -= 1
+        #          total = freq.get(H, 0) + pair_count
+        #          if total > ans:
+        #              ans = total
+        #   8. return ans
+        #
+        # However, note: when we create arr_no_H by removing all H, we might have duplicates of other numbers. The two-pointer works.
+        #
+        # But is it correct to remove all H? Consider if H appears and also appears as a sum of two other numbers? For example, H=5, and we have planks [5,1,4]. Then arr_no_H = [1,4], pair_count=1, total = freq[5]=1 + 1 =2. That is correct: we can have two planks of height 5: the single 5 and the pair 1+4.
+        #
+        # What if we have planks [5,2,3]? Then H=5, arr_no_H=[2,3], pair_count=1, total=1+1=2. Correct.
+        #
+        # What if we have planks [5,5,2,3]? Then freq[5]=2, arr_no_H=[2,3] (removing both 5's), pair_count=1, total=2+1=3. Can we really get 3 planks of height 5? Yes: two singles 5 and one pair 2+3=5. That uses all planks. Good.
+        #
+        # What if H is not present in original planks? Then freq[H]=0, and we remove no plank of height H (since none), so arr_no_H = arr. Then pair_count counts pairs summing to H from all planks. That is correct.
+        #
+        # Edge: what if H = 2*x for some x, and we have two x's? Then a pair (x,x) sums to H. But the problem says "combine exactly two distinct original planks". Does "distinct" mean distinct by index or distinct by value? It says "distinct original planks", meaning two different planks (by identity), so even if they have the same height, they are distinct planks. So (x,x) is allowed. Our two-pointer method allows using two equal numbers because i and j can point to two different indices with same value. In the list [x,x], i=0, j=1, sum=2x=H, so we take the pair and count 1. That is correct.
+        #
+        # However, the two-pointer method as written will work for duplicates because it moves both pointers when equal sum is found.
+        #
+        # One more edge: what if H is very small, and arr_no_H contains numbers that are all > H/2? Then no pair, fine.
+        #
+        # Therefore, the method seems correct.
+        #
+        # Let's test with examples mentally.
+        #
+        # Example 1: as above works.
+        # Example 2: works.
+        #
+        # But is it possible that the optimal fence uses a plank of height H that is not in candidates (i.e., not an original height and not a sum)? No, because every plank in the fence must be either an original plank (so height = planks[i]) or a combination of two planks (so height = planks[i]+planks[j]). So H must be either an original height or a sum of two original planks.
+        #
+        # Therefore, the candidate set is complete.
+        #
+        # Now performance: worst-case distinct candidates ~500k, each scan O(n)=1000, total 500M operations. In Python, 500M integer comparisons might take more than 2 seconds. But perhaps the test cases are not worst-case? However, the problem says "Hard" and time limit 2s, so worst-case might be included.
+        #
+        # We can try to optimize by not scanning for every candidate from scratch. Notice that for different H, arr_no_H is the same (removing H) only differs by which H we remove. But we can precompute the sorted arr, and for each H, we need to skip elements equal to H. We can do the two-pointer on the full arr while skipping H? But when we skip H, the two-pointer might need to know which elements are removed. It's easier to filter.
+        #
+        # Given the instruction to output a solution, I'll provide this straightforward solution. If needed, we can add a small optimization: if H > 2 * max(arr_no_H) or H < min(arr_no_H) + second_min, but not necessary.
+        #
+        # Let's write the code accordingly.
+        #
+        # Note: when H is very large, say > 2 * max(planks), then no pair can sum to H, and if H not in freq, total=0, but we take max with at least 1. So safe.
+        #
+        # Implementation:
+        #   n = len(planks)
+        #   if n == 0: return 0  # but constraints say at least 1
+        #
+        #   planks.sort()
+        #   from collections import Counter
+        #   freq = Counter(planks)
+        #   candidates = set(planks)
+        #   for i in range(n):
+        #       for j in range(i+1, n):
+        #           candidates.add(planks[i] + planks[j])
+        #
+        #   ans = max(freq.values())
+        #
+        #   for H in candidates:
+        #       # build arr_no_H
+        #       # We can avoid building a new list by using indices and skipping H? But building list is O(n), acceptable per candidate? 500k*1000=500M assignments might be heavy.
+        #       # Instead, we can do two-pointer on the full sorted list while treating H as forbidden: when we see an element equal to H, we skip it? But two-pointer typically moves in lockstep; skipping might break the pointer movement.
+        #       # Simpler: since n is only 1000, building a new list of up to 1000 elements per candidate might be acceptable if the number of candidates is not huge. But worst-case 500k * 1000 = 500M element copies, which is heavy.
+        #       # We can try to reuse the full list and just mark H to skip? We'll implement filtering by list comprehension; it's clear.
+        #       arr_no_H = [x for x in planks if x != H]
+        #       # two-pointer
+        #       i_ptr, j_ptr = 0, len(arr_no_H)-1
+        #       pair_count = 0
+        #       while i_ptr < j_ptr:
+        #           s = arr_no_H[i_ptr] + arr_no_H[j_ptr]
+        #           if s == H:
+        #               pair_count += 1
+        #               i_ptr += 1
+        #               j_ptr -= 1
+        #           elif s < H:
+        #               i_ptr += 1
+        #           else:
+        #               j_ptr -= 1
+        #       total = freq.get(H, 0) + pair_count
+        #       if total > ans:
+        #           ans = total
+        #
+        #   return ans
+        #
+        # Let's test with provided examples quickly in mind.
+        #
+        # However, note: in the two-pointer, when we find a pair, we increment both pointers. This counts the pair and moves on. This is correct for maximum disjoint pairs because if we have [1,2,3,4] and H=5, we get 1+4 and 2+3 -> two pairs. Good.
+        #
+        # But what about [1,1,2,3] and H=3? arr_no_H for H=3 would remove 3? Wait, if H=3 and freq[3] might be 1, then arr_no_H = [1,1,2]. Pairs summing to 3: 1+2=3. The two-pointer: [1,1,2], i=0,j=2: 1+2=3 -> count=1, i=1,j=1 -> stop. So pair_count=1, total = freq[3]=1 +1=2. Indeed we can have the single 3 and the pair 1+2=3, but note we have two 1's, we use one 1 and the 2. The other 1 is unused. That's fine.
+        #
+        # But could we have two pairs for H=3 from [1,1,2,2]? H=3: freq[3]=0, arr_no_H=[1,1,2,2], pairs: 1+2=3 -> two pairs? [1,1,2,2] sorted, i=0,j=3: 1+2=3 -> count=1, i=1,j=2: 1+2=3 -> count=2. So pair_count=2, total=2. Correct.
+        #
+        # So the method seems sound.
+        #
+        # Given the time, I'll output this solution.
+        #
+        # One more check: what if H is such that arr_no_H contains H? But we removed all H, so no.
+        #
+        # Code:
+        #
+        # Note: we must use the exact method header: def maximumWidth(self, planks: list[int]) -> int:
+        #
+        # Let's write the class.
+
+        n = len(planks)
+        if n == 0:
+            return 0
+        planks.sort()
+        from collections import Counter
+        freq = Counter(planks)
+        candidates = set(planks)
+        for i in range(n):
+            for j in range(i+1, n):
+                candidates.add(planks[i] + planks[j])
+        ans = max(freq.values())
+        # To avoid doing the same H multiple times? candidates is a set, fine.
+        for H in candidates:
+            # Build list without H
+            # Since planks is sorted, we can do list comprehension
+            arr_no_H = [x for x in planks if x != H]
+            # Two-pointer
+            i_ptr, j_ptr = 0, len(arr_no_H) - 1
+            pair_count = 0
+            while i_ptr < j_ptr:
+                s = arr_no_H[i_ptr] + arr_no_H[j_ptr]
+                if s == H:
+                    pair_count += 1
+                    i_ptr += 1
+                    j_ptr -= 1
+                elif s < H:
+                    i_ptr += 1
+                else:
+                    j_ptr -= 1
+            total = freq.get(H, 0) + pair_count
+            if total > ans:
+                ans = total
+        return ans
+```
+[finish_reason: stop | provider: DeepInfra | reasoning chars: 0 | usage: {'prompt_tokens': 561, 'completion_tokens': 8163, 'total_tokens': 8724, 'cost': 0.00207081, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 80, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00207081, 'upstream_inference_prompt_cost': 3.006e-05, 'upstream_inference_completions_cost': 0.00204075}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

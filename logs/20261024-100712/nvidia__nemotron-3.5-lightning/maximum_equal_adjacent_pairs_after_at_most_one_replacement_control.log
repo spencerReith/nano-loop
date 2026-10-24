@@ -1,0 +1,324 @@
+
+Assistant: ```python
+class Solution:
+    def maxEqualPairs(self, nums: list[int]) -> int:
+        n = len(nums)
+        # count original adjacent equal pairs
+        base = 0
+        for i in range(n - 1):
+            if nums[i] == nums[i + 1]:
+                base += 1
+
+        # count how many adjacent pairs involve each value as the left or right element
+        # left_cnt[v] = number of pairs (i, i+1) where nums[i] == v and nums[i] != nums[i+1]
+        # right_cnt[v] = number of pairs (i, i+1) where nums[i+1] == v and nums[i] != nums[i+1]
+        left_cnt = {}
+        right_cnt = {}
+        for i in range(n - 1):
+            a, b = nums[i], nums[i + 1]
+            if a != b:
+                left_cnt[a] = left_cnt.get(a, 0) + 1
+                right_cnt[b] = right_cnt.get(b, 0) + 1
+
+        # for each candidate value v, compute the gain if we replace v with some y
+        # gain = (left_cnt[v] + right_cnt[v]) - overlap
+        # where overlap is the number of pairs (i,i+1) that were already equal and involve v.
+        # Those pairs are exactly the original base pairs where both nums[i] and nums[i+1] == v.
+        # Since we only count pairs with a != b in left/right_cnt, the overlapping equal pairs
+        # are the base pairs where either nums[i] == v or nums[i+1] == v (both equal to v).
+        # We can count them directly.
+        # Actually, the overlapping equal pairs that will be "lost" when we replace v with y
+        # are those original equal pairs that contain v. After replacement they become y y,
+        # which are still equal, so they are not lost; they are just transformed.
+        # However, if we replace v with y, pairs that were (v, v) stay (y, y) -> still count.
+        # Pairs that were (v, u) or (u, v) with u != v become (y, u) or (u, y).
+        # We gain new equal pairs if y matches the neighbour u.
+        # To maximize, we can always pick y that appears most frequently as a neighbour.
+        # A simpler view:
+        # Let gain[v] = number of adjacent pairs that involve v on at least one side
+        #               and are NOT already equal (i.e., a != b).
+        # Replacing v with y will turn those pairs into (y, u) or (u, y).
+        # If we choose y = u for the most frequent neighbour u, we gain those pairs.
+        # Additionally, pairs that were (v, v) remain equal (no change).
+        # Also, pairs that were (u, v) or (v, u) become (u, y) or (y, u); if y == u they stay equal.
+        # The net change can be computed by considering for each v the best y.
+        # Since we only have at most one replacement, we can evaluate for each distinct value v
+        # the maximum possible total equal pairs after replacing all v with some y (y != v).
+        # We can compute:
+        #   total_if_replace_v = base
+        #               - cnt_equal_with_v   # pairs (v,v) that become (y,y) -> still equal, so no subtraction
+        #               + max_gain_from_v_to_y
+        # Actually, it's easier:
+        # For a fixed v, suppose we replace all v with y.
+        # For each adjacent pair (a, b):
+        #   - if a == b == v: becomes (y, y) -> still equal, contributes 1.
+        #   - if a == v, b != v: becomes (y, b). Equal iff y == b.
+        #   - if a != v, b == v: becomes (a, y). Equal iff a == y.
+        #   - otherwise unchanged.
+        # So the new count = base - (pairs (v,v) that we might "lose"? actually we keep them)
+        #                + (number of pairs (v, u) or (u, v) with u != v such that we set y == u)
+        #                + (number of pairs (v, v) already counted in base, remain).
+        # Since we can choose y after seeing the array, for a given v the best y is the value
+        # u that maximizes the number of neighbour occurrences among pairs involving v.
+        # Specifically, let freq[u] = number of pairs (v, u) or (u, v) with u != v.
+        # If we set y = u, we gain freq[u] new equal pairs, and we lose 0 from those
+        # (since they were unequal before, become equal after).
+        # Pairs (v, v) remain equal regardless.
+        # Therefore, if we replace v with y, the total equal pairs becomes:
+        #   base + freq[y_among_v_pairs]
+        # where freq[y_among_v_pairs] is the number of v-involved unequal pairs that have neighbour y.
+        # We can choose y to maximize this.
+        # Also, we are allowed to do at most one replacement, so we can also choose to do nothing (base).
+        # Moreover, we must choose two distinct values x and y. If we pick v as x, y must be different from v.
+        # If the best y for v is v itself, we cannot pick y = v; we would pick the second best.
+        # But note: if we replace v with y != v, the pairs (v, v) become (y, y) which are still equal,
+        # so they contribute to the count. They are already in base.
+        # Let's compute for each value v:
+        #   gain[v] = max over y != v of ( number of unequal pairs (v, y) or (y, v) )
+        # Then answer = max(base, max_v (base + gain[v]) ).
+        # However, we must ensure y is distinct from v. If the most frequent neighbour of v is v itself,
+        # that cannot happen because we only counted unequal pairs (a != b). So all neighbours u in freq are != v.
+        # Thus gain[v] = max freq[u] over u != v, which is simply the maximum frequency among neighbours of v.
+        # Wait, what if v has no unequal pairs involving it? Then gain[v] = 0.
+        # Also, we might consider replacing a value that appears but has no unequal pairs? Then gain = 0.
+        # So algorithm:
+        # 1. Compute base = number of equal adjacent pairs.
+        # 2. For each adjacent pair (a, b) with a != b:
+        #       increment left_cnt[a] and right_cnt[b].
+        #    We can combine into a single neighbour-count per value:
+        #       for each such pair, a gets a neighbour b, b gets a neighbour a.
+        #    We'll maintain a dict neighbour_count[v] = number of unequal adjacent pairs where v appears.
+        # 3. For each value v that appears in neighbour_count:
+        #       gain = max(neighbour_count[v].values())? Actually neighbour_count[v] is just an integer count of how many unequal pairs involve v.
+        #       But we need to know, if we replace v with y, how many of those pairs become equal.
+        #       If we set y to be the most frequent neighbour among those pairs, we gain that many.
+        #       However, multiple neighbours could have the same count; we just need the maximum frequency of a single neighbour value.
+        #       So we need, for each v, a frequency map of its neighbours among unequal pairs.
+        #       Then best_gain[v] = max(freq_map[v].values()) if freq_map[v] else 0.
+        # 4. answer = max(base, max_{v} (base + best_gain[v])).
+        # But wait: is it always optimal to replace all occurrences of v? The problem says "Replace every occurrence of x in nums with y."
+        # So yes, we replace all x with y.
+        # Also, we could choose x that does not appear? That would be a no-op, gain 0.
+        # Let's test with examples.
+        # Example 1: nums = [1,2,3,2]
+        # base: pairs: (1,2) diff, (2,3) diff, (3,2) diff -> base = 0.
+        # unequal pairs: (1,2): neighbours 1->2, 2->1; (2,3): 2->3, 3->2; (3,2): 3->2, 2->3.
+        # neighbour freqs:
+        #   1: {2:1} -> best_gain=1
+        #   2: {1:1, 3:2} -> best_gain=2
+        #   3: {2:2} -> best_gain=2
+        # max gain = 2. answer = max(0, 0+2)=2. Matches.
+        # Example 2: nums = [1,2,1,2,1]
+        # base: all pairs are (1,2) or (2,1) -> all diff, base=0.
+        # unequal pairs: (1,2) at positions (1,2), (2,3)? Wait array: 1,2,1,2,1.
+        # pairs: (1,2), (2,1), (1,2), (2,1). All unequal.
+        # neighbour freqs:
+        #   1: neighbours 2 appears 4 times? pairs: (1,2) twice, (2,1) twice -> 1 neighbours 2: count 4.
+        #   2: neighbours 1: count 4.
+        # best_gain[1]=4, best_gain[2]=4. answer = 0+4=4. Matches.
+        # Example 3: nums = [1,1,1]
+        # base: (1,1) and (1,1) -> base=2.
+        # unequal pairs: none. neighbour freqs empty. best_gain=0 for all.
+        # answer = max(2, ...) = 2. Matches.
+        # Additional test: nums = [1,2,2,3]
+        # base: (2,2) -> 1. pairs: (1,2) diff, (2,2) equal, (2,3) diff.
+        # unequal: (1,2) and (2,3).
+        # neighbour freqs:
+        #   1: {2:1} -> gain 1
+        #   2: {1:1, 3:1} -> gain 1 (max freq 1)
+        #   3: {2:1} -> gain 1
+        # max gain = 1. answer = max(base=1, 1+1=2) = 2.
+        # Let's verify: replace 1 with 2 -> [2,2,2,3] -> pairs: (2,2), (2,2), (2,3) -> 2 equal pairs. Yes.
+        # replace 3 with 2 -> [1,2,2,2] -> pairs: (1,2), (2,2), (2,2) -> 2 equal pairs. Yes.
+        # replace 2 with 1 -> [1,1,1,3] -> pairs: (1,1), (1,1), (1,3) -> 2 equal pairs. Yes.
+        # replace 2 with 3 -> [1,3,3,3] -> pairs: (1,3), (3,3), (3,3) -> 2 equal pairs. Yes.
+        # So answer 2 correct.
+        # Another test: nums = [1,2,1,3]
+        # base = 0.
+        # pairs: (1,2), (2,1), (1,3) all unequal.
+        # neighbour freqs:
+        #   1: neighbours 2 and 3. counts: 2 appears once (pair (1,2)), 3 appears once (pair (1,3)). also (2,1) gives 1 neighbour 2? Wait pair (2,1) -> 2's neighbour 1, 1's neighbour 2. So 1 gets neighbour 2 from (1,2) and (2,1) -> total 2. And neighbour 3 from (1,3) -> 1. So 1: {2:2, 3:1} -> best_gain=2.
+        #   2: neighbours 1: from (1,2) and (2,1) -> 2. best_gain=2.
+        #   3: neighbours 1: 1. best_gain=1.
+        # max gain = 2. answer = 2.
+        # Can we get 2? Replace 1 with 2 -> [2,2,2,3] -> pairs: (2,2), (2,2), (2,3) -> 2 equal pairs. Yes.
+        # Replace 2 with 1 -> [1,1,1,3] -> 2 equal pairs. Yes.
+        # Seems correct.
+        # Edge case: what if the best y for v is not distinct from v? As argued, we only count unequal pairs, so neighbour u != v always.
+        # But what if we have a pair (v, v) that is equal? It's already in base, and replacing v with y keeps it as (y,y) equal, so no change in count relative to base.
+        # The gain only comes from unequal pairs becoming equal.
+        # Also, we must ensure we don't double-count or miss something.
+        # Let's think if there's any scenario where replacing v with y could decrease the number of equal pairs.
+        # Suppose we have pairs: (v, u) and (u, v) and we replace v with y.
+        # If y != u, those pairs become (y, u) and (u, y) which are unequal, so we lose the potential gain.
+        # But we are choosing y optimally to maximize, so we would pick y = u if that gives gain.
+        # Could picking y inadvertently break other equal pairs? The only equal pairs are (v,v) which become (y,y) still equal.
+        # Other equal pairs not involving v remain unchanged.
+        # So total equal pairs = base + (number of unequal pairs involving v that have neighbour y).
+        # Since we maximize over y, we get at least base.
+        # So answer = max(base, max_v (base + best_gain[v])).
+        # Wait, is it possible that by replacing v with y, we also affect pairs that were (u, v) or (v, u) where u == y?
+        # Those are exactly the unequal pairs we count.
+        # What about pairs (v, v)? They are in base, and after replacement become (y, y), still equal, so they remain counted in base.
+        # So the formula seems solid.
+        # Let's double-check with a tricky case: nums = [1,2,1,2,3]
+        # base = 0.
+        # pairs: (1,2), (2,1), (1,2), (2,3).
+        # neighbour freqs:
+        #   1: from (1,2) twice, (2,1) twice -> neighbour 2: 4 times. best_gain=4.
+        #   2: from (1,2) twice, (2,1) twice, (2,3) once -> neighbour 1: 4 times, neighbour 3: 1 time. best_gain=4.
+        #   3: from (2,3) -> neighbour 2: 1. best_gain=1.
+        # max gain = 4. answer = 4.
+        # Can we get 4? Replace 1 with 2 -> [2,2,2,2,3] -> pairs: (2,2) four times? array length 5 -> 4 pairs: indices (1,2),(2,3),(3,4),(4,5). All (2,2) except last (2,3). So 3 equal pairs? Wait:
+        # original: [1,2,1,2,3]
+        # replace 1 with 2: [2,2,2,2,3]
+        # pairs: (2,2) at (1,2), (2,2) at (2,3), (2,2) at (3,4), (2,3) at (4,5). That's 3 equal pairs.
+        # But our formula gave 4. Something is wrong!
+        # Let's recompute neighbour freqs carefully.
+        # nums = [1,2,1,2,3]
+        # adjacent pairs (i,i+1) for i=1..4:
+        # i=1: (1,2) -> unequal. neighbours: 1 gets 2, 2 gets 1.
+        # i=2: (2,1) -> unequal. neighbours: 2 gets 1, 1 gets 2.
+        # i=3: (1,2) -> unequal. neighbours: 1 gets 2, 2 gets 1.
+        # i=4: (2,3) -> unequal. neighbours: 2 gets 3, 3 gets 2.
+        # So counts of neighbours:
+        # value 1: neighbours encountered: from i=1: 2; i=2: 2; i=3: 2. So neighbour 2 appears 3 times. (Not 4, because i=4 doesn't involve 1.)
+        # value 2: neighbours: i=1: 1; i=2: 1; i=3: 1; i=4: 3. So neighbour 1 appears 3 times, neighbour 3 appears 1 time.
+        # value 3: neighbour 2 appears 1 time.
+        # So best_gain[1] = 3 (replace 1 with 2).
+        # best_gain[2] = 3 (replace 2 with 1).
+        # best_gain[3] = 1.
+        # max gain = 3. answer = 3. Matches manual count.
+        # My earlier manual freq was wrong because I double-counted.
+        # So the algorithm: for each adjacent pair (a,b) with a != b, we increment neighbour count of a by b, and neighbour count of b by a.
+        # We need, for each value, the maximum frequency of a single neighbour.
+        # Since we only need the maximum, we can just maintain a dict mapping value -> dict of neighbour -> count, or we can just keep a count of how many times each neighbour appears for each value.
+        # Given constraints n up to 1e5, values up to 1e9, we can use defaultdict(Counter) or dict of dicts.
+        # Steps:
+        # 1. Compute base = number of i where nums[i] == nums[i+1].
+        # 2. Initialize a dict neighbour_cnt: value -> Counter (or dict) of neighbour -> count.
+        # 3. For i from 0 to n-2:
+        #       a, b = nums[i], nums[i+1]
+        #       if a != b:
+        #           neighbour_cnt[a][b] += 1
+        #           neighbour_cnt[b][a] += 1
+        # 4. For each value v in neighbour_cnt:
+        #       if neighbour_cnt[v] is not empty:
+        #           best_gain = max(neighbour_cnt[v].values())
+        #           ans = max(ans, base + best_gain)
+        # 5. Also ans could be just base (do nothing). Initialize ans = base.
+        # 6. Return ans.
+        # Wait, is there any case where we replace a value that has no unequal pairs? Then neighbour_cnt empty, best_gain not considered, ans stays base. Correct.
+        # What if we replace a value v, and the best y is some value that also appears as a neighbour, but we must ensure y != v. As argued, neighbours are from unequal pairs, so u != v always. So no issue.
+        # But what if the array has only one distinct value? e.g., nums = [5,5]. base = 1. neighbour_cnt empty. ans = 1. Correct, we can't replace with distinct y? Actually we can choose x=5, y=something else, but then array becomes [y, y] still 1 equal pair. So max is 1. Correct.
+        # What if nums = [1,2]? base = 0. neighbour_cnt: 1:{2:1}, 2:{1:1}. best_gain = 1. ans = 1. Replace 1 with 2 -> [2,2] -> 1 equal pair. Correct.
+        # What if nums = [1,2,3]? base=0. pairs: (1,2), (2,3). neighbour_cnt: 1:{2:1}, 2:{1:1,3:1}, 3:{2:1}. best_gains: 1->1, 2->1, 3->1. ans = 1. Can we get 1? Replace 2 with 1 -> [1,1,3] -> pairs: (1,1), (1,3) -> 1 equal pair. Yes. Replace 1 with 2 -> [2,2,3] -> 1 equal pair. Yes.
+        # What if nums = [1,2,1]? base=0. pairs: (1,2), (2,1). neighbour_cnt: 1:{2:2}, 2:{1:2}. best_gain=2. ans=2. Replace 1 with 2 -> [2,2,2] -> 2 equal pairs. Yes.
+        # What if nums = [1,1,2]? base=1 (pair (1,1)). pairs: (1,1) equal, (1,2) unequal. neighbour_cnt: from (1,2): 1:{2:1}, 2:{1:1}. best_gain for 1 = 1, for 2 = 1. ans = max(base=1, base+1=2) = 2. Can we get 2? Replace 2 with 1 -> [1,1,1] -> pairs: (1,1), (1,1) -> 2 equal pairs. Yes. Replace 1 with 2 -> [2,2,2] -> 2 equal pairs. Yes.
+        # What if nums = [1,2,2]? base=1 (pair (2,2)). pairs: (1,2) unequal, (2,2) equal. neighbour_cnt: from (1,2): 1:{2:1}, 2:{1:1}. best_gain for 1=1, for 2=1. ans = max(1, 2) = 2. Replace 1 with 2 -> [2,2,2] -> 2 equal pairs. Yes. Replace 2 with 1 -> [1,1,1] -> 2 equal pairs. Yes.
+        # Seems consistent.
+        # One more edge: what if we have multiple values and replacing one might be better than another, but we must pick exactly one replacement. Our ans takes max over all v, which corresponds to choosing the best x (and implicitly best y).
+        # But wait: the problem says "You can choose two distinct values x and y and perform the following operation at most once: Replace every occurrence of x in nums with y."
+        # So we pick x and y. Our algorithm for each v assumes we replace all v with some y that maximizes gain. But we must also ensure y is distinct from v. As argued, neighbours are from unequal pairs, so u != v. But what if the best y for v is some value that is not a neighbour? If we pick y that is not a neighbour, gain = 0. So we would just not replace or replace with a neighbour. So max over neighbours is fine.
+        # However, there is a subtlety: what if the optimal y for v is a value that is not a neighbour of v, but replacing v with y creates new equal pairs that were not there before? For a pair (v, u) with u != v, after replacement it becomes (y, u). It becomes equal only if y == u. So indeed y must be u to gain. For pair (u, v), becomes (u, y), equal iff y == u. For pair (v, v), becomes (y, y), always equal (but already counted). So to gain from unequal pairs, y must match the neighbour. So the best y is indeed among the neighbours (or any value, but giving 0 gain). So max over neighbour frequencies is correct.
+        # But wait: could there be a case where replacing v with y creates equality in a pair that was (v, v)? Already in base. What about a pair (v, u) where u == v? That's (v,v) already counted.
+        # So the logic holds.
+        # Let's consider if we might need to consider replacing a value that doesn't appear in the array? That would be a no-op, gain 0, covered by ans = base.
+        # Also, what if we replace x with y, and y is a value that already exists in the array, but not as a neighbour of x? Then gain 0, but maybe we lose something? We only replace x with y, so pairs not involving x unchanged. Pairs involving x: (x, u) becomes (y, u). If y != u, they become unequal, but they were already unequal (since we only count unequal pairs in gain? Actually base includes equal pairs. If we have (x, u) where u != x, it was unequal, base doesn't count it. After replacement, if y != u, it remains unequal, so no change in total equal pairs. If y == u, it becomes equal, gain +1. If we have (u, x) similarly. If we have (x, x), becomes (y, y), still equal, no change in count. So indeed, only neighbours matter.
+        # Therefore, the algorithm is correct.
+        # Complexity: O(n) time, O(n) space for neighbour counts. n up to 1e5, values up to 1e9, using dict is fine.
+        # Let's implement.
+        # We need to be careful: neighbour_cnt can be a dict of Counter from collections.
+        # But we can also just use a dict of dicts to save memory, but Counter is fine.
+        # Actually, we only need the maximum frequency for each value. We don't need the full counter after computing max. But we need to accumulate counts.
+        # We can do:
+        # neighbour = {}  # value -> {neighbour: count}
+        # For each unequal pair (a,b):
+        #     if a not in neighbour: neighbour[a] = {}
+        #     neighbour[a][b] = neighbour[a].get(b, 0) + 1
+        #     if b not in neighbour: neighbour[b] = {}
+        #     neighbour[b][a] = neighbour[b].get(a, 0) + 1
+        # Then for v in neighbour:
+        #     if neighbour[v]:
+        #         best = max(neighbour[v].values())
+        #         ans = max(ans, base + best)
+        # That's it.
+        # Let's test with the earlier tricky case programmatically in mind.
+        # nums = [1,2,1,2,3]
+        # base = 0
+        # pairs:
+        # (1,2): a=1,b=2 -> neighbour[1][2]=1, neighbour[2][1]=1
+        # (2,1): a=2,b=1 -> neighbour[2][1]=2, neighbour[1][2]=2
+        # (1,2): a=1,b=2 -> neighbour[1][2]=3, neighbour[2][1]=3
+        # (2,3): a=2,b=3 -> neighbour[2][3]=1, neighbour[3][2]=1
+        # neighbour: 1:{2:3}, 2:{1:3,3:1}, 3:{2:1}
+        # best for 1: 3, for 2: 3, for 3: 1. ans = max(0, 3) = 3. Correct.
+        # Example 1: [1,2,3,2]
+        # base=0
+        # pairs: (1,2): 1:{2:1}, 2:{1:1}
+        # (2,3): 2:{1:1,3:1}, 3:{2:1}
+        # (3,2): 3:{2:2}, 2:{1:1,3:2}
+        # best: 1->1, 2->2, 3->2. ans=2. Correct.
+        # Example 2: [1,2,1,2,1]
+        # base=0
+        # pairs: (1,2): 1:{2:1},2:{1:1}
+        # (2,1): 2:{1:2},1:{2:2}
+        # (1,2): 1:{2:3},2:{1:3}
+        # (2,1): 2:{1:4},1:{2:4}
+        # best: 1->4, 2->4. ans=4. Correct.
+        # Example 3: [1,1,1]
+        # base=2
+        # no unequal pairs, neighbour empty. ans=2. Correct.
+        # All good.
+        # One potential issue: what if the best y for v is a value that we are also replacing? No, we only do one replacement.
+        # Another thing: the problem says "choose two distinct values x and y". So x and y must be distinct. Our algorithm ensures y (the chosen neighbour) is distinct from x (v) because neighbours come from unequal pairs where a != b. So y != x always.
+        # But what if the only way to gain is to pick y = x? That's impossible because we only count unequal pairs, so neighbour u != v. If all pairs involving v are (v, v), then gain 0, and we might just do nothing. So no issue.
+        # Edge case: nums = [1,2,1]. We replace 1 with 2 -> [2,2,2]. x=1, y=2 distinct. Good.
+        # What if nums = [1,1,2]? Replace 2 with 1 -> x=2, y=1 distinct. Good.
+        # What if nums = [1,2,3]? Replace 2 with 1 -> x=2, y=1 distinct. Good.
+        # Is there any case where the optimal y is not a neighbour of x, but some other value that also gives gain? As argued, to gain from an unequal pair (x, u), we need y = u. So y must be a neighbour. If we pick y not a neighbour, gain 0. So max over neighbours is sufficient.
+        # Wait: could there be a scenario where replacing x with y creates equality in a pair that was (x, x)? Already in base. What if we have a pair (x, u) where u == x? That's (x,x). So no.
+        # Thus the solution is correct.
+        # Let's write the code.
+        # We'll implement the class Solution with method maxEqualPairs.
+        # Note: the method signature is `def maxEqualPairs(self, nums: list[int]) -> int:`
+        # We'll follow the required format.
+        # One minor point: the problem says "You are given a 1-indexed integer array nums." But we just use 0-indexed in code.
+        # Time complexity O(n), space O(n).
+        # Let's produce the final answer.```python
+class Solution:
+    def maxEqualPairs(self, nums: list[int]) -> int:
+        n = len(nums)
+        # base: number of adjacent equal pairs in the original array
+        base = 0
+        for i in range(n - 1):
+            if nums[i] == nums[i + 1]:
+                base += 1
+
+        # neighbour[v] will be a dict: neighbour_value -> count of unequal pairs (v, neighbour) or (neighbour, v)
+        neighbour = {}
+
+        for i in range(n - 1):
+            a, b = nums[i], nums[i + 1]
+            if a != b:
+                # record neighbour relationship for both directions
+                if a not in neighbour:
+                    neighbour[a] = {}
+                neighbour[a][b] = neighbour[a].get(b, 0) + 1
+
+                if b not in neighbour:
+                    neighbour[b] = {}
+                neighbour[b][a] = neighbour[b].get(a, 0) + 1
+
+        ans = base
+        # For each value that appears in at least one unequal adjacent pair,
+        # the best gain is the maximum frequency of a single neighbour.
+        for v, freq in neighbour.items():
+            if freq:
+                best_gain = max(freq.values())
+                if base + best_gain > ans:
+                    ans = base + best_gain
+
+        return ans
+```
+[finish_reason: stop | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 589, 'completion_tokens': 7414, 'total_tokens': 8003, 'cost': 0.00152403, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00152403, 'upstream_inference_prompt_cost': 4.123e-05, 'upstream_inference_completions_cost': 0.0014828}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

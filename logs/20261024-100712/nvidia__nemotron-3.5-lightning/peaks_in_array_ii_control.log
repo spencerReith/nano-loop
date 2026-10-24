@@ -1,0 +1,107 @@
+
+Assistant: ```python
+class Solution:
+    def countOfPeaks(self, nums: list[int], queries: list[list[int]]) -> list[int]:
+        n = len(nums)
+        # peaks[i] = 1 if i (1 <= i <= n-2) is a peak position (nums[i] > nums[i-1] and nums[i] > nums[i+1])
+        # otherwise 0.
+        peaks = [0] * n
+        for i in range(1, n - 1):
+            if nums[i] > nums[i - 1] and nums[i] > nums[i + 1]:
+                peaks[i] = 1
+
+        # prefix sum of peaks for O(1) range count
+        pref = [0] * (n + 1)
+        for i in range(n):
+            pref[i + 1] = pref[i] + peaks[i]
+
+        ans = []
+        for q in queries:
+            if q[0] == 1:
+                l, r = q[1], q[2]
+                # A peak subarray needs at least length 3, and the peak k must satisfy i < k < j.
+                # For subarray [l, r], possible k are in [l+1, r-1].
+                # We only care about those k where peaks[k] == 1.
+                # Count = sum(peaks[l+1 .. r-1]) = pref[r] - pref[l+1]
+                # Because pref is 1-indexed: pref[r] gives sum up to index r-1, pref[l+1] gives sum up to index l.
+                # Let's verify: indices 0..n-1. pref[i] = sum_{t < i} peaks[t].
+                # sum peaks[l+1 .. r-1] = pref[r] - pref[l+1].
+                # Example: l=0, r=2 => peaks[1] only. pref[2] - pref[1] = (peaks[0]+peaks[1]) - peaks[0] = peaks[1]. OK.
+                cnt = pref[r] - pref[l + 1]
+                ans.append(cnt)
+            else:  # q[0] == 2
+                idx, val = q[1], q[2]
+                nums[idx] = val
+                # Recompute peaks at idx-1, idx, idx+1 if they are valid positions (1 <= k <= n-2)
+                for k in (idx - 1, idx, idx + 1):
+                    if 1 <= k <= n - 2:
+                        new_peak = 1 if (nums[k] > nums[k - 1] and nums[k] > nums[k + 1]) else 0
+                        if new_peak != peaks[k]:
+                            peaks[k] = new_peak
+                            # update prefix sums from k+1 onward (O(n) worst case, but n <= 1e5 and queries <= 1e5;
+                            # however we can just recompute prefix sums lazily or use a Fenwick tree.
+                            # Given constraints and Python speed, updating prefix sum array fully each time may TLE.
+                            # We'll use a Fenwick (BIT) for point update and prefix sum query.)
+        return ans
+```
+
+**Note on the implementation above**: The provided code includes a naive prefix‑sum update which would be too slow for the given limits (up to 10⁵ updates). To achieve the required performance, we replace the prefix‑sum array with a Fenwick tree (Binary Indexed Tree) that supports point updates and prefix‑sum queries in O(log n) time. The corrected full solution is shown below.
+
+```python
+class Solution:
+    def countOfPeaks(self, nums: list[int], queries: list[list[int]]) -> list[int]:
+        n = len(nums)
+
+        # Fenwick tree (BIT) over peak indicators.
+        bit = [0] * (n + 1)  # 1‑based internally
+
+        def bit_add(i: int, delta: int) -> None:
+            """Add delta at position i (0‑based)."""
+            i += 1  # shift to 1‑based
+            while i <= n:
+                bit[i] += delta
+                i += i & -i
+
+        def bit_sum(i: int) -> int:
+            """Return sum of positions [0..i-1] (i.e. prefix up to i‑1)."""
+            s = 0
+            i = max(i, 0)  # guard for i == 0
+            while i > 0:
+                s += bit[i]
+                i -= i & -i
+            return s
+
+        # Initialise peaks.
+        peaks = [0] * n
+        for i in range(1, n - 1):
+            if nums[i] > nums[i - 1] and nums[i] > nums[i + 1]:
+                peaks[i] = 1
+                bit_add(i, 1)
+
+        ans = []
+        for q in queries:
+            if q[0] == 1:
+                l, r = q[1], q[2]
+                # peak subarray [l..r] needs peak position k with l < k < r,
+                # i.e. k in [l+1, r-1].
+                # Count = sum_{k=l+1}^{r-1} peaks[k]
+                # Using BIT: bit_sum(r) gives sum of peaks[0..r-1]
+                #          bit_sum(l+1) gives sum of peaks[0..l]
+                # Therefore count = bit_sum(r) - bit_sum(l+1)
+                cnt = bit_sum(r) - bit_sum(l + 1)
+                ans.append(cnt)
+            else:  # q[0] == 2
+                idx, val = q[1], q[2]
+                nums[idx] = val
+                # Positions whose peak status might change: idx-1, idx, idx+1
+                for k in (idx - 1, idx, idx + 1):
+                    if 1 <= k <= n - 2:
+                        new_peak = 1 if (nums[k] > nums[k - 1] and nums[k] > nums[k + 1]) else 0
+                        if new_peak != peaks[k]:
+                            delta = new_peak - peaks[k]
+                            peaks[k] = new_peak
+                            bit_add(k, delta)
+
+        return ans
+```
+[finish_reason: stop | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 1398, 'completion_tokens': 1392, 'total_tokens': 2790, 'cost': 0.00037626, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00037626, 'upstream_inference_prompt_cost': 9.786e-05, 'upstream_inference_completions_cost': 0.0002784}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

@@ -1,0 +1,1248 @@
+
+Assistant: ```python
+class Solution:
+    def maxTotalValue(self, value: list[int], decay: list[int], m: int) -> int:
+        MOD = 10**9 + 7
+        n = len(value)
+        
+        # collect all possible choices: (initial_value, decay)
+        # Each index i can be taken t times (t >= 1) as long as value[i] - decay[i]*(t-1) > 0
+        # However, we only need to consider taking an index at most until its value becomes <= 0.
+        # Since m can be up to 1e9 and n up to 1e5, we cannot generate all choices explicitly.
+        # Instead we binary search the threshold X: how many selections give value > X?
+        # Then we pick all selections with value > X, and possibly some with value == X to reach m.
+        
+        # Helper: count how many selections have value > X, and sum of those values.
+        def count_and_sum(X: int):
+            cnt = 0
+            s = 0
+            for v, d in zip(value, decay):
+                if v <= X:
+                    continue
+                # we need largest t >= 1 such that v - d*(t-1) > X
+                # => v - X > d*(t-1)
+                # => t-1 < (v - X) / d
+                # => t = floor((v - X - 1) / d) + 1   (if v - X > 0)
+                # Actually number of terms > X is k = floor((v - X - 1) / d) + 1, but ensure k>=1
+                # Since v > X, k >= 1.
+                k = (v - X - 1) // d + 1
+                cnt += k
+                # sum of arithmetic progression: first = v, last = v - d*(k-1), count = k
+                last = v - d * (k - 1)
+                # sum = k * (first + last) // 2
+                s += k * (v + last) // 2
+            return cnt, s
+        
+        # Binary search for the threshold X such that count of values > X is <= m
+        # The possible values range from min(value) - (m-1)*max(decay) to max(value).
+        # We can set high = max(value) + 1 (since value > high gives 0 count)
+        # low can be min(value) - m * max(decay) - 1 (very negative)
+        # But we can just use a safe range: low = -10**18, high = 10**18
+        # Since values and m up to 1e9, and decay up to 1e9, the minimum possible value is around 1 - 1e9*1e9 = -1e18.
+        # We'll use -2*10**18 to 2*10**18.
+        
+        lo = -10**18 - 5
+        hi = 10**18 + 5
+        
+        # We want the largest X such that count(>X) >= m? Actually we want to pick top m values.
+        # Standard approach: find X = the m-th largest value (1-indexed).
+        # If we binary search for the smallest X such that count(>X) < m, then X is the threshold.
+        # Alternatively find largest X such that count(>X) >= m.
+        # Let's find X such that count(>X) >= m and count(>X+1) < m.
+        
+        # We'll binary search for the max X with count(>X) >= m.
+        # But careful: X can be negative. The condition count(>X) is monotonic decreasing in X.
+        
+        # First, check if m is larger than total possible selections.
+        # Total possible selections = sum over i of max t such that value[i] - decay[i]*(t-1) > 0
+        # = sum over i of floor((value[i] - 1) / decay[i]) + 1? Actually if value[i] > 0, the number of times we can take index i before value becomes <= 0 is:
+        # t such that value[i] - decay[i]*(t-1) > 0  => t-1 < value[i]/decay[i] => t = floor((value[i]-1)/decay[i]) + 1
+        # But we don't need to explicitly cap at 0 because if value becomes <=0, we wouldn't take it as it gives non-positive value.
+        # However the problem says we can select any index multiple times, but value gained could be <=0? The formula gives value[i] - decay[i]*(t-1). If this becomes <=0, we would not select it because it would not maximize total value. But the problem doesn't forbid selecting it, but optimal solution will stop before non-positive.
+        # Since we are maximizing, we only consider selections with positive gain. But the binary search approach naturally handles this if we set threshold appropriately.
+        # To be safe, we can compute total possible positive selections.
+        # But m can be up to 1e9, and n up to 1e5, total positive selections could be large.
+        # We'll just binary search X in a wide range, and count will naturally include only those with value > X.
+        # If X is very negative, count(>X) will be total positive selections.
+        # If X is very positive, count(>X) = 0.
+        
+        # Let's find X such that count(>X) >= m and count(>X+1) < m.
+        # We'll binary search X in [lo, hi].
+        
+        # But count_and_sum uses integer arithmetic. We need to be careful with large numbers.
+        # Python handles big ints fine.
+        
+        # Binary search for threshold X
+        # We want the largest X such that count(>X) >= m.
+        # Because if count(>X) >= m, we can take top m values all > X or some == X.
+        # Actually standard: find X = the m-th largest value.
+        # Let's find X such that count(>X) < m <= count(>=X)? Better to use count(>X).
+        
+        # We'll find X = the value such that count(>X) >= m and count(>X+1) < m.
+        # Then the top m values consist of all values > X, and some values == X to make up m.
+        
+        # Binary search:
+        # while lo < hi:
+        #     mid = (lo + hi + 1) // 2   # to find max X with count>=m
+        #     if count_and_sum(mid)[0] >= m:
+        #         lo = mid
+        #     else:
+        #         hi = mid - 1
+        # X = lo
+        
+        # Then we have count_greater = count(>X), sum_greater = sum(>X).
+        # We need to add (m - count_greater) values equal to X.
+        # But note: there could be multiple values equal to X from different indices.
+        # The number of values == X is count(>=X) - count(>X). We need to take exactly (m - count_greater) of them.
+        # Since all values == X are the same, we just add (m - count_greater) * X.
+        
+        # However, we must ensure that we don't include values that are actually <= 0 if they are not positive.
+        # But if X is the threshold, and we are taking values > X, they are all > X. If X could be <= 0, we might include non-positive values.
+        # But since we are maximizing, we would never take a non-positive value if we have m selections and some positive values.
+        # The problem says we may select any index multiple times. The value gained could be <= 0, but it would never be optimal to include them if we can stop earlier.
+        # However, m is the maximum number of selections, not necessarily exactly m. "The total number of selections across all indices must not exceed m."
+        # So we can select fewer than m if it's optimal. But the problem asks for maximum total value you can obtain, with at most m selections.
+        # Wait: "The total number of selections across all indices must not exceed m." And we want maximum total value.
+        # If we can get higher value by selecting fewer than m times, we should do so.
+        # But the examples: Example 3: value = [4,3], decay = [5,4], m = 5. Output: 7. They selected index 0 once (value 4) and index 1 once (value 3). Total 2 selections, value 7. They didn't select more because further selections would give non-positive value (4-5=-1, 3-4=-1).
+        # So we can select at most m, but we will stop when next selection gives <= 0 or we have selected m times, whichever is better.
+        # Actually, if we have the option to select fewer, the maximum total value is the max over k <= m of sum of top k positive values.
+        # But note: the value gained sequence for each index is decreasing. So the set of all possible positive values across all indices, sorted descending, the maximum total value with at most m selections is simply the sum of the largest min(m, total_positive) values.
+        # Because if we take the top k positive values (k <= m), that's always optimal (since all positive values are > 0, adding more positive values increases sum; if we run out of positive values, we stop).
+        # Is it always true that we only consider positive values? Yes, because if a value is <= 0, taking it would not increase total value (it would decrease or keep same). Since we want maximum, we would not take it. And we are allowed to take fewer than m.
+        # So the problem reduces to: given a multiset of positive values (each index i generates value[i], value[i]-decay[i], value[i]-2*decay[i], ... as long as > 0), find the sum of the largest min(m, total_count) values.
+        
+        # Therefore, we can safely binary search X, and the count_and_sum will count values > X. If X ends up being <= 0, we might be counting some non-positive values? But we only count values > X. If X is negative, count(>X) includes all positive values and possibly some zero or negative? Actually if X is negative, say -1, then values > -1 include all positive values and also 0. But we never have 0 as a value unless value[i] - decay[i]*(t-1) = 0 exactly. The problem says value[i] >= 1, decay[i] >= 1. So values are integers. A value could be 0 if value[i] = decay[i]*(t-1). But we would never take a 0 value because it doesn't help. However, in our binary search, if we set X negative, count(>X) might include 0s. But we are looking for the threshold such that we take top m values. If m is larger than total positive values, we would take all positive values and stop. The sum of top m values where m > total positive is just sum of all positive values. Our binary search should handle this: if m >= total positive, then the threshold X will be <= min positive value - 1? Actually we need to ensure we don't add non-positive values.
+        
+        # Let's reconsider: We want sum of the largest k values where k = min(m, total_positive).
+        # total_positive = sum over i of ( (value[i] - 1) // decay[i] + 1 )? Actually number of positive terms for index i: t such that value[i] - decay[i]*(t-1) > 0 => t-1 < value[i]/decay[i] => t = floor((value[i] - 1) / decay[i]) + 1. Since value[i] >= 1, decay[i] >= 1, this is at least 1.
+        # Let total_pos = sum_i ( (value[i] - 1) // decay[i] + 1 ).
+        # If m >= total_pos, answer is sum of all positive values.
+        # Else, we need sum of top m positive values.
+        
+        # We can compute total_pos and total_sum of all positive values first.
+        # If m >= total_pos, return total_sum % MOD.
+        # Else, we binary search X in range [min_possible, max_value] where min_possible could be min(value) - max(decay)*m, but we can just use -10**18 to 10**18.
+        # But we must ensure count(>X) correctly counts only positive values when X is set appropriately.
+        # Actually, if we binary search X such that count(>X) >= m, and we know m < total_pos, then X will be >= the minimum positive value? Not necessarily. The m-th largest positive value could be the smallest positive value. If m = total_pos - 1, then X = min positive value. So X will be >= 1 (since all positive values are >= 1? value[i] >= 1, decay[i] >= 1, so the smallest positive value is at least 1? Actually if value[i]=1, decay[i]=1, then first selection gives 1, second gives 0 (not positive). So positive values are >= 1. So min positive value >= 1. So X will be >= 1.
+        # If m < total_pos, the m-th largest positive value is at least 1. So X >= 1.
+        # If m >= total_pos, we handle separately.
+        # So we can first compute total_pos and total_sum.
+        # If m >= total_pos: return total_sum % MOD.
+        # Else: binary search X in [1, max(value)] (or up to 10**18) such that count(>X) >= m and count(>X+1) < m.
+        # Then answer = sum(>X) + (m - count(>X)) * X.
+        # Return answer % MOD.
+        
+        # Let's verify with examples.
+        # Example 1: value = [6,5,4], decay = [2,1,1], m = 4.
+        # Positive values for each:
+        # i=0: 6, 4, 2 (t=3: 6, 6-2=4, 6-4=2) -> 3 positive values.
+        # i=1: 5, 4, 3, 2, 1 (t=5: 5,4,3,2,1) -> 5 positive values.
+        # i=2: 4, 3, 2, 1 (t=4: 4,3,2,1) -> 4 positive values.
+        # total_pos = 3+5+4 = 12. m=4 < 12.
+        # Top 4 positive values among all: sorted descending: 6,5,4,4,3,3,2,2,2,1,1,1. Top 4: 6,5,4,4 sum=19. Matches output.
+        # Example 2: value = [7,2,2], decay = [3,2,1], m = 2.
+        # i=0: 7, 4 (t=2: 7, 7-3=4) -> 2 positive.
+        # i=1: 2 (t=1: 2) -> 1 positive (2-2=0 not positive).
+        # i=2: 2 (t=1: 2) -> 1 positive.
+        # total_pos = 2+1+1 = 4. m=2 < 4.
+        # Positive values: 7,4,2,2. Top 2: 7,4 sum=11. Matches.
+        # Example 3: value = [4,3], decay = [5,4], m = 5.
+        # i=0: 4 (t=1: 4; 4-5=-1 not positive) -> 1 positive.
+        # i=1: 3 (t=1: 3; 3-4=-1) -> 1 positive.
+        # total_pos = 2. m=5 >= 2. So answer = sum of all positive = 4+3=7. Matches.
+        
+        # So algorithm:
+        # 1. Compute total_pos and total_sum of all positive values.
+        #    For each i:
+        #        k = (value[i] - 1) // decay[i] + 1   # number of positive selections
+        #        total_pos += k
+        #        # sum of arithmetic progression: first = value[i], last = value[i] - decay[i]*(k-1)
+        #        last = value[i] - decay[i] * (k - 1)
+        #        total_sum += k * (value[i] + last) // 2
+        # 2. If m >= total_pos: return total_sum % MOD
+        # 3. Else: binary search X in [1, max(value)] (or we can use [1, 10**18] but max(value) is enough since m < total_pos ensures X >= 1 and X <= max positive value which is max(value)).
+        #    Actually X could be up to max(value). We'll set lo = 1, hi = max(value).
+        #    But wait: what if m is such that the m-th largest value is exactly max(value)? Then X = max(value). count(>max(value)) = 0, which is < m. So we need to find X such that count(>X) >= m and count(>X+1) < m.
+        #    Standard binary search for largest X with count(>X) >= m.
+        #    Let's define function f(X) = count of values > X.
+        #    We want max X such that f(X) >= m.
+        #    Since f is decreasing, we can binary search.
+        #    lo = 1, hi = max_value (maybe max(value) is enough, but to be safe hi = 10**18 or max(value) + 1? Actually if X = max(value), f(X) = 0. If m >= 1, then max X with f(X) >= m will be < max(value). So hi = max(value) is fine, but we can set hi = 10**18 to be safe, or max(value) because all positive values are <= max(value). Actually max positive value is max(value) (first selection). So X in [1, max(value)].
+        #    Let's set lo = 1, hi = max(value). But what if m=1? Then we want the single largest value, which is max(value). Then X should be max(value)-1? Let's check: if m=1, we want top 1 value. f(X) = count(>X). We want max X with f(X) >= 1. The largest value is max_value. f(max_value - 1) = count(>max_value-1) includes max_value, so >=1. f(max_value) = 0. So max X with f(X) >= 1 is max_value - 1. Then count(>X) = count(>max_value-1) = 1 (assuming unique max, but if multiple max, count could be >1). Then we add (m - count(>X)) * X = (1 - 1)*X = 0. Sum = sum(>X) = max_value. Correct.
+        #    If there are multiple indices with same max value, say value=[5,5], decay=[1,1], m=2. total_pos: each has 5,4,3,2,1 -> 5 each, total 10. m=2 < 10. Top 2 positive values: 5,5 sum=10. f(X) = count(>X). We want max X with f(X) >= 2. f(4) = count(>4) = 2 (the two 5s). f(5) = 0. So X=4. count(>4)=2. sum(>4)=10. (m - 2)*4 = 0. Answer 10. Correct.
+        #    If m=3, top 3: 5,5,4 sum=14. f(X) >= 3. f(3) = count(>3) = 4 (two 5s and two 4s). f(4) = 2. So max X with f(X) >= 3 is 3. count(>3)=4 >= 3. But wait, we only need top 3. If count(>X) >= m, we take all > X, and then some == X. Here X=3, count(>3)=4, which is > m=3. But our formula: answer = sum(>X) + (m - count(>X)) * X. If count(>X) > m, this would give sum(>3) + (3-4)*3 = sum(>3) - 3. But sum(>3) includes two 5s and two 4s = 18. 18 - 3 = 15, but correct answer is 14. So we must ensure count(>X) <= m? Actually the standard approach: find X such that count(>X) < m <= count(>=X). Or find X such that count(>X) >= m and count(>X+1) < m, then we take all values > X+1, and some values == X+1.
+        #    Let's re-derive:
+        #    We want sum of largest m values.
+        #    Let X be the m-th largest value (1-indexed). Then all values > X are included, and some values == X are included to make total m.
+        #    So we need X such that count(>X) < m and count(>=X) >= m.
+        #    Equivalently, find smallest X such that count(>=X) >= m? Or find X such that count(>X) < m <= count(>=X).
+        #    Let's binary search for the threshold T = the m-th largest value.
+        #    We can find X = the value such that count(>X) < m and count(>X-1) >= m? 
+        #    Better: binary search for the largest X such that count(>X) >= m. Let this be X_max.
+        #    Then count(>X_max) >= m. But count(>X_max + 1) < m (since X_max is max with >=m).
+        #    Then the values > X_max are included, and we need (m - count(>X_max)) values equal to X_max? But wait, if count(>X_max) > m, then we are including more than m values > X_max, which is wrong.
+        #    Actually, if we take largest X such that count(>X) >= m, then count(>X) >= m and count(>X+1) < m.
+        #    Then the values > X+1 are strictly less than m in count? count(>X+1) < m. So the m-th largest value is X+1? Let's test.
+        #    Example: values: 5,5,4,4, m=3. Sorted: 5,5,4,4. Top 3: 5,5,4 sum=14.
+        #    f(X) = count(>X). f(4) = count(>4) = 2. f(3) = count(>3) = 4.
+        #    We want max X with f(X) >= 3. f(3)=4 >=3, f(4)=2 <3. So X_max = 3.
+        #    Then count(>X_max) = 4. But we only want top 3. If we do sum(>3) + (3-4)*3 = 18 - 3 = 15, wrong.
+        #    So the correct threshold is: we want to find X such that count(>X) < m <= count(>=X).
+        #    In example, count(>3)=4 >= m? No, 4 >= 3, but we need count(>X) < m. So X=3 gives count(>3)=4 which is not < m. X=4 gives count(>4)=2 < 3, and count(>=4)= count(>3)+count(==4)? count(>=4) = count(>3) = 4? Actually count(>=4) = number of values >= 4 = 4 (two 5s and two 4s). So m=3 <= 4. And count(>4)=2 < 3. So X=4 works: we take all values > 4 (i.e., the two 5s), and then we need m - count(>4) = 1 value equal to 4. Sum = sum(>4) + 1*4 = 10 + 4 = 14. Correct.
+        #    So we need to find X such that count(>X) < m and count(>=X) >= m.
+        #    Equivalently, find the smallest X such that count(>=X) >= m? Or find X such that count(>X) < m.
+        #    Let's binary search for the smallest X such that count(>X) < m. Then that X is our threshold? In example, count(>X) < m: for X=3, count=4 not <3. X=4, count=2 <3. So smallest X with count(>X) < m is 4. Then we take all values > X? Wait, if X=4, count(>4)=2 < m. Then we take all values > 4 (two 5s), and then we need m - count(>4) = 1 value equal to 4. Sum = sum(>4) + (m - count(>4))*4. This works.
+        #    But what if m=4 in same example? Top 4: 5,5,4,4 sum=18. count(>X) < 4. X=3: count(>3)=4 not <4. X=4: count(>4)=2 <4. So X=4. Then sum(>4) + (4-2)*4 = 10 + 8 = 18. Correct.
+        #    What if m=2? Top 2: 5,5 sum=10. count(>X) < 2. X=4: count(>4)=2 not <2. X=5: count(>5)=0 <2. So X=5. sum(>5) + (2-0)*5 = 0 + 10 = 10. Correct.
+        #    So the rule: find the smallest X such that count(>X) < m. Then answer = sum(>X) + (m - count(>X)) * X.
+        #    But wait: is X always a value that actually appears? In the examples, yes. But what if m is such that X is not an actual value? The condition count(>X) < m means X is at least the m-th largest value. The smallest such X will be exactly the m-th largest value (or maybe one more if there are duplicates? Actually the m-th largest value is well-defined. If we have values 5,5,4,4 and m=3, the 3rd largest is 4. The smallest X with count(>X) < 3 is 4. If m=2, 2nd largest is 5, smallest X with count(>X) < 2 is 5. If m=5, but total positive is 4, we already handled m >= total_pos.
+        #    So we can binary search X in range [1, max_value] (or up to 10**18) to find the smallest X such that count(>X) < m.
+        #    Since count(>X) is non-increasing as X increases, we can binary search.
+        #    lo = 1, hi = max_value (or maybe max_value + 1 to include case where m=1 and we need X = max_value? Let's test: values [5], m=1. count(>X) < 1. X=5: count(>5)=0 <1. X=4: count(>4)=1 not <1. So smallest X is 5. hi should be at least max_value. If we set hi = max_value, binary search will work. But what if m=1 and there are multiple max? values [5,5], m=1. count(>X) < 1. X=5: count(>5)=0 <1. X=4: count(>4)=2 not <1. smallest X=5. Correct.
+        #    What if values [5,4], m=1. count(>X) < 1. X=5: count(>5)=0 <1. X=4: count(>4)=1 not <1. smallest X=5. Correct.
+        #    So hi = max_value is sufficient. But to be safe, we can set hi = 10**18, or max(value) + 1? If we set hi = max(value), and m=1, smallest X with count(>X) < 1 is max_value. If we set hi = max_value, binary search inclusive [lo, hi] will find it. Let's set lo = 1, hi = max_value. But wait: what if the smallest X with count(>X) < m is greater than max_value? That's impossible because count(>max_value) = 0 < m (since m >= 1). So X <= max_value always. So hi = max_value is fine.
+        #    However, we must ensure that count(>X) for X in [1, max_value] is computed correctly. Our count_and_sum function counts values > X. It uses (v - X - 1) // d + 1. For X = max_value, v > X is false for all v <= max_value, so count=0. Good.
+        #    Binary search for smallest X such that count(>X) < m:
+        #    We want the minimal X in [1, max_value] with f(X) < m, where f(X) = count(>X).
+        #    Since f is non-increasing, we can do:
+        #    lo = 1, hi = max_value
+        #    while lo < hi:
+        #        mid = (lo + hi) // 2
+        #        if f(mid) < m:
+        #            hi = mid
+        #        else:
+        #            lo = mid + 1
+        #    X = lo
+        #    Then answer = (sum(>X) + (m - count(>X)) * X) % MOD
+        #    Let's test with examples.
+        #    Example 1: value=[6,5,4], decay=[2,1,1], m=4.
+        #    total_pos = 12, m=4 < 12.
+        #    max_value = 6.
+        #    f(X) = count(>X).
+        #    X=1: count(>1) = all positive >1 = 12 - (number of 1s). Positive values: 6,5,4,4,3,3,2,2,2,1,1,1. >1: 6,5,4,4,3,3,2,2,2 = 9. f(1)=9 >=4.
+        #    X=2: >2: 6,5,4,4,3,3 = 6. f(2)=6 >=4.
+        #    X=3: >3: 6,5,4,4 = 4. f(3)=4 >=4.
+        #    X=4: >4: 6,5 = 2. f(4)=2 <4.
+        #    Binary search: lo=1, hi=6.
+        #    mid=3: f(3)=4 >=4 -> lo=4.
+        #    lo=4, hi=6: mid=5: f(5)= count(>5)=1 (only 6) <4? 1 < 4 -> hi=5.
+        #    lo=4, hi=5: mid=4: f(4)=2 <4 -> hi=4.
+        #    lo=4, hi=4 -> X=4.
+        #    count(>4)=2. sum(>4)=6+5=11.
+        #    answer = 11 + (4-2)*4 = 11+8=19. Correct.
+        #    Example 2: value=[7,2,2], decay=[3,2,1], m=2.
+        #    total_pos: i=0: (7-1)//3+1 = 6//3+1=2+1=3? Wait: (7-1)//3+1 = 2+1=3. But positive values: 7, 4, 1? 7-3=4, 7-6=1. Yes, 3 positive values: 7,4,1. i=1: (2-1)//2+1 = 1//2+1=0+1=1 (value 2). i=2: (2-1)//1+1 = 1+1=2? (2-1)//1+1 = 1+1=2. Positive values: 2, 1. So total_pos = 3+1+2 = 6. m=2 < 6. max_value = 7.
+        #    f(X) = count(>X).
+        #    X=1: >1: all positive >1 = 7,4,2,1? Wait positive: 7,4,1 from 0; 2 from 1; 2,1 from 2. Total positive: 7,4,1,2,2,1. >1: 7,4,2,2 = 4. f(1)=4 >=2.
+        #    X=2: >2: 7,4 = 2. f(2)=2 >=2.
+        #    X=3: >3: 7,4 = 2. f(3)=2 >=2.
+        #    X=4: >4: 7 = 1. f(4)=1 <2.
+        #    Binary search: lo=1, hi=7.
+        #    mid=4: f(4)=1 <2 -> hi=4.
+        #    lo=1, hi=4: mid=2: f(2)=2 >=2 -> lo=3.
+        #    lo=3, hi=4: mid=3: f(3)=2 >=2 -> lo=4.
+        #    X=4.
+        #    count(>4)=1 (value 7). sum(>4)=7.
+        #    answer = 7 + (2-1)*4 = 11. Correct.
+        #    Example 3: value=[4,3], decay=[5,4], m=5.
+        #    total_pos: i=0: (4-1)//5+1 = 3//5+1=0+1=1 (value 4). i=1: (3-1)//4+1 = 2//4+1=0+1=1 (value 3). total_pos=2. m=5 >= 2 -> return total_sum % MOD = 7. Correct.
+        
+        #    Edge cases: 
+        #    - What if m=0? Constraints say m >= 1.
+        #    - What if all values become non-positive immediately? But value[i] >= 1, so first selection always gives >= 1.
+        #    - What if decay is very large, so only 1 positive value per index? Then total_pos = n. If m >= n, we return sum of all value[i]. If m < n, we binary search.
+        #    - Large numbers: value and decay up to 1e9, m up to 1e9. total_pos can be up to n * (1e9 / 1 + 1) ~ 1e5 * 1e9 = 1e14, which fits in Python int. sum can be up to 1e14 * 1e9 = 1e23, also fits. Modulo at the end.
+        #    - Binary search range: lo=1, hi=max(value). max(value) up to 1e9. Binary search takes ~30 iterations. Each iteration computes count_and_sum over n=1e5 elements. 30 * 1e5 = 3e6 operations, well within 2s in Python.
+        #    - Need to be careful with integer division and large numbers. Python handles big ints.
+        #    - Modulo: return answer % (10**9+7).
+        
+        #    Let's double-check the count_and_sum function for X.
+        #    We want count of values > X.
+        #    For each index i with value v, decay d.
+        #    We need number of t >= 1 such that v - d*(t-1) > X.
+        #    => v - X > d*(t-1)
+        #    => t-1 < (v - X) / d
+        #    Since t is integer >= 1, the number of such t is k = floor((v - X - 1) / d) + 1, provided v > X.
+        #    If v <= X, then k = 0.
+        #    Let's verify: v=6, d=2, X=4. v > X (6>4). k = (6-4-1)//2 + 1 = (1)//2 + 1 = 0+1=1. Value >4: only 6. Correct (next is 4 which is not >4).
+        #    v=6, d=2, X=3. k = (6-3-1)//2 + 1 = (2)//2 + 1 = 1+1=2. Values >3: 6, 4. Correct.
+        #    v=6, d=2, X=5. k = (6-5-1)//2 + 1 = (0)//2 + 1 = 0+1=1. Values >5: 6. Correct.
+        #    v=6, d=2, X=6. v <= X, so k=0. Correct.
+        #    Sum of values > X for this index: arithmetic series first = v, last = v - d*(k-1), count = k. Sum = k*(v + last)//2.
+        #    Let's test: v=6, d=2, X=3, k=2. last = 6 - 2*(1) = 4. sum = 2*(6+4)//2 = 10. Values: 6+4=10. Correct.
+        #    v=6, d=2, X=4, k=1. last = 6 - 2*0 = 6. sum = 1*(6+6)//2 = 6. Correct.
+        #    So count_and_sum is correct.
+        
+        #    Now, total_pos and total_sum computation:
+        #    For each i:
+        #        k = (value[i] - 1) // decay[i] + 1
+        #        total_pos += k
+        #        last = value[i] - decay[i] * (k - 1)
+        #        total_sum += k * (value[i] + last) // 2
+        #    Let's test with example 1: value=[6,5,4], decay=[2,1,1].
+        #    i=0: v=6, d=2. k = (5)//2 + 1 = 2+1=3. last = 6 - 2*2 = 2. sum = 3*(6+2)//2 = 12. Positive: 6,4,2. Correct.
+        #    i=1: v=5, d=1. k = (4)//1 + 1 = 4+1=5. last = 5 - 1*4 = 1. sum = 5*(5+1)//2 = 15. Positive: 5,4,3,2,1. Correct.
+        #    i=2: v=4, d=1. k = (3)//1 + 1 = 3+1=4. last = 4 - 1*3 = 1. sum = 4*(4+1)//2 = 10. Positive: 4,3,2,1. Correct.
+        #    total_pos = 3+5+4=12. total_sum = 12+15+10=37.
+        #    If m >= 12, answer 37 % MOD. But m=4, so we proceed.
+        
+        #    Binary search for X:
+        #    We need to ensure that the binary search finds the smallest X with f(X) < m.
+        #    f(X) = count_and_sum(X)[0] (we only need count, but we can compute both or just count).
+        #    We'll write a helper count_greater(X) that returns number of values > X.
+        #    Actually we can just use count_and_sum and take [0].
+        
+        #    Let's code the helper:
+        #    def count_greater(X):
+        #        cnt = 0
+        #        for v, d in zip(value, decay):
+        #            if v > X:
+        #                k = (v - X - 1) // d + 1
+        #                cnt += k
+        #        return cnt
+        
+        #    But we also need sum_greater(X) for the final answer.
+        #    We can compute sum_greater using the same loop.
+        
+        #    Binary search:
+        #    lo = 1
+        #    hi = max(value)
+        #    while lo < hi:
+        #        mid = (lo + hi) // 2
+        #        if count_greater(mid) < m:
+        #            hi = mid
+        #        else:
+        #            lo = mid + 1
+        #    X = lo
+        #    cnt_greater = count_greater(X)
+        #    sum_greater = sum_greater(X)
+        #    ans = sum_greater + (m - cnt_greater) * X
+        #    return ans % MOD
+        
+        #    Wait: is it possible that X ends up being 0 or negative? We set lo=1. What if the smallest X with f(X) < m is 1? Then X=1. That's fine. What if m is so large that even for X=1, f(1) >= m? But we already handled m >= total_pos. If m < total_pos, then f(1) = total_pos - (number of 1s). Since total_pos > m, f(1) could be >= m or < m. If f(1) < m, then smallest X is 1. That's fine. If f(1) >= m, then X will be > 1. So lo=1 is safe.
+        
+        #    Let's test edge case: value=[2], decay=[1], m=1.
+        #    total_pos: k = (2-1)//1+1 = 1+1=2? Wait: (2-1)//1+1 = 1+1=2. Positive values: 2, 1. total_pos=2. m=1 < 2.
+        #    max_value = 2.
+        #    f(X) = count(>X).
+        #    X=1: f(1) = count(>1) = 1 (value 2). f(1) >= 1.
+        #    X=2: f(2) = count(>2) = 0 < 1.
+        #    Binary search: lo=1, hi=2. mid=1: f(1)=1 >=1 -> lo=2. lo=2, hi=2 -> X=2.
+        #    cnt_greater = count(>2) = 0. sum_greater = 0.
+        #    ans = 0 + (1-0)*2 = 2. Correct (select index 0 once, value 2).
+        
+        #    Another edge: value=[2], decay=[1], m=2.
+        #    total_pos=2, m=2 >= total_pos -> return total_sum % MOD. total_sum = k*(v+last)//2 = 2*(2+1)//2 = 3. Values: 2+1=3. Correct.
+        
+        #    Another: value=[3], decay=[2], m=2.
+        #    total_pos: k = (3-1)//2+1 = 2//2+1=1+1=2. Positive: 3, 1. total_pos=2. m=2 >= 2 -> return 4? Wait total_sum = 2*(3+1)//2 = 4. Values: 3+1=4. But m=2, we can select twice: first 3, second 3-2=1. Total 4. Correct.
+        
+        #    What if m=1? total_pos=2, m=1 < 2. max_value=3. f(X) < 1.
+        #    X=1: f(1)=count(>1)=1 (value 3) >=1.
+        #    X=2: f(2)=count(>2)=1 >=1.
+        #    X=3: f(3)=count(>3)=0 <1.
+        #    Binary search: lo=1, hi=3. mid=2: f(2)=1 >=1 -> lo=3. X=3.
+        #    cnt_greater = count(>3)=0. sum_greater=0. ans = 0 + (1-0)*3 = 3. Correct (select once, value 3).
+        
+        #    What if value=[5,5], decay=[1,1], m=3.
+        #    total_pos: each has k = (5-1)//1+1 = 4+1=5. total_pos=10. m=3 < 10.
+        #    max_value=5.
+        #    f(X) = count(>X).
+        #    We want smallest X with f(X) < 3.
+        #    Values positive: two 5s, two 4s, two 3s, two 2s, two 1s.
+        #    f(4) = count(>4) = 2 (the two 5s). 2 < 3.
+        #    f(3) = count(>3) = 4 (two 5s, two 4s) >=3.
+        #    So smallest X with f(X) < 3 is 4.
+        #    Binary search: lo=1, hi=5.
+        #    mid=3: f(3)=4 >=3 -> lo=4.
+        #    lo=4, hi=5: mid=4: f(4)=2 <3 -> hi=4.
+        #    X=4.
+        #    cnt_greater = count(>4) = 2. sum_greater = 5+5=10.
+        #    ans = 10 + (3-2)*4 = 14. Correct (top 3: 5,5,4).
+        
+        #    What if m=4? Top 4: 5,5,4,4 sum=18.
+        #    f(X) < 4. f(3)=4 >=4, f(4)=2 <4. So X=4.
+        #    cnt_greater=2, sum_greater=10. ans = 10 + (4-2)*4 = 18. Correct.
+        
+        #    What if m=5? Top 5: 5,5,4,4,3 sum=21.
+        #    f(X) < 5. f(3)=4 <5? Wait f(3)=4, which is <5. So smallest X with f(X) < 5 is 3? Let's check: f(3)=4 <5. f(2)= count(>2) = 6 (two 5s, two 4s, two 3s) >=5. So smallest X is 3.
+        #    Binary search: lo=1, hi=5. mid=3: f(3)=4 <5 -> hi=3. lo=1, hi=3: mid=2: f(2)=6 >=5 -> lo=3. X=3.
+        #    cnt_greater = count(>3) = 4 (two 5s, two 4s). sum_greater = 18.
+        #    ans = 18 + (5-4)*3 = 21. Correct.
+        
+        #    So the algorithm seems solid.
+        
+        #    One more check: what if decay is such that some values are very large, and m is close to total_pos but not exceeding. The binary search range hi = max(value). Is it possible that the smallest X with f(X) < m is greater than max(value)? No, because f(max(value)) = 0 < m (since m >= 1). So X <= max(value). So hi = max(value) is sufficient.
+        
+        #    But wait: what if m=1 and max(value) is say 10, but there are multiple indices with value 10. f(10) = 0 < 1. So X=10. That's fine.
+        
+        #    What if value has elements up to 1e9, decay up to 1e9. The binary search will work.
+        
+        #    Potential issue: In count_greater, we have (v - X - 1) // d + 1. If v - X - 1 is negative, but we only execute if v > X, so v - X >= 1, so v - X - 1 >= 0. So safe.
+        
+        #    Another potential issue: The total_sum and total_pos computation might be large, but Python handles it.
+        
+        #    Let's consider modulo. The problem says "Since the answer may be large, return it modulo 10^9 + 7." We should apply modulo at the end. But note: the intermediate sums might be huge, but Python ints are fine. We can apply modulo at the very end. However, to be safe with time and memory, we can apply modulo after computing ans, but ans could be up to m * max_value ~ 1e9 * 1e9 = 1e18, which fits in Python int and modulo is fine.
+        
+        #    One subtle point: The problem says "The total number of selections across all indices must not exceed m." And we are returning maximum total value. Our approach assumes we always take exactly m selections if m <= total_pos, but what if taking fewer than m gives higher value? As discussed, since all positive values are > 0, taking more positive values always increases total value. If we run out of positive values, taking more would give <= 0, which would not increase (or decrease) total value. But the problem allows selecting fewer than m. Our algorithm: if m >= total_pos, we return sum of all positive values. This effectively means we stop when no more positive values. If m < total_pos, we take exactly m positive values (the largest m). Is it possible that taking m positive values is not optimal because some positive values might be negative? No, by definition positive values are > 0. So taking more always helps. What if there are zero values? We excluded them from positive values because we only count values > 0 in total_pos. In our count_and_sum, we count values > X. If X is set such that we include some zero values? But we only do this when m < total_pos, and total_pos counts only positive values. The threshold X will be >= 1, so we never include zero or negative values. And we only take exactly m values, all of which are > X >= 1, so they are positive. So we are taking exactly m positive values. This is optimal because any selection beyond m positive values would either be non-positive or we already took the top m. And we are allowed to take fewer than m, but taking m positive values is always at least as good as taking fewer, since all are positive. So it's correct.
+        
+        #    Wait: Is it possible that the m-th largest positive value is positive, but taking the (m+1)-th positive value (which might be <= 0) would decrease the sum? But we are only taking m selections. We stop at m. So we don't take the (m+1)-th. So it's fine.
+        
+        #    Let's double-check Example 3: value=[4,3], decay=[5,4], m=5. total_pos=2, m=5 >= 2 -> return 7. They selected 2 times, value 7. If we tried to select 5 times, we would have to include non-positive values, which would not increase sum beyond 7. So returning 7 is correct.
+        
+        #    Now, implement the solution.
+        
+        #    Steps in code:
+        #    1. Compute total_pos and total_sum.
+        #    2. If m >= total_pos: return total_sum % MOD.
+        #    3. Else:
+        #        a. Define count_greater(X) and sum_greater(X) (or just use count_and_sum).
+        #        b. Binary search X in [1, max(value)].
+        #        c. Compute ans = sum_greater(X) + (m - count_greater(X)) * X.
+        #        d. Return ans % MOD.
+        
+        #    Let's write the code carefully.
+        
+        #    Optimization: In binary search, we call count_greater multiple times. We can combine count and sum in one function to avoid iterating twice, but iterating 1e5 twice per binary search step is fine (30 * 2 * 1e5 = 6e6 ops). We'll just write a helper that returns both, or just count and then sum separately if needed. But we need sum at the end, so we can compute sum in the same loop as count, or compute count first, then sum. Since we need both at the end, and during binary search we only need count, we can have two helpers or one that returns both and we ignore sum during search. I'll write a function count_and_sum(X) that returns (cnt, s) and use it. During binary search, we only need cnt, but we can just take [0]. At the end, we need both.
+        
+        #    Let's structure:
+        #    def count_and_sum(X):
+        #        cnt = 0
+        #        s = 0
+        #        for v, d in zip(value, decay):
+        #            if v > X:
+        #                k = (v - X - 1) // d + 1
+        #                cnt += k
+        #                last = v - d * (k - 1)
+        #                s += k * (v + last) // 2
+        #        return cnt, s
+        
+        #    total_pos and total_sum computation:
+        #    total_pos = 0
+        #    total_sum = 0
+        #    for v, d in zip(value, decay):
+        #        k = (v - 1) // d + 1
+        #        total_pos += k
+        #        last = v - d * (k - 1)
+        #        total_sum += k * (v + last) // 2
+        
+        #    If m >= total_pos: return total_sum % MOD
+        
+        #    max_val = max(value)
+        #    lo, hi = 1, max_val
+        #    while lo < hi:
+        #        mid = (lo + hi) // 2
+        #        if count_and_sum(mid)[0] < m:
+        #            hi = mid
+        #        else:
+        #            lo = mid + 1
+        #    X = lo
+        #    cnt_g, sum_g = count_and_sum(X)
+        #    ans = sum_g + (m - cnt_g) * X
+        #    return ans % MOD
+        
+        #    Let's test with the examples mentally.
+        
+        #    Example 1: value=[6,5,4], decay=[2,1,1], m=4.
+        #    total_pos = 12, m=4 < 12.
+        #    max_val = 6.
+        #    Binary search:
+        #    lo=1, hi=6.
+        #    mid=3: count_and_sum(3) = (4, 19?) wait count(>3) for example 1: values >3: 6,5,4,4 -> count=4. sum=6+5+4+4=19. So [0]=4 >= m(4) -> lo=4.
+        #    lo=4, hi=6: mid=5: count_and_sum(5): >5: 6 -> count=1 <4 -> hi=5.
+        #    lo=4, hi=5: mid=4: count_and_sum(4): >4: 6,5 -> count=2 <4 -> hi=4.
+        #    lo=4, hi=4 -> X=4.
+        #    cnt_g, sum_g = count_and_sum(4) -> (2, 11).
+        #    ans = 11 + (4-2)*4 = 19. % MOD = 19. Correct.
+        
+        #    Example 2: value=[7,2,2], decay=[3,2,1], m=2.
+        #    total_pos: i=0: (7-1)//3+1 = 2+1=3. last = 7 - 3*2 = 1. sum = 3*(7+1)//2 = 12. positive: 7,4,1. i=1: (2-1)//2+1 = 0+1=1. last=2. sum=2. i=2: (2-1)//1+1 = 1+1=2. last=2-1*1=1. sum=2*(2+1)//2=3. total_pos=3+1+2=6. total_sum=12+2+3=17. m=2 < 6.
+        #    max_val=7.
+        #    Binary search:
+        #    lo=1, hi=7.
+        #    mid=4: count_and_sum(4): >4: from i=0: v=7>4 -> k=(7-4-1)//3+1 = (2)//3+1=0+1=1. last=7. sum=7. i=1: v=2>4? no. i=2: v=2>4? no. cnt=1 <2 -> hi=4.
+        #    lo=1, hi=4: mid=2: count_and_sum(2): >2: i=0: v=7>2 -> k=(7-2-1)//3+1 = (4)//3+1=1+1=2. last=7-3*1=4. sum=2*(7+4)//2=11. i=1: v=2>2? no (v>X strictly). i=2: v=2>2? no. cnt=2 >=2 -> lo=3.
+        #    lo=3, hi=4: mid=3: count_and_sum(3): >3: i=0: v=7>3 -> k=(7-3-1)//3+1 = (3)//3+1=1+1=2. last=4. sum=11. i=1,2: v=2>3? no. cnt=2 >=2 -> lo=4.
+        #    lo=4, hi=4 -> X=4.
+        #    cnt_g, sum_g = count_and_sum(4) -> (1, 7).
+        #    ans = 7 + (2-1)*4 = 11. Correct.
+        
+        #    Example 3: handled by m >= total_pos.
+        
+        #    Edge case: what if m=1 and value=[1], decay=[1]?
+        #    total_pos: k = (1-1)//1+1 = 0+1=1. total_pos=1. m=1 >= total_pos -> return total_sum % MOD. total_sum = 1*(1+1)//2 = 1. Correct (select once, value 1).
+        
+        #    Edge case: value=[10], decay=[3], m=3.
+        #    total_pos: k = (10-1)//3+1 = 9//3+1=3+1=4. positive: 10, 7, 4, 1. total_pos=4. m=3 < 4.
+        #    max_val=10.
+        #    Binary search for X with count(>X) < 3.
+        #    Values >X: 10,7,4,1.
+        #    f(1): >1: 10,7,4 = 3 >=3.
+        #    f(2): >2: 10,7,4 = 3 >=3.
+        #    f(3): >3: 10,7 = 2 <3.
+        #    So X=3.
+        #    Binary search: lo=1, hi=10.
+        #    mid=5: >5: 10,7 = 2 <3 -> hi=5.
+        #    lo=1, hi=5: mid=3: >3: 10,7 = 2 <3 -> hi=3.
+        #    lo=1, hi=3: mid=2: >2: 10,7,4 = 3 >=3 -> lo=3.
+        #    X=3.
+        #    cnt_g = count(>3) = 2 (10,7). sum_g = 17.
+        #    ans = 17 + (3-2)*3 = 20.
+        #    Top 3 positive: 10,7,4 sum=21? Wait 10+7+4=21. But our ans=20. Something wrong!
+        #    Let's recompute: values: 10, 7, 4, 1. m=3. Top 3: 10,7,4 sum=21.
+        #    Why did our algorithm give 20?
+        #    Let's trace binary search carefully.
+        #    f(X) = count(>X).
+        #    X=1: f(1) = count(>1) = 3 (10,7,4). m=3.
+        #    X=2: f(2) = count(>2) = 3 (10,7,4).
+        #    X=3: f(3) = count(>3) = 2 (10,7).
+        #    We want smallest X such that f(X) < m = 3.
+        #    f(1)=3 not <3. f(2)=3 not <3. f(3)=2 <3. So smallest X is 3.
+        #    Binary search with lo=1, hi=10:
+        #    mid = (1+10)//2 = 5. f(5) = count(>5) = 2 (10,7) < 3 -> hi=5.
+        #    lo=1, hi=5: mid=3. f(3)=2 <3 -> hi=3.
+        #    lo=1, hi=3: mid=2. f(2)=3 >=3 -> lo=3.
+        #    lo=3, hi=3 -> X=3. Correct.
+        #    Now cnt_g = count(>3) = 2. sum_g = sum(>3) = 10+7=17.
+        #    ans = sum_g + (m - cnt_g) * X = 17 + (3-2)*3 = 20.
+        #    But correct answer is 21 (10+7+4).
+        #    What's wrong? The formula: we want sum of largest m values. The largest 3 values are 10,7,4. Their sum is 21.
+        #    According to our earlier derivation: we find X such that count(>X) < m and count(>=X) >= m. Here X=3. count(>3)=2 < 3. count(>=3) = count(>2) = 3? Actually count(>=3) = number of values >= 3 = 10,7,4 = 3. So we take all values > 3 (two values: 10,7), and then we need m - count(>3) = 1 value equal to 3? But there is no value equal to 3! The values are 10,7,4,1. There is no 3. So taking one value equal to 3 is wrong; we should take the next available value which is 4.
+        #    Ah! The issue is that X might not be an actual value present in the multiset. In this case, X=3 is not a value; the actual values are 10,7,4,1. The m-th largest value (3rd largest) is 4. The smallest X with f(X) < m is 3, but 3 is not in the set. Our formula assumed X is a value that appears, or at least that we can take (m - count(>X)) copies of X. But if X is not an actual value, we can't take copies of X. We need to take the next actual value below X? Actually, the standard approach for "sum of top m elements from a set" when elements are not necessarily distinct and we have a way to count how many are > X: we need to find the threshold T such that count(>T) < m <= count(>=T). Then we take all > T, and then we need (m - count(>T)) elements equal to T. But if T is not in the set, count(>=T) = count(>T-1). The condition count(>T) < m <= count(>=T) means T is the m-th largest value. In our example, the 3rd largest value is 4. So we need T=4. Let's check: count(>4) = 2 (10,7) < 3. count(>=4) = 3 (10,7,4) >= 3. So T=4 works. But our binary search gave X=3. Why? Because we were searching for smallest X with f(X) < m, where f(X) = count(>X). For X=3, f(3)=2 <3. For X=4, f(4)= count(>4)=2 <3 as well! Wait, f(4) = count(>4) = 2 <3. So both X=3 and X=4 give f(X) < 3. The smallest X with f(X) < 3 is actually 1? No, f(1)=3 not <3. So smallest is 3. But X=4 also satisfies f(4) < 3. The condition "smallest X with f(X) < m" gives 3, but we need the largest X such that count(>X) >= m? Or we need to find X such that count(>X) < m and count(>X-1) >= m? Let's re-express.
+        
+        #    We want to find the m-th largest value. Let's call it T.
+        #    T is the unique value such that the number of elements strictly greater than T is less than m, and the number of elements greater than or equal to T is at least m.
+        #    Equivalently, T is the smallest value such that count(>=T) >= m? Or the largest value such that count(>T) < m? 
+        #    Let's test with values [10,7,4,1], m=3.
+        #    count(>T) < 3 and count(>=T) >= 3.
+        #    T=4: count(>4)=2 <3, count(>=4)=3 >=3. Good.
+        #    T=3: count(>3)=2 <3, count(>=3)=3 >=3. Also satisfies! But 3 is not in the set. However, count(>=3) = count(>2) = 3. So T=3 also satisfies the condition count(>T) < m <= count(>=T). But we want the actual m-th largest value, which is 4. The condition count(>T) < m <= count(>=T) is satisfied by any T between the (m+1)-th largest and the m-th largest? Actually if T is not in the set, count(>=T) = count(>T-1). So if T=3, count(>=3) = count(>2) = 3. But the 3rd largest is 4. So the condition is not sufficient to uniquely identify the m-th largest if we just take the smallest T with f(T) < m? Wait, we had earlier: "find smallest X such that count(>X) < m". For our example, smallest X with count(>X) < 3 is 3 (since count(>1)=3, count(>2)=3, count(>3)=2). But the m-th largest is 4. So smallest X with f(X) < m gives 3, not 4.
+        
+        #    Let's re-derive the correct binary search condition.
+        #    We want to compute sum of largest m values from a multiset.
+        #    Let the multiset be S. We want sum_{i=1..m} S_{(i)} where S_{(i)} are sorted descending.
+        #    Standard approach: binary search for the threshold value T such that the number of elements > T is < m, and the number of elements >= T is >= m. But as we saw, if T is not in S, there could be multiple T satisfying this. Actually, the condition "number of elements > T < m and number of elements >= T >= m" is equivalent to "T is at least the m-th largest element". The smallest such T is the m-th largest element? No, in our example, T=3 satisfies count(>3)=2 <3 and count(>=3)=3 >=3, but the 3rd largest is 4. So T=3 is smaller than the 3rd largest. Why? Because count(>=3) counts elements >=3, which includes 4. So T=3 satisfies the condition, but it's not the m-th largest; it's smaller. The m-th largest is the largest T such that count(>T) < m? Let's check: largest T with count(>T) < 3. count(>T) < 3 for T >= 3. The largest T? As T -> infinity, count(>T) -> 0. But we want a T that is a value from the set? Actually, if we just want to compute the sum, we can find T such that count(>T) < m and we take all > T, and then we need (m - count(>T)) elements from the next available values. But if T is not in the set, the "next available values" are those equal to the next actual value below T? This is getting messy.
+        
+        #    Let's go back to the standard solution for this problem (which is a known Codeforces problem: 3971 Maximum Total Value). I recall the typical solution: binary search the threshold X such that we take all values > X, and then some values == X. The threshold X is found by binary searching for the largest X such that count(>X) >= m. Let's test that.
+        #    In example [10,7,4,1], m=3.
+        #    f(X) = count(>X).
+        #    We want largest X such that f(X) >= 3.
+        #    f(1)=3 >=3.
+        #    f(2)=3 >=3.
+        #    f(3)=2 <3.
+        #    So largest X with f(X) >= 3 is 2.
+        #    Then count(>X) = count(>2) = 3. sum(>2) = 10+7+4 = 21.
+        #    Then ans = sum(>2) + (m - count(>2)) * 2 = 21 + (3-3)*2 = 21. Correct!
+        #    What about example 1: value=[6,5,4], decay=[2,1,1], m=4.
+        #    f(X) = count(>X).
+        #    Largest X with f(X) >= 4.
+        #    f(3)=4 >=4.
+        #    f(4)=2 <4.
+        #    So X=3.
+        #    count(>3)=4. sum(>3)=6+5+4+4=19.
+        #    ans = 19 + (4-4)*3 = 19. Correct.
+        #    Example 2: value=[7,2,2], decay=[3,2,1], m=2.
+        #    f(X) = count(>X).
+        #    Largest X with f(X) >= 2.
+        #    f(1)=4 >=2.
+        #    f(2)=2 >=2.
+        #    f(3)=2 >=2? Wait earlier we had f(3)=count(>3)=2 (7,4). Yes.
+        #    f(4)=1 <2.
+        #    So largest X with f(X) >= 2 is 3? Let's check f(3)=2 >=2. f(4)=1 <2. So X=3.
+        #    count(>3)=2 (7,4). sum(>3)=11.
+        #    ans = 11 + (2-2)*3 = 11. Correct.
+        #    What if m=3 in example 2? Top 3 positive: 7,4,2 sum=13.
+        #    f(X) >= 3. f(1)=4 >=3. f(2)=2 <3? Wait earlier we had f(2)=count(>2)=2 (7,4). f(3)=2 (7,4). f(4)=1. So largest X with f(X) >= 3 is 1? f(1)=4 >=3, f(2)=2 <3. So X=1.
+        #    count(>1)=4 (7,4,2,2). sum(>1)=7+4+2+2=15.
+        #    ans = 15 + (3-4)*1 = 15 - 1 = 14. But correct answer is 13? Wait, top 3 positive values: sorted: 7,4,2,2,1,1. Top 3: 7,4,2 = 13. But our formula gave 14. Why?
+        #    Let's recompute example 2 total_pos: we had positive: 7,4,1 from index 0; 2 from index 1; 2,1 from index 2. So positive values: 7,4,1,2,2,1. Sorted descending: 7,4,2,2,1,1. Top 3: 7,4,2 = 13.
+        #    Now f(X) = count(>X).
+        #    X=1: >1: 7,4,2,2 = 4 >=3.
+        #    X=2: >2: 7,4 = 2 <3.
+        #    So largest X with f(X) >= 3 is X=1.
+        #    count(>1) = 4. sum(>1) = 7+4+2+2 = 15.
+        #    ans = 15 + (3-4)*1 = 14. But correct is 13.
+        #    What's wrong? The issue is that count(>1) includes two 2s and one 1? Wait, values >1: 7,4,2,2. That's 4 values. sum = 15. But the top 3 values are 7,4,2 = 13. If we take all values >1 (4 values) and then subtract one 1, we get 15-1=14, which is wrong because we are subtracting a 1, but we should be taking only three values, not four minus one. The formula "sum(>X) + (m - count(>X)) * X" works when X is exactly the m-th largest value, and count(>X) is the number of values strictly greater than X. In this case, X=1 is not the 3rd largest value; the 3rd largest is 2. If we set X=2, f(2)=2 <3, so X=2 is not >= m in the "largest X with f(X) >= m" sense.
+        #    Let's re-express the correct condition:
+        #    We want to find X such that count(>X) < m and count(>=X) >= m, and then ans = sum(>X) + (m - count(>X)) * X.
+        #    In example 2 m=3: we need X such that count(>X) < 3 and count(>=X) >= 3.
+        #    X=2: count(>2)=2 <3, count(>=2)= count(>1) = 4? Wait count(>=2) = number of values >=2 = 7,4,2,2 = 4 >=3. So X=2 works! Then ans = sum(>2) + (3-2)*2 = (7+4) + 1*2 = 11 + 2 = 13. Correct!
+        #    X=1: count(>1)=4 not <3, so X=1 doesn't satisfy count(>X) < m.
+        #    So the correct threshold is X such that count(>X) < m and count(>=X) >= m. In this case, X=2 is the smallest such X? Or the largest? Let's see: X=3: count(>3)=2 <3, count(>=3)=2 (7,4) <3? count(>=3) = number of values >=3 = 2, which is not >=3. So X=3 fails count(>=X) >= m. X=2 works. X=1 fails count(>X) < m. So the unique X satisfying both is X=2. (There could be multiple if there are duplicates? But in this case only X=2.)
+        #    So the correct condition is: find X such that count(>X) < m <= count(>=X). Then ans = sum(>X) + (m - count(>X)) * X.
+        #    How to find such X via binary search?
+        #    We can binary search for the largest X such that count(>X) >= m? Let's test.
+        #    In example 2 m=3: largest X with count(>X) >= 3. f(1)=4 >=3, f(2)=2 <3. So largest X is 1. But we need X=2. So that doesn't give X=2.
+        #    What about smallest X such that count(>X) < m? In example 2 m=3: smallest X with count(>X) < 3. f(1)=4 not <3, f(2)=2 <3 -> smallest X=2. That gives X=2! And then ans = sum(>X) + (m - count(>X)) * X = 11 + (3-2)*2 = 13. Correct!
+        #    In example 1 m=4: smallest X with count(>X) < 4. f(3)=4 not <4, f(4)=2 <4 -> smallest X=4. ans = sum(>4) + (4-2)*4 = 11 + 8 = 19. Correct.
+        #    In example 2 m=2: smallest X with count(>X) < 2. f(1)=4 not <2, f(2)=2 not <2, f(3)=2 not <2, f(4)=1 <2 -> smallest X=4. ans = sum(>4) + (2-1)*4 = 7 + 4 = 11. Correct.
+        #    In example 2 m=3: smallest X with count(>X) < 3 is 2. Correct.
+        #    In the [10,7,4,1] m=3 example: smallest X with count(>X) < 3. f(1)=3 not <3, f(2)=3 not <3, f(3)=2 <3 -> smallest X=3. But earlier we thought X=3 gave ans=20, but correct ans=21. Let's recompute that example with this condition.
+        #    Values: 10,7,4,1. m=3.
+        #    smallest X with f(X) < 3: f(1)=3 >=3, f(2)=3 >=3, f(3)=2 <3 -> X=3.
+        #    Then ans = sum(>3) + (3 - count(>3)) * 3 = (10+7) + (3-2)*3 = 17 + 3 = 20. But correct is 21.
+        #    Wait, does X=3 satisfy count(>=X) >= m? count(>=3) = values >=3 = 10,7 = 2? No, 4 is also >=3? 4 >= 3, yes. So count(>=3) = 10,7,4 = 3 >=3. So X=3 satisfies count(>X) < m and count(>=X) >= m! But our formula gave 20 instead of 21. Why?
+        #    Let's compute: sum(>3) = 10+7 = 17. count(>3) = 2. m - count(>3) = 1. X = 3. ans = 17 + 1*3 = 20.
+        #    But the actual sum of top 3 is 10+7+4=21. The value we are adding is 3, but there is no 3 in the set; the next value is 4. So the formula assumes we add (m - count(>X)) copies of X, but X might not be present. If X is not present, we are effectively adding a value that doesn't exist, which is wrong.
+        #    The condition count(>X) < m <= count(>=X) is satisfied by X=3, but the correct threshold should be the actual m-th largest value, which is 4. Why did X=3 satisfy the condition? Because count(>=3) includes 4. So X=3 is a valid threshold in the sense that all values >3 are taken, and then we need one more value from those >=3. But the available values >=3 are 10,7,4. We already took >3 (10,7). The remaining >=3 are just 4. So we should take 4, not 3. The formula (m - count(>X)) * X assumes we have (m - count(>X)) copies of the value X. But if X is not in the set, we don't have copies of X; we have copies of the next actual value. So the formula only works if X is actually present in the multiset, or more generally, if we define X as the m-th largest value, then count(>X) < m and count(>=X) >= m, and X is in the set. In our case, the m-th largest value is 4. For X=4: count(>4) = 2 <3, count(>=4) = 3 >=3. So X=4 is the correct threshold.
+        #    So the problem reduces to: find the m-th largest value T. Then ans = sum(>T) + (m - count(>T)) * T.
+        #    How to find T? T is the value such that count(>T) < m and count(>=T) >= m, and T is actually in the set (or we can just find the smallest X such that count(>X) < m and count(>=X) >= m, but as we saw, X=3 also satisfies count(>X) < m and count(>=X) >= m, but X=4 is the one that is in the set and gives the correct sum. Actually, if we take the largest X such that count(>X) >= m? Let's test: largest X with count(>X) >= 3 in [10,7,4,1] is X=2? f(2)=3 >=3, f(3)=2 <3, so largest X is 2. But T=4. So that doesn't work.
+        #    Let's think differently. The standard solution for this problem (I've seen it before) uses binary search on the answer X, and then counts how many values are > X, and then adjusts. The typical approach:
+        #    - We want to select m items. Each item has a value. We can binary search the minimum value X that we will take. That is, we take all items with value > X, and some items with value == X.
+        #    - The condition: we take all values > X, and we take enough values == X to reach m. This is valid if X is chosen such that the number of values > X is <= m, and the number of values >= X is >= m.
+        #    - To find such X, we can binary search X in the range of possible values. The typical way is to find the largest X such that count(>X) >= m? No, we already saw issues.
+        #    Let's search my memory: In Codeforces problem "Maximum Total Value" (maybe 3971C? actually 3971 is the problem number). The solution often is: binary search X such that the number of selections with value > X is at most m, and then take all > X and some == X. But the exact condition varies.
+        #    Let's derive from scratch.
+        #    We have a multiset of positive values. We want the sum of the largest m values.
+        #    Let the sorted descending values be v_1 >= v_2 >= ... >= v_K (K = total_pos).
+        #    We want S = sum_{i=1}^m v_i.
+        #    Let T = v_m (the m-th largest value). Then S = sum_{v_i > T} v_i + (m - count(>T)) * T.
+        #    So if we can find T, we are done.
+        #    How to find T? T is the unique value such that the number of elements > T is < m, and the number of elements >= T is >= m. Moreover, T must be one of the actual values in the multiset (or we can just find the m-th largest by binary search on the value domain, and then T will be the value where the count crosses m).
+        #    Let's define a function f(X) = count of values > X.
+        #    f is non-increasing.
+        #    We want to find X such that f(X) < m and f(X-1) >= m? Actually, the m-th largest value T satisfies: f(T) < m and f(T-1) >= m? Let's check.
+        #    In [10,7,4,1], m=3. T=4.
+        #    f(4) = count(>4) = 2 < 3.
+        #    f(3) = count(>3) = 3 >= 3.
+        #    So T satisfies f(T) < m and f(T-1) >= m.
+        #    In example 1 m=4: T=4? Wait top 4: 6,5,4,4. T=4.
+        #    f(4) = count(>4) = 2 < 4.
+        #    f(3) = count(>3) = 4 >= 4.
+        #    So T=4 satisfies f(T) < m and f(T-1) >= m.
+        #    In example 2 m=2: T=4? Top 2: 7,4. T=4.
+        #    f(4) = count(>4) = 1 < 2.
+        #    f(3) = count(>3) = 2 >= 2.
+        #    So T=4 satisfies f(T) < m and f(T-1) >= m.
+        #    In example 2 m=3: T=2? Top 3: 7,4,2. T=2.
+        #    f(2) = count(>2) = 2 < 3.
+        #    f(1) = count(>1) = 4 >= 3.
+        #    So T=2 satisfies f(T) < m and f(T-1) >= m.
+        #    In [10,7,4,1] m=3: T=4.
+        #    f(4) = 2 < 3, f(3) = 3 >= 3.
+        #    So indeed, T is the value such that f(T) < m and f(T-1) >= m.
+        #    But note: T-1 might not be an actual value, but f is defined for all integers.
+        #    So we can find T by binary searching for the smallest X such that f(X) < m? Let's check:
+        #    In [10,7,4,1] m=3: smallest X with f(X) < 3. f(1)=3 not <3, f(2)=3 not <3, f(3)=2 <3 -> smallest X=3. But T=4. So smallest X with f(X) < m is 3, not 4.
+        #    What about largest X with f(X) < m? f(3)=2 <3, f(4)=2 <3, f(5)=1 <3. Largest X with f(X) < 3? As X increases, f(X) decreases. The largest X with f(X) < 3 could be infinity? But we want a finite T. Actually, if we take largest X such that f(X) < m, and we also know that f(max_value) = 0 < m, so there is no largest finite X unless we bound it. But if we binary search in [1, max_val], the largest X with f(X) < m might be max_val if f(max_val) < m. In [10,7,4,1] m=3, f(10)=0 <3, f(9)=0 <3, ..., f(4)=2 <3, f(3)=3 not <3. So the largest X with f(X) < 3 in [1,10] is 10? Because f(10)=0 <3, f(9)=0 <3, ..., f(5)=1 <3, f(4)=2 <3, f(3)=3 not <3. So the largest X is 10. That's not T.
+        #    So "smallest X with f(X) < m" gave 3, but T=4. "Largest X with f(X) < m" gave 10.
+        #    What about "smallest X such that f(X) < m and f(X-1) >= m"? That would be T. But we can find T by binary searching for the smallest X such that f(X) < m? No, that gave 3.
+        #    Let's test: if we binary search for the largest X such that f(X) >= m? In [10,7,4,1] m=3: f(1)=3 >=3, f(2)=3 >=3, f(3)=2 <3. Largest X with f(X) >= 3 is 2. Not T.
+        #    What if we binary search for the smallest X such that f(X) < m, and then T = X + 1? In [10,7,4,1] m=3: smallest X with f(X) < 3 is 3. X+1 = 4 = T. In example 1 m=4: smallest X with f(X) < 4 is 4. X+1 = 5, but T=4. So that fails.
+        #    Let's re-express the condition for T: T is the unique value such that f(T) < m and f(T-1) >= m.
+        #    We can find T by binary searching on the value domain. Since f is non-increasing, we can find the transition point.
+        #    Let's define g(X) = f(X) - m. We want the largest X such that f(X) >= m? No.
+        #    Actually, T is the m-th largest element. There is a standard way to find the m-th largest element from a multiset using binary search on the value range, by counting how many are >= X.
+        #    Let h(X) = count of values >= X.
+        #    h is also non-increasing.
+        #    The m-th largest value T satisfies: h(T) >= m and h(T+1) < m.
+        #    Let's test this.
+        #    In [10,7,4,1], m=3. h(X) = count(>=X).
+        #    h(1)=4 >=3, h(2)=4 >=3, h(3)=3 >=3, h(4)=3 >=3, h(5)=2 <3.
+        #    So T satisfies h(T) >= m and h(T+1) < m. The values of T that satisfy this are 4 and 5? h(4)=3 >=3, h(5)=2 <3. h(5)=2 <3, h(6)=1 <3. So T could be 4 or 5? But the 3rd largest is 4. Actually, the condition h(T) >= m and h(T+1) < m is satisfied by T = 4, and also by T = 5? h(5)=2 <3, so h(5) is not >= m. So T must satisfy h(T) >= m. So T=4 works. T=3: h(3)=3 >=3, h(4)=3 >=3, so h(T+1) is not < m. So T=4 is the unique value? Let's check: for T=4, h(4)=3 >=3, h(5)=2 <3. For T=5, h(5)=2 <3 fails h(T) >= m. So T=4 is the only one. In example 1 m=4: values: 6,5,4,4,3,3,2,2,2,1,1,1. h(X) = count(>=X). m=4. h(4)=? values >=4: 6,5,4,4 = 4 >=4. h(5)=? values >=5: 6,5 = 2 <4. So T=4 satisfies h(4)>=4 and h(5)<4. T=5 fails h(5)>=4. So T=4. Correct.
+        #    Example 2 m=2: values: 7,4,2,2,1,1. h(4)=2 >=2, h(5)=1 <2 -> T=4. Correct.
+        #    Example 2 m=3: values: 7,4,2,2,1,1. h(2)=4 >=3, h(3)=2 <3 -> T=2. Correct.
+        #    So the m-th largest value T is the unique value such that h(T) >= m and h(T+1) < m, where h(X) = count of values >= X.
+        #    Alternatively, T is the largest X such that h(X) >= m? In [10,7,4,1] m=3: largest X with h(X) >= 3. h(4)=3 >=3, h(5)=2 <3 -> largest X is 4. In example 1 m=4: largest X with h(X) >= 4. h(4)=4 >=4, h(5)=2 <4 -> largest X is 4. In example 2 m=2: largest X with h(X) >= 2. h(4)=2 >=2, h(5)=1 <2 -> largest X is 4. In example 2 m=3: largest X with h(X) >= 3. h(2)=4 >=3, h(3)=2 <3 -> largest X is 2. So T = largest X such that h(X) >= m.
+        #    Let's verify: h(X) = count(>=X). So T = max { X | count(>=X) >= m }.
+        #    Then we can compute ans = sum(>T) + (m - count(>T)) * T.
+        #    Let's test this formula with T defined as largest X with count(>=X) >= m.
+        #    Example 1 m=4: T = largest X with count(>=X) >= 4. count(>=4)=4, count(>=5)=2 -> T=4. count(>4)=2 (6,5). sum(>4)=11. ans = 11 + (4-2)*4 = 19. Correct.
+        #    Example 2 m=2: T = largest X with count(>=X) >= 2. count(>=4)=2, count(>=5)=1 -> T=4. count(>4)=1 (7). sum(>4)=7. ans = 7 + (2-1)*4 = 11. Correct.
+        #    Example 2 m=3: T = largest X with count(>=X) >= 3. count(>=2)=4, count(>=3)=2 -> T=2. count(>2)=2 (7,4). sum(>2)=11. ans = 11 + (3-2)*2 = 13. Correct.
+        #    [10,7,4,1] m=3: T = largest X with count(>=X) >= 3. count(>=4)=3, count(>=5)=2 -> T=4. count(>4)=2 (10,7). sum(>4)=17. ans = 17 + (3-2)*4 = 21. Correct!
+        #    Example where m=1: T = largest X with count(>=X) >= 1. That's the maximum value. ans = sum(>T) + (1 - count(>T)) * T. count(>T)=0, sum=0, ans = T. Correct.
+        #    So the algorithm is:
+        #    1. Compute total_pos and total_sum.
+        #    2. If m >= total_pos: return total_sum % MOD.
+        #    3. Else: find T = largest X such that count(>=X) >= m.
+        #       How to find T? We can binary search X in [1, max_value].
+        #       condition: count(>=X) >= m.
+        #       We want the largest X satisfying this.
+        #       Binary search: lo = 1, hi = max_value.
+        #       while lo < hi:
+        #           mid = (lo + hi + 1) // 2   # to find max
+        #           if count_ge(mid) >= m:
+        #               lo = mid
+        #           else:
+        #               hi = mid - 1
+        #       T = lo.
+        #    4. Then compute cnt_greater = count(>T), sum_greater = sum(>T).
+        #       ans = sum_greater + (m - cnt_greater) * T.
+        #    5. Return ans % MOD.
+        #    Let's test this with all previous examples.
+        #    Example 1: value=[6,5,4], decay=[2,1,1], m=4.
+        #    total_pos=12, m=4 < 12.
+        #    max_val=6.
+        #    count_ge(X) = count of values >= X.
+        #    We need largest X with count_ge(X) >= 4.
+        #    Values positive: 6,5,4,4,3,3,2,2,2,1,1,1.
+        #    count_ge(6) = 1 (6) <4.
+        #    count_ge(5) = 2 (6,5) <4.
+        #    count_ge(4) = 4 (6,5,4,4) >=4.
+        #    count_ge(3) = 8 >=4.
+        #    count_ge(2) = 11 >=4.
+        #    count_ge(1) = 12 >=4.
+        #    Binary search lo=1, hi=6.
+        #    mid = (1+6+1)//2 = 4. count_ge(4)=4 >=4 -> lo=4.
+        #    lo=4, hi=6: mid = (4+6+1)//2 = 5. count_ge(5)=2 <4 -> hi=4.
+        #    lo=4, hi=4 -> T=4.
+        #    cnt_greater = count(>4) = 2 (6,5). sum_greater = 11.
+        #    ans = 11 + (4-2)*4 = 19. Correct.
+        #    Example 2: value=[7,2,2], decay=[3,2,1], m=2.
+        #    total_pos=6, m=2 < 6.
+        #    max_val=7.
+        #    Positive values: 7,4,1,2,2,1. Sorted: 7,4,2,2,1,1.
+        #    count_ge(X): 
+        #    X=7: >=7: 1 <2.
+        #    X=6: >=6: 1 <2.
+        #    X=5: >=5: 1 <2.
+        #    X=4: >=4: 2 (7,4) >=2.
+        #    X=3: >=3: 2 >=2.
+        #    X=2: >=2: 4 >=2.
+        #    X=1: >=1: 6 >=2.
+        #    Binary search lo=1, hi=7.
+        #    mid = (1+7+1)//2 = 4. count_ge(4)=2 >=2 -> lo=4.
+        #    lo=4, hi=7: mid = (4+7+1)//2 = 6. count_ge(6)=1 <2 -> hi=5.
+        #    lo=4, hi=5: mid = (4+5+1)//2 = 5. count_ge(5)=1 <2 -> hi=4.
+        #    lo=4, hi=4 -> T=4.
+        #    cnt_greater = count(>4) = 1 (7). sum_greater = 7.
+        #    ans = 7 + (2-1)*4 = 11. Correct.
+        #    Example 2 m=3:
+        #    count_ge(X) >= 3.
+        #    X=2: >=2: 4 >=3.
+        #    X=3: >=3: 2 <3.
+        #    Binary search: lo=1, hi=7.
+        #    mid=4: count_ge(4)=2 <3 -> hi=3.
+        #    lo=1, hi=3: mid=2 ( (1+3+1)//2=2? Actually (1+3+1)//2 = 5//2 = 2. count_ge(2)=4 >=3 -> lo=2.
+        #    lo=2, hi=3: mid=(2+3+1)//2=3. count_ge(3)=2 <3 -> hi=2.
+        #    T=2.
+        #    cnt_greater = count(>2) = 2 (7,4). sum_greater = 11.
+        #    ans = 11 + (3-2)*2 = 13. Correct.
+        #    [10,7,4,1] m=3:
+        #    count_ge(X) >= 3.
+        #    X=4: >=4: 3 >=3.
+        #    X=5: >=5: 2 <3.
+        #    Binary search: lo=1, hi=10.
+        #    mid=6: count_ge(6)=1 <3 -> hi=5.
+        #    lo=1, hi=5: mid=3 ( (1+5+1)//2=3 ). count_ge(3)=3 >=3 -> lo=3.
+        #    lo=3, hi=5: mid=4 ( (3+5+1)//2=4 ). count_ge(4)=3 >=3 -> lo=4.
+        #    lo=4, hi=5: mid=5 ( (4+5+1)//2=5 ). count_ge(5)=2 <3 -> hi=4.
+        #    T=4.
+        #    cnt_greater = count(>4) = 2 (10,7). sum_greater = 17.
+        #    ans = 17 + (3-2)*4 = 21. Correct.
+        #    Edge: m=1, value=[5], decay=[1], total_pos: k = (5-1)//1+1=5. total_pos=5. m=1 < 5. max_val=5.
+        #    count_ge(X) >= 1. largest X with count_ge(X) >= 1 is 5.
+        #    Binary search: lo=1, hi=5. mid=5 ( (1+5+1)//2=3? Wait (1+5+1)//2=3. count_ge(3)=3 >=1 -> lo=3. lo=3, hi=5: mid=4 ( (3+5+1)//2=4 ). count_ge(4)=2 >=1 -> lo=4. lo=4, hi=5: mid=5 ( (4+5+1)//2=5 ). count_ge(5)=1 >=1 -> lo=5. T=5.
+        #    cnt_greater = count(>5)=0. sum_greater=0. ans = 0 + (1-0)*5 = 5. Correct.
+        #    What if m >= total_pos? Already handled.
+        
+        #    So the correct approach is:
+        #    1. Compute total_pos and total_sum.
+        #    2. If m >= total_pos: return total_sum % MOD.
+        #    3. Else: binary search for T = largest X such that count_ge(X) >= m, where count_ge(X) = number of values >= X.
+        #    4. Then ans = sum(>T) + (m - count(>T)) * T.
+        #    5. Return ans % MOD.
+        
+        #    Now we need functions:
+        #    - count_ge(X): number of values >= X.
+        #    - sum_ge(X): sum of values >= X? We only need sum(>T) and count(>T). We can compute count and sum for > X.
+        #    But note: count_ge(X) = count(>X-1). So we can just use count_and_sum(X-1) for >= X? Or we can write count_ge and sum_ge directly.
+        #    Let's define a function that given X, returns (count of values > X, sum of values > X). Then:
+        #    count_ge(X) = count_greater(X-1)
+        #    But careful: if X=1, X-1=0. count_greater(0) would count values >0, which are all positive values. That's fine.
+        #    Alternatively, we can write a function count_and_sum_ge(X) that returns (count of values >= X, sum of values >= X). But we can just use count_greater and sum_greater with adjusted arguments.
+        #    Since we have count_and_sum(X) returning (cnt, s) for values > X.
+        #    Then:
+        #    count_ge(X) = count_and_sum(X-1)[0]
+        #    sum_ge(X) = count_and_sum(X-1)[1]
+        #    But we also need count(>T) and sum(>T). That's just count_and_sum(T)[0] and [1].
+        #    Let's verify with X=1: count_ge(1) = count_and_sum(0)[0]. count_and_sum(0) counts values >0, which are all positive values. That's correct.
+        #    For T=4 in example 1: count_ge(4) = count_and_sum(3)[0] = 4. Correct.
+        #    So we can use count_and_sum(X) for values > X, and then:
+        #    count_ge(X) = count_and_sum(X-1)[0]
+        #    But wait: what if X-1 is negative? X starts from 1, so X-1 >= 0. count_and_sum(0) works because v > 0 for all positive values. Our count_and_sum function: if v > X, it counts. For X=0, v > 0 is true for all positive values. So it's fine.
+        #    However, we can just write a separate function count_ge_and_sum_ge(X) to be safe and avoid off-by-one. But using X-1 is fine as long as we ensure X>=1. In binary search, lo=1, so X>=1.
+        #    Let's just implement:
+        #    def count_and_sum_greater(X):  # values > X
+        #        cnt = 0
+        #        s = 0
+        #        for v, d in zip(value, decay):
+        #            if v > X:
+        #                k = (v - X - 1) // d + 1
+        #                cnt += k
+        #                last = v - d * (k - 1)
+        #                s += k * (v + last) // 2
+        #        return cnt, s
+        #    def count_and_sum_greater_or_equal(X):  # values >= X
+        #        # This is count_and_sum_greater(X-1)
+        #        if X <= 1:
+        #            # all positive values are >= 1, but we can just use X-1=0
+        #            return count_and_sum_greater(0)
+        #        else:
+        #            return count_and_sum_greater(X-1)
+        #    But we can just use count_and_sum_greater(X-1) in the binary search, with the understanding that if X=1, X-1=0 is fine.
+        #    Actually, in binary search we need count_ge(mid) >= m. We can just compute cnt = count_and_sum_greater(mid-1)[0] if mid > 1 else total_pos? But mid will be at least 1. If mid=1, count_ge(1) = total_pos. We can just handle mid=1 separately or let count_and_sum_greater(-1)? Better to write a dedicated function.
+        
+        #    Let's write a function count_ge_and_sum_ge(X) that returns (count, sum) of values >= X.
+        #    Since values are positive integers, and X >= 1:
+        #    For each v, d:
+        #        We need number of t >= 1 such that v - d*(t-1) >= X.
+        #        => v - X >= d*(t-1)
+        #        => t-1 <= (v - X) / d
+        #        => t <= floor((v - X) / d) + 1
+        #        Since t >= 1, if v < X, then 0.
+        #        If v >= X, the number of such t is k = (v - X) // d + 1.
+        #        Let's verify: v=6, d=2, X=4. v >= X. k = (6-4)//2 + 1 = 2//2+1=1+1=2. Values >=4: 6, 4. Correct.
+        #        v=6, d=2, X=5. k = (6-5)//2 + 1 = 1//2+1=0+1=1. Values >=5: 6. Correct.
+        #        v=6, d=2, X=6. k = (6-6)//2 + 1 = 0+1=1. Values >=6: 6. Correct.
+        #        v=6, d=2, X=7. v < X -> 0. Correct.
+        #        Sum of values >= X: arithmetic series first = v, last = v - d*(k-1), count = k. Sum = k*(v + last)//2.
+        #        Let's test: v=6, d=2, X=4, k=2. last = 6 - 2*1 = 4. sum = 2*(6+4)//2 = 10. Values: 6+4=10. Correct.
+        #        v=6, d=2, X=5, k=1. last = 6 - 0 = 6. sum = 1*(6+6)//2 = 6. Correct.
+        #    So count_ge_and_sum_ge(X):
+        #        cnt = 0
+        #        s = 0
+        #        for v, d in zip(value, decay):
+        #            if v >= X:
+        #                k = (v - X) // d + 1
+        #                cnt += k
+        #                last = v - d * (k - 1)
+        #                s += k * (v + last) // 2
+        #        return cnt, s
+        #    This is simpler and avoids X-1 confusion.
+        
+        #    Now, binary search for T = largest X such that count_ge_and_sum_ge(X)[0] >= m.
+        #    Range: X in [1, max_value]. But wait: could T be greater than max_value? If m=1, T = max_value. If m > total_pos, handled. So T in [1, max_value].
+        #    However, what if the m-th largest value is 1? Then T=1. Binary search should find it.
+        #    Let's test with example where all values are 1? But value[i] >= 1, decay[i] >= 1. If value[i]=1, decay[i]=1, then positive values: only 1 (second gives 0). So total_pos = n. If m = n, we return total_sum. If m < n, we need T=1.
+        #    Let's test: value=[1,1], decay=[1,1], m=1.
+        #    total_pos: each k = (1-1)//1+1 = 0+1=1. total_pos=2. m=1 < 2.
+        #    max_val=1.
+        #    count_ge_and_sum_ge(X): X=1: v=1 >=1 -> k = (1-1)//1+1 = 0+1=1. cnt=2, s=2.
+        #    Binary search lo=1, hi=1 -> T=1.
+        #    cnt_greater = count(>1) = count_and_sum_greater(1)[0]? We need count(>T). Since T=1, count(>1) = 0.
+        #    How to get count(>T)? We can use count_and_sum_greater(T)[0] (values > T).
+        #    For T=1, count_and_sum_greater(1) counts values >1. Since all values are 1, count=0.
+        #    ans = sum(>1) + (m - 0)*1 = 0 + 1*1 = 1. Correct (select index 0 once, value 1).
+        #    What if m=2? total_pos=2, m >= total_pos -> return total_sum % MOD = 2. Correct.
+        
+        #    Let's test another edge: value=[3], decay=[2], m=2.
+        #    total_pos: k = (3-1)//2+1 = 1+1=2. total_pos=2. m=2 >= 2 -> return total_sum = 2*(3+1)//2 = 4. Correct.
+        
+        #    value=[3], decay=[2], m=1.
+        #    total_pos=2, m=1 < 2. max_val=3.
+        #    count_ge_and_sum_ge(X):
+        #    X=3: v=3 >=3 -> k = (3-3)//2+1 = 0+1=1. cnt=1, s=3.
+        #    X=2: v=3 >=2 -> k = (3-2)//2+1 = 1//2+1=0+1=1. cnt=1, s=3? Wait, values >=2: only 3. But what about 3-2=1? 1 is not >=2. So cnt=1, s=3. Correct.
+        #    X=1: v=3 >=1 -> k = (3-1)//2+1 = 2//2+1=1+1=2. cnt=2, s=3+1=4. Values >=1: 3,1. Correct.
+        #    Binary search lo=1, hi=3 for T with count_ge >= 1.
+        #    We want largest X with count_ge >= 1.
+        #    mid: (1+3+1)//2 = 2 (since (5)//2=2). count_ge(2)=1 >=1 -> lo=2.
+        #    lo=2, hi=3: mid = (2+3+1)//2 = 3. count_ge(3)=1 >=1 -> lo=3.
+        #    lo=3, hi=3 -> T=3.
+        #    cnt_greater = count(>3) = count_and_sum_greater(3)[0]. count_and_sum_greater(3): v>3? v=3>3? no. cnt=0.
+        #    ans = 0 + (1-0)*3 = 3. Correct (select once, value 3).
+        
+        #    What if m=1 and value=[5,5], decay=[1,1]? total_pos: each k=5, total=10. m=1 < 10. max_val=5.
+        #    count_ge_and_sum_ge(X):
+        #    X=5: v=5 >=5 -> k = (5-5)//1+1 = 0+1=1 per index. cnt=2, s=10.
+        #    X=6: v=5>=6? no. cnt=0.
+        #    Binary search lo=1, hi=5. T will be 5.
+        #    cnt_greater = count(>5) = 0. ans = 0 + (1-0)*5 = 5. Correct.
+        
+        #    Now, we must ensure that the binary search for T works correctly when there are multiple values.
+        #    The condition: find largest X such that count_ge_and_sum_ge(X)[0] >= m.
+        #    Since count_ge is non-increasing, we can binary search.
+        #    lo = 1, hi = max_value.
+        #    while lo < hi:
+        #        mid = (lo + hi + 1) // 2
+        #        if count_ge_and_sum_ge(mid)[0] >= m:
+        #            lo = mid
+        #        else:
+        #            hi = mid - 1
+        #    T = lo.
+        #    This is standard for finding the maximum X satisfying a condition.
+        
+        #    Then we need count(>T) and sum(>T). We can compute them using count_and_sum_greater(T) (values > T).
+        #    But wait: count_and_sum_greater(T) counts values strictly greater than T.
+        #    Let's verify with example 1 m=4: T=4. count_and_sum_greater(4) counts values >4: 6,5 -> cnt=2, s=11. Correct.
+        #    Example 2 m=3: T=2. count_and_sum_greater(2) counts values >2: 7,4 -> cnt=2, s=11. Correct.
+        #    [10,7,4,1] m=3: T=4. count_and_sum_greater(4) >4: 10,7 -> cnt=2, s=17. Correct.
+        #    So ans = sum_greater + (m - cnt_greater) * T.
+        
+        #    One more check: what if T is such that count_ge_and_sum_ge(T)[0] >= m but count_ge_and_sum_ge(T+1)[0] < m? That's guaranteed by the binary search finding the largest X with >= m.
+        
+        #    Now, we need to compute total_pos and total_sum initially.
+        #    total_pos = sum over i of k_i, where k_i = (value[i] - 1) // decay[i] + 1.
+        #    total_sum = sum over i of k_i * (value[i] + last_i) // 2, last_i = value[i] - decay[i] * (k_i - 1).
+        #    This is exactly the same as count_and_sum_greater(0)? Let's check: count_and_sum_greater(0) counts values >0, which are all positive values. So total_pos = count_and_sum_greater(0)[0], total_sum = count_and_sum_greater(0)[1]. We can just compute them using the same function to avoid duplication.
+        #    But careful: count_and_sum_greater(0) uses condition v > 0, which is always true for positive values. k = (v - 0 - 1) // d + 1 = (v-1)//d + 1. last = v - d*(k-1). This matches our earlier formula. So we can just set total_pos, total_sum = count_and_sum_greater(0).
+        
+        #    Let's test count_and_sum_greater(0) with example 1: value=[6,5,4], decay=[2,1,1].
+        #    i=0: v=6, d=2. v>0 true. k = (6-0-1)//2 + 1 = 5//2+1 = 2+1=3. last = 6 - 2*2 = 2. s += 3*(6+2)//2 = 12.
+        #    i=1: v=5, d=1. k = (5-0-1)//1 + 1 = 4+1=5. last = 5 - 1*4 = 1. s += 5*(5+1)//2 = 15.
+        #    i=2: v=4, d=1. k = (4-0-1)//1 + 1 = 3+1=4. last = 4 - 1*3 = 1. s += 4*(4+1)//2 = 10.
+        #    total_pos = 3+5+4=12. total_sum = 12+15+10=37. Correct.
+        
+        #    So algorithm summary:
+        #    1. n = len(value)
+        #    2. Define count_and_sum_greater(X): returns (cnt, s) of values > X.
+        #       For each (v, d) in zip(value, decay):
+        #           if v > X:
+        #               k = (v - X - 1) // d + 1
+        #               cnt += k
+        #               last = v - d * (k - 1)
+        #               s += k * (v + last) // 2
+        #       return cnt, s
+        #    3. total_pos, total_sum = count_and_sum_greater(0)
+        #    4. If m >= total_pos: return total_sum % MOD
+        #    5. max_val = max(value)
+        #    6. Define count_ge_and_sum_ge(X): returns (cnt, s) of values >= X.
+        #       For each (v, d):
+        #           if v >= X:
+        #               k = (v - X) // d + 1
+        #               cnt += k
+        #               last = v - d * (k - 1)
+        #               s += k * (v + last) // 2
+        #       return cnt, s
+        #    7. Binary search for T in [1, max_val]:
+        #        lo, hi = 1, max_val
+        #        while lo < hi:
+        #            mid = (lo + hi + 1) // 2
+        #            if count_ge_and_sum_ge(mid)[0] >= m:
+        #                lo = mid
+        #            else:
+        #                hi = mid - 1
+        #        T = lo
+        #    8. cnt_greater, sum_greater = count_and_sum_greater(T)  # values > T
+        #    9. ans = sum_greater + (m - cnt_greater) * T
+        #    10. return ans % MOD
+        
+        #    Let's test with all examples and edge cases mentally.
+        
+        #    Example 1: value=[6,5,4], decay=[2,1,1], m=4.
+        #    total_pos=12, m=4 < 12.
+        #    max_val=6.
+        #    Binary search T:
+        #    lo=1, hi=6.
+        #    mid=4: count_ge_and_sum_ge(4)[0] = ? values >=4: 6,5,4,4 -> 4 >=4 -> lo=4.
+        #    lo=4, hi=6: mid=5: count_ge_and_sum_ge(5)[0] = values >=5: 6,5 -> 2 <4 -> hi=4.
+        #    T=4.
+        #    cnt_greater, sum_greater = count_and_sum_greater(4) = (2, 11).
+        #    ans = 11 + (4-2)*4 = 19. % MOD = 19.
+        
+        #    Example 2: value=[7,2,2], decay=[3,2,1], m=2.
+        #    total_pos: count_and_sum_greater(0): i=0: v=7>0 -> k=(7-1)//3+1=2+1=3? Wait (7-0-1)//3+1 = 6//3+1=2+1=3. last = 7 - 3*2 = 1. sum=3*(7+1)//2=12. i=1: v=2>0 -> k=(2-1)//2+1 = 1//2+1=0+1=1. last=2. sum=2. i=2: v=2>0 -> k=(2-1)//1+1 = 1+1=2. last=2-1*1=1. sum=2*(2+1)//2=3. total_pos=3+1+2=6. total_sum=12+2+3=17. m=2 < 6.
+        #    max_val=7.
+        #    Binary search T:
+        #    lo=1, hi=7.
+        #    mid=4: count_ge_and_sum_ge(4)[0] = values >=4: i=0: v=7>=4 -> k=(7-4)//3+1 = 3//3+1=1+1=2? Wait (7-4)//3+1 = 3//3+1 = 1+1=2. last = 7 - 3*1 = 4. sum=2*(7+4)//2=11. i=1: v=2>=4? no. i=2: v=2>=4? no. cnt=2 >=2 -> lo=4.
+        #    lo=4, hi=7: mid= (4+7+1)//2 = 6. count_ge_and_sum_ge(6)[0]: i=0: v=7>=6 -> k=(7-6)//3+1 = 1//3+1=0+1=1. last=7. cnt=1 <2 -> hi=5.
+        #    lo=4, hi=5: mid= (4+5+1)//2 = 5. count_ge_and_sum_ge(5)[0]: i=0: v=7>=5 -> k=(7-5)//3+1 = 2//3+1=0+1=1. cnt=1 <2 -> hi=4.
+        #    T=4.
+        #    cnt_greater, sum_greater = count_and_sum_greater(4): >4: i=0: v=7>4 -> k=(7-4-1)//3+1 = (2)//3+1=0+1=1. last=7. sum=7. i=1,2: v=2>4? no. cnt=1, sum=7.
+        #    ans = 7 + (2-1)*4 = 11. Correct.
+        
+        #    Example 3: value=[4,3], decay=[5,4], m=5.
+        #    total_pos: count_and_sum_greater(0): i=0: v=4>0 -> k=(4-1)//5+1 = 3//5+1=0+1=1. last=4. sum=4. i=1: v=3>0 -> k=(3-1)//4+1 = 2//4+1=0+1=1. last=3. sum=3. total_pos=2. m=5 >= 2 -> return total_sum % MOD = 7. Correct.
+        
+        #    Edge: value=[1], decay=[1], m=1.
+        #    total_pos: count_and_sum_greater(0): v=1>0 -> k=(1-1)//1+1 = 0+1=1. total_pos=1. m=1 >= total_pos -> return total_sum % MOD = 1. Correct.
+        
+        #    Edge: value=[2], decay=[1], m=1.
+        #    total_pos: k = (2-1)//1+1 = 1+1=2. total_pos=2. m=1 < 2.
+        #    max_val=2.
+        #    Binary search T: lo=1, hi=2.
+        #    mid = (1+2+1)//2 = 2. count_ge_and_sum_ge(2)[0]: v=2>=2 -> k=(2-2)//1+1 = 0+1=1. cnt=1 >=1 -> lo=2.
+        #    T=2.
+        #    cnt_greater, sum_greater = count_and_sum_greater(2): >2: v=2>2? no. cnt=0, sum=0.
+        #    ans = 0 + (1-0)*2 = 2. Correct.
+        
+        #    Edge: value=[2], decay=[1], m=2.
+        #    total_pos=2, m=2 >= 2 -> return total_sum % MOD. total_sum = k*(v+last)//2 = 2*(2+1)//2 = 3. Correct (2+1=3).
+        
+        #    Edge: value=[5], decay=[3], m=3.
+        #    total_pos: k = (5-1)//3+1 = 4//3+1=1+1=2? Wait: (5-1)//3+1 = 4//3+1 = 1+1=2. But positive values: 5, 5-3=2. So only 2 positive values. total_pos=2. m=3 >= 2 -> return total_sum % MOD. total_sum = 2*(5+2)//2 = 7. Values: 5+2=7. Correct.
+        
+        #    Edge: value=[5], decay=[3], m=1.
+        #    total_pos=2, m=1 < 2. max_val=5.
+        #    Binary search T: lo=1, hi=5.
+        #    mid = (1+5+1)//2 = 3. count_ge_and_sum_ge(3)[0]: v=5>=3 -> k=(5-3)//3+1 = 2//3+1=0+1=1. cnt=1 >=1 -> lo=3.
+        #    lo=3, hi=5: mid = (3+5+1)//2 = 4. count_ge_and_sum_ge(4)[0]: v=5>=4 -> k=(5-4)//3+1 = 1//3+1=0+1=1. cnt=1 >=1 -> lo=4.
+        #    lo=4, hi=5: mid = (4+5+1)//2 = 5. count_ge_and_sum_ge(5)[0]: v=5>=5 -> k=(5-5)//3+1 = 0+1=1. cnt=1 >=1 -> lo=5.
+        #    T=5.
+        #    cnt_greater, sum_greater = count_and_sum_greater(5): >5: v=5>5? no. cnt=0, sum=0.
+        #    ans = 0 + (1-0)*5 = 5. Correct (select once, value 5).
+        
+        #    Edge: value=[5], decay=[3], m=2.
+        #    total_pos=2, m=2 >= 2 -> return 7. Correct (select twice: 5 and 2).
+        
+        #    Everything seems consistent.
+        
+        #    Now, we must ensure the modulo operation is applied correctly. The problem says "Since the answer may be large, return it modulo 10^9 + 7." We should return ans % (10**9 + 7). Note that ans could be negative? No, it's sum of positive values. But we can just do ans % MOD.
+        
+        #    Complexity: 
+        #    - Computing total_pos and total_sum: O(n) with count_and_sum_greater(0).
+        #    - Binary search for T: O(log(max_value)) iterations. max_value <= 1e9, so ~30 iterations.
+        #    - Each iteration computes count_ge_and_sum_ge(mid) over n elements: O(n).
+        #    - Final count_and_sum_greater(T): O(n).
+        #    Total time: O(n log(max_value)) ~ 1e5 * 30 = 3e6 operations, well within 2s in Python.
+        #    Space: O(1) besides input.
+        
+        #    Let's write the Python code.
+        
+        #    We need to be careful with integer division and large numbers. Python handles big ints.
+        #    MOD = 10**9 + 7.
+        
+        #    One potential issue: In count_and_sum_greater(X), we have k = (v - X - 1) // d + 1. If v - X - 1 is negative, but we only execute if v > X, so v - X >= 1, so v - X - 1 >= 0. Safe.
+        #    In count_ge_and_sum_ge(X), we have k = (v - X) // d + 1. If v >= X, v - X >= 0, so safe.
+        #    Also, in total_pos and total_sum, we use count_and_sum_greater(0), which is fine.
+        
+        #    Let's double-check the formulas for k and last in both functions.
+        
+        #    count_and_sum_greater(X): values > X.
+        #    Condition: v - d*(t-1) > X, t >= 1.
+        #    => t-1 < (v - X) / d
+        #    => t-1 <= floor((v - X - 1) / d)   (since integer, t-1 < (v-X)/d means t-1 <= (v-X-1)//d)
+        #    => t <= (v-X-1)//d + 1
+        #    So k = (v - X - 1) // d + 1.
+        #    last = v - d * (k - 1).
+        #    Sum = k * (v + last) // 2.
+        #    Verified earlier.
+        
+        #    count_ge_and_sum_ge(X): values >= X.
+        #    Condition: v - d*(t-1) >= X
+        #    => t-1 <= (v - X) / d
+        #    => t-1 <= floor((v - X) / d)   (since integer, t-1 <= (v-X)//d)
+        #    => t <= (v - X) // d + 1
+        #    So k = (v - X) // d + 1.
+        #    last = v - d * (k - 1).
+        #    Sum = k * (v + last) // 2.
+        #    Verified earlier.
+        
+        #    Now, implement the class Solution with method maxTotalValue.
+        
+        #    Let's write the code.
+        
+        #    ```python
+        #    class Solution:
+        #        def maxTotalValue(self, value: list[int], decay: list[int], m: int) -> int:
+        #            MOD = 10**9 + 7
+        #            n = len(value)
+        #            
+        #            def count_and_sum_greater(X: int):
+        #                cnt = 0
+        #                s = 0
+        #                for v, d in zip(value, decay):
+        #                    if v > X:
+        #                        k = (v - X - 1) // d + 1
+        #                        cnt += k
+        #                        last = v - d * (k - 1)
+        #                        s += k * (v + last) // 2
+        #                return cnt, s
+        #            
+        #            total_pos, total_sum = count_and_sum_greater(0)
+        #            
+        #            if m >= total_pos:
+        #                return total_sum % MOD
+        #            
+        #            def count_ge_and_sum_ge(X: int):
+        #                cnt = 0
+        #                s = 0
+        #                for v, d in zip(value, decay):
+        #                    if v >= X:
+        #                        k = (v - X) // d + 1
+        #                        cnt += k
+        #                        last = v - d * (k - 1)
+        #                        s += k * (v + last) // 2
+        #                return cnt, s
+        #            
+        #            max_val = max(value)
+        #            lo, hi = 1, max_val
+        #            while lo < hi:
+        #                mid = (lo + hi + 1) // 2
+        #                if count_ge_and_sum_ge(mid)[0] >= m:
+        #                    lo = mid
+        #                else:
+        #                    hi = mid - 1
+        #            T = lo
+        #            
+        #            cnt_greater, sum_greater = count_and_sum_greater(T)
+        #            ans = sum_greater + (m - cnt_greater) * T
+        #            return ans % MOD
+        #    ```
+        
+        #    Let's test with the provided examples.
+        
+        #    Example 1: value = [6,5,4], decay = [2,1,1], m = 4 -> 19.
+        #    Example 2: value = [7,2,2], decay = [3,2,1], m = 2 -> 11.
+        #    Example 3: value = [4,3], decay = [5,4], m = 5 -> 7.
+        
+        #    We already mentally traced these and they match.
+        
+        #    One more test: value = [10], decay = [3], m = 2.
+        #    total_pos: count_and_sum_greater(0): v=10>0 -> k=(10-1)//3+1 = 9//3+1=3+1=4? Wait (10-1)//3+1 = 9//3+1=3+1=4. Positive values: 10,7,4,1. total_pos=4. m=2 < 4.
+        #    max_val=10.
+        #    Binary search T: lo=1, hi=10.
+        #    mid = (1+10+1)//2 = 6. count_ge_and_sum_ge(6)[0]: v=10>=6 -> k=(10-6)//3+1 = 4//3+1=1+1=2. cnt=2 >=2 -> lo=6.
+        #    lo=6, hi=10: mid = (6+10+1)//2 = 8. count_ge_and_sum_ge(8)[0]: v=10>=8 -> k=(10-8)//3+1 = 2//3+1=0+1=1. cnt=1 <2 -> hi=7.
+        #    lo=6, hi=7: mid = (6+7+1)//2 = 7. count_ge_and_sum_ge(7)[0]: v=10>=7 -> k=(10-7)//3+1 = 3//3+1=1+1=2. cnt=2 >=2 -> lo=7.
+        #    lo=7, hi=7 -> T=7.
+        #    cnt_greater, sum_greater = count_and_sum_greater(7): >7: v=10>7 -> k=(10-7-1)//3+1 = (2)//3+1=0+1=1. last=10. sum=10. cnt=1.
+        #    ans = 10 + (2-1)*7 = 17.
+        #    Let's verify manually: positive values: 10,7,4,1. m=2. Top 2: 10+7=17. Correct.
+        
+        #    Another test: value = [10], decay = [3], m = 3.
+        #    total_pos=4, m=3 < 4.
+        #    Binary search T: lo=1, hi=10.
+        #    mid=6: count_ge_and_sum_ge(6)[0]=2 <3 -> hi=5.
+        #    lo=1, hi=5: mid=3 ( (1+5+1)//2=3 ). count_ge_and_sum_ge(3)[0]: v=10>=3 -> k=(10-3)//3+1 = 7//3+1=2+1=3. cnt=3 >=3 -> lo=3.
+        #    lo=3, hi=5: mid=4 ( (3+5+1)//2=4 ). count_ge_and_sum_ge(4)[0]: v=10>=4 -> k=(10-4)//3+1 = 6//3+1=2+1=3. cnt=3 >=3 -> lo=4.
+        #    lo=4, hi=5: mid=5 ( (4+5+1)//2=5 ). count_ge_and_sum_ge(5)[0]: v=10>=5 -> k=(10-5)//3+1 = 5//3+1=1+1=2. cnt=2 <3 -> hi=4.
+        #    T=4.
+        #    cnt_greater, sum_greater = count_and_sum_greater(4): >4: v=10>4 -> k=(10-4-1)//3+1 = (5)//3+1=1+1=2. last=10-3*1=7. sum=2*(10+7)//2=17. cnt=2.
+        #    ans = 17 + (3-2)*4 = 21.
+        #    Manual: positive: 10,7,4,1. m=3 top 3: 10+7+4=21. Correct.
+        
+        #    Looks perfect.
+        
+        #    One edge: what if max_val is 1 and m < total_pos? We already tested value=[1,1], m=1. total_pos=2, m=1 < 2. max_val=1. Binary search lo=1, hi=1 -> T=1. cnt_greater = count_and_sum_greater(1): >1: v=1>1? no. cnt=0. ans = 0 + (1-0)*1 = 1. Correct.
+        
+        #    What if value has elements with very large decay, making total_pos small? Already handled.
+        
+        #    Potential bug: In count_ge_and_sum_ge, we use k = (v - X) // d + 1. But what if d is 0? Constraints say decay[i] >= 1, so d >= 1. Safe.
+        
+        #    What if m is 0? Constraints say m >= 1.
+        
+        #    Modulo: The problem says "Since the answer may be large, return it modulo 10^9 + 7." We return ans % MOD. Note that ans could be huge, but Python handles it. We apply modulo at the end.
+        
+        #    Let's consider if ans could be negative? No, all values are positive, m positive, so ans positive.
+        
+        #    One more check: In the binary search, we use `mid = (lo + hi + 1) // 2`. This is correct for finding the largest X satisfying the condition. If the condition is true for mid, we set lo = mid, else hi = mid - 1. This converges to the maximum X.
+        
+        #    Let's test with a case where condition is true for all X in range. But we already have m < total_pos, so condition count_ge(X) >= m will be true for some X (at least X=1, since count_ge(1) = total_pos > m). And false for X > max_val? We bound hi = max_val. Is it guaranteed that count_ge(max_val) >= m? Not necessarily. For example, if m is large but < total_pos, count_ge(max_val) might be 1 (if max_val is unique and m > 1). Then binary search will find T. But what if count_ge(max_val) < m? Then the largest X with count_ge(X) >= m might be less than max_val. Our binary search starts with lo=1, hi=max_val. If count_ge(max_val) < m, then the condition is false for mid=max_val. The binary search will adjust hi downwards until it finds the largest X with true condition. Since count_ge(1) = total_pos > m, there is always at least X=1 satisfying the condition. So the binary search will always find some T in [1, max_val]. It's safe.
+        
+        #    Let's test a case: value=[5,4], decay=[1,1], m=3.
+        #    total_pos: i=0: k=(5-1)//1+1=5. i=1: k=(4-1)//1+1=4. total_pos=9. m=3 < 9.
+        #    max_val=5.
+        #    Positive values: 5,4,3,2,1 from first; 4,3,2,1 from second. Sorted: 5,4,4,3,3,2,2,1,1. m=3: top 3: 5,4,4 sum=13.
+        #    count_ge_and_sum_ge(X):
+        #    X=5: >=5: only 5 -> cnt=1 <3.
+        #    X=4: >=4: 5,4,4 -> cnt=3 >=3.
+        #    X=3: >=3: 5,4,4,3,3 -> cnt=5 >=3.
+        #    Binary search lo=1, hi=5.
+        #    mid=3: count_ge(3)=5 >=3 -> lo=3.
+        #    lo=3, hi=5: mid=4: count_ge(4)=3 >=3 -> lo=4.
+        #    lo=4, hi=5: mid=5: count_ge(5)=1 <3 -> hi=4.
+        #    T=4.
+        #    cnt_greater, sum_greater = count_and_sum_greater(4): >4: 5 -> cnt=1, sum=5.
+        #    ans = 5 + (3-1)*4 = 5 + 8 = 13. Correct.
+        
+        #    Everything works.
+        
+        #    Final code structure:
+        #    class Solution:
+        #        def maxTotalValue(self, value: list[int], decay: list[int], m: int) -> int:
+        #            MOD = 10**9 + 7
+        #            
+        #            def count_greater(X):
+        #                cnt = 0
+        #                s = 0
+        #                for v, d in zip(value, decay):
+        #                    if v > X:
+        #                        k = (v - X - 1) // d + 1
+        #                        cnt += k
+        #                        last = v - d * (k - 1)
+        #                        s += k * (v + last) // 2
+        #                return cnt, s
+        #            
+        #            total_pos, total_sum = count_greater(0)
+        #            if m >= total_pos:
+        #                return total_sum % MOD
+        #            
+        #            def count_ge(X):
+        #                cnt = 0
+        #                s = 0
+        #                for v, d in zip(value, decay):
+        #                    if v >= X:
+        #                        k = (v - X) // d + 1
+        #                        cnt += k
+        #                        last = v - d * (k - 1)
+        #                        s += k * (v + last) // 2
+        #                return cnt, s
+        #            
+        #            max_val = max(value)
+        #            lo, hi = 1, max_val
+        #            while lo < hi:
+        #                mid = (lo + hi + 1) // 2
+        #                if count_ge(mid)[0] >= m:
+        #                    lo = mid
+        #                else:
+        #                    hi = mid - 1
+        #            T = lo
+        #            
+        #            cnt_g, sum_g = count_greater(T)
+        #            ans = sum_g + (m - cnt_g) * T
+        #            return ans % MOD
+        
+        #    I'll output this as the final answer.```python
+class Solution:
+    def maxTotalValue(self, value: list[int], decay: list[int], m: int) -> int:
+        MOD = 10**9 + 7
+        
+        # Counts how many selections have value > X, and their total sum.
+        def count_greater(X: int):
+            cnt = 0
+            s = 0
+            for v, d in zip(value, decay):
+                if v > X:
+                    # number of terms > X: largest t such that v - d*(t-1) > X
+                    k = (v - X - 1) // d + 1
+                    cnt += k
+                    last = v - d * (k - 1)
+                    s += k * (v + last) // 2
+            return cnt, s
+        
+        total_pos, total_sum = count_greater(0)
+        
+        # If we can take all positive selections and still have m left,
+        # the answer is simply the sum of all positive values.
+        if m >= total_pos:
+            return total_sum % MOD
+        
+        # Counts how many selections have value >= X, and their total sum.
+        def count_ge(X: int):
+            cnt = 0
+            s = 0
+            for v, d in zip(value, decay):
+                if v >= X:
+                    # number of terms >= X: largest t such that v - d*(t-1) >= X
+                    k = (v - X) // d + 1
+                    cnt += k
+                    last = v - d * (k - 1)
+                    s += k * (v + last) // 2
+            return cnt, s
+        
+        max_val = max(value)
+        lo, hi = 1, max_val
+        
+        # Binary search for the largest X such that at least m values are >= X.
+        # This X is the m-th largest value (the threshold T).
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if count_ge(mid)[0] >= m:
+                lo = mid
+            else:
+                hi = mid - 1
+        T = lo
+        
+        # Number and sum of values strictly greater than T.
+        cnt_greater, sum_greater = count_greater(T)
+        
+        # Take all values > T, and fill the rest with copies of T.
+        ans = sum_greater + (m - cnt_greater) * T
+        return ans % MOD
+```
+[finish_reason: stop | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 686, 'completion_tokens': 35154, 'total_tokens': 35840, 'cost': 0.00707882, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00707882, 'upstream_inference_prompt_cost': 4.802e-05, 'upstream_inference_completions_cost': 0.0070308}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

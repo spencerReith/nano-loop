@@ -1,0 +1,306 @@
+
+Assistant: ```python
+class Solution:
+    def maxPrimes(self, n: int, s: int) -> list[int]:
+        # Sieve of Eratosthenes to generate primes up to n
+        if n < 2:
+            return []
+        
+        is_prime = [True] * (n + 1)
+        is_prime[0] = is_prime[1] = False
+        for i in range(2, int(n ** 0.5) + 1):
+            if is_prime[i]:
+                step = i
+                start = i * i
+                is_prime[start:n + 1:step] = [False] * ((n - start) // step + 1)
+        
+        primes = [i for i, p in enumerate(is_prime) if p]
+        
+        # If sum of all primes <= s, return all primes (they are already increasing)
+        total = sum(primes)
+        if total <= s:
+            return primes
+        
+        # We need to select a subset of primes with maximum cardinality <= s,
+        # and among all such subsets with maximum cardinality, return lexicographically largest.
+        
+        # Sort primes in increasing order (they already are from sieve)
+        # Greedy selection with backtracking/DP for lexicographically largest among max size.
+        # Observation: To maximize the number of primes selected, we want the smallest primes first.
+        # However, lexicographically largest among those with maximum size means: for equal size, we prefer larger primes later?
+        # Let's think: We want the largest lexicographic sequence (i.e., compare from first element).
+        # Since all sequences are sorted increasingly, lexicographically largest means we want the first element as large as possible,
+        # then second as large as possible given first, etc.
+        # But we must achieve maximum cardinality k. So we need to find the lexicographically largest increasing sequence of length k that sums <= s.
+        
+        # Standard approach: sort primes ascending. Let k be the maximum possible count.
+        # Compute smallest possible sum for count c: sum of c smallest primes.
+        # Compute largest possible sum for count c: sum of c largest primes? But we need to pick exactly c primes to achieve max count.
+        # Actually, we want maximum k such that there exists a subset of size k with sum <= s.
+        # Let min_sum[c] = sum of c smallest primes.
+        # Let max_sum[c] = sum of c largest primes? But that may exceed s; we need existence.
+        # Better: binary search on k? k <= number of primes (<= ~78k for n=1e6). We can do DP? Too large.
+        
+        # Observation: Since all primes are positive, the smallest possible sum for c primes is the sum of c smallest.
+        # If sum of c smallest > s, then no subset of size c can have sum <= s.
+        # So maximum k is the largest c such that sum of c smallest primes <= s.
+        # Is that sufficient? Yes, because if the smallest c primes sum <= s, then we can pick exactly those c smallest and satisfy sum <= s.
+        # But could there be a subset of size c with sum <= s even if smallest c sum > s? No, because smallest c sum is minimal among all subsets of size c.
+        # Therefore, maximum cardinality k = max c where sum of c smallest primes <= s.
+        
+        # So first compute k = maximum count achievable.
+        # Let pref_small = prefix sums of primes (sorted ascending).
+        # Find largest idx such that pref_small[idx] <= s (where idx from 1 to len(primes)).
+        # Let k = that idx (count).
+        
+        # But wait: Example 2: primes = [2,3,5,7,11,13], s=15.
+        # pref_small: 2,5,10,17,... -> 17>15, so largest c with sum <=15 is 3 (2+3+5=10 <=15, 2+3+5+7=17>15). So k=3. Good.
+        
+        # Now among all subsets of size k that sum <= s, we want lexicographically largest increasing sequence.
+        # Since primes are sorted ascending, we need to choose k primes such that the sequence is as large as possible lexicographically.
+        # Lexicographically largest means we want the first element as large as possible, then second as large as possible, etc.
+        # However, the sequence must be increasing and of size k.
+        
+        # We can use a greedy backtracking from the largest primes? Standard method:
+        # Start from the largest prime and try to include it if possible while maintaining that we can still pick k-1 smaller primes with sum <= s - current.
+        # More precisely, we iterate primes in descending order, and decide to include a prime if we can still complete the set of size k using only primes smaller than it (or not necessarily smaller? since sequence must be increasing, if we include a prime p at some position, all later chosen primes must be >= p; but since we process descending, we ensure increasing order by picking from left to right later? Better to construct the list in increasing order from smallest to largest).
+        
+        # Alternate approach: Since we need maximum count k and lexicographically largest, we can do:
+        # Let remaining count = k, remaining sum = s.
+        # Iterate primes in descending order (from largest to smallest). For each prime p, if p <= remaining sum and remaining count > 0 and (number of primes not yet considered that are < p) >= remaining count - 1? Actually we need to ensure we can pick remaining count-1 primes from those smaller than p (since we will pick increasing, the remaining picks must be less than p if we are building from largest? Not exactly: the final list is increasing, so if we decide to include p, then all previously selected primes (which are larger because we go descending) would be > p, which would violate increasing order. So we cannot simply pick from descending and append to front? We need to construct the increasing sequence, so we should pick from smallest to largest? But lexicographically largest prefers larger numbers earlier? Wait: lexicographically largest for increasing sequence means we want the first element as large as possible. So ideally we would like the smallest prime in the set to be as large as possible.
+        
+        # Example: primes = [2,3,5,7], s=20 -> k=4, only one subset, output [2,3,5,7].
+        # Example 2: primes = [2,3,5,7,11,13], s=15, k=3. Possible subsets: [2,3,5], [2,3,7], [2,5,7], [3,5,7]. Lexicographically largest is [3,5,7] because compare first: 3 > 2.
+        
+        # So we want to skip the smallest primes if possible, to make the first element larger.
+        
+        # Standard technique for lexicographically largest subset of fixed size with sum constraint:
+        # Sort primes ascending: p1 < p2 < ... < pm.
+        # We need to pick k primes. Let total_needed = sum of k smallest = S_small.
+        # We have slack = s - S_small.
+        # We can "upgrade" some of the smallest primes to larger ones as long as we don't exceed slack and maintain increasing order and exactly k picks.
+        # Specifically, start with the smallest k primes: [p1, p2, ..., pk].
+        # Then consider replacing the smallest pick with the next larger available prime that is greater than the current pick, while maintaining that the remaining picks are chosen from primes greater than the new pick? Actually we want to maximize lexicographic order, so we try to increase the first pick as much as possible, then second, etc.
+        
+        # Greedy from left (smallest index) to right:
+        # For i from 1 to k (the i-th smallest pick), try to replace it with the largest possible prime > current pick that is not already used, such that we can still pick k-i primes from primes greater than that prime with total sum <= s - (sum of already fixed picks + new prime).
+        
+        # Since n up to 1e6, number of primes ~78k, k <= len(primes), we can do O(k * m) or O(m log m) but must be efficient.
+        
+        # Simpler: iterate primes in descending order and decide inclusion while maintaining feasibility.
+        # Let m = len(primes)
+        # We want to pick k primes. Consider processing primes from largest to smallest.
+        # Maintain a list res (will be built in increasing order eventually).
+        # We'll decide for each prime whether to include it or not, ensuring that we can still pick enough smaller primes.
+        
+        # Let need = k, remaining_sum = s.
+        # Iterate i from m-1 down to 0 (largest to smallest):
+        #   if primes[i] <= remaining_sum and need > 0:
+        #       Check if we can pick need-1 primes from primes[0:i] (i.e., smaller than primes[i]) with sum <= remaining_sum - primes[i].
+        #       The minimal sum for need-1 primes from the left part is the sum of the smallest need-1 primes in that range (i.e., from indices 0 to i-1).
+        #       If min_needed_left <= remaining_sum - primes[i], then we can include primes[i], and set remaining_sum -= primes[i], need -= 1, and mark primes[i] as selected.
+        #   else, skip.
+        
+        # This greedy works because we want to include as many large primes as possible while ensuring we can still pick enough smaller ones.
+        # Since we process from largest to smallest, we include a prime if feasible. This yields the lexicographically largest sequence because we prioritize including larger primes as early as possible in the final increasing order (they will appear later in the list? Wait: the final list is increasing, so if we include a large prime, it will be placed at the end. But lexicographic comparison starts from the first (smallest) element. So including a large prime doesn't directly affect the first element. However, skipping a small prime forces the first element to be larger among the selected set.
+        
+        # Let's test with example 2:
+        # primes = [2,3,5,7,11,13], s=15, k=3 (from prefix check: smallest 3 sum=10<=15, smallest 4 sum=17>15).
+        # need=3, remaining_sum=15.
+        # i=5 (13): can we pick 2 primes from [2,3,5,7,11] with sum <= 2? min sum of 2 smallest = 2+3=5 >2 -> no. skip.
+        # i=4 (11): need 2 from [2,3,5,7] min sum=2+3=5 <=4? remaining_sum-11=4 <5 -> no.
+        # i=3 (7): need 2 from [2,3,5] min sum=2+3=5 <=8? remaining_sum-7=8, 5<=8 -> yes. include 7. remaining_sum=8, need=2.
+        # i=2 (5): now need 2 from [2,3] min sum=2+3=5 <=8? remaining_sum-5=3 <5 -> no. skip.
+        # i=1 (3): need 2 from [2] min sum for 2 from [2] is impossible (only one prime) -> no (but need=2, only one left) -> actually we should check: after including 7, we need 2 more from indices 0..2 (primes <=5). The smallest 2 sum from [2,3,5] is 2+3=5 <=8? yes, but we must pick from indices <3? Actually after including 7, we consider primes[0:3]=[2,3,5]. We need 2 primes from that set. The minimal sum is 2+3=5 <=8. So when processing 5 at i=2, we had need=2, remaining_sum=8, min_needed from left of index 2 (primes[0:2]=[2,3]) for 1 prime? Wait, after including 7, need becomes 2, and when at i=2 (prime 5), we are checking if we can include 5 while still picking need-1=1 from left. min_needed for 1 prime from left is 2 <=3? remaining_sum-5=3 >=2 -> yes. But my earlier condition used need (which is 2) and checked min sum for need-1=1 from left? Actually in the loop, at each step we have current need and remaining_sum. When considering prime at i, we check if we can pick need-1 primes from indices < i (i.e., smaller primes) with sum <= remaining_sum - primes[i]. That is correct.
+        # So at i=2 (prime 5), need=2, remaining_sum=8. min_sum for 1 prime from left [2,3] is 2. 2 <= 8-5=3 -> yes. So we would include 5. Then remaining_sum=3, need=1.
+        # i=1 (3): need=1, remaining_sum=3. min_sum for 0 primes =0 <=0 -> include 3? But then remaining_sum=0, need=0. Include 3. Then we have selected [7,5,3] but we need increasing order, so we collect in descending order and then reverse. That gives [3,5,7]. Good.
+        # i=0 (2): need=0, skip.
+        # So selected = [7,5,3] -> reverse -> [3,5,7]. Perfect.
+        
+        # But note: when at i=2 (5), we included it because feasible. However, there might be a case where including a prime prevents including an even larger one later? Since we go from large to small, including a prime when feasible ensures we get the largest possible primes in the set, which leads to lexicographically largest increasing sequence? Let's reason: The final increasing sequence is the selected primes sorted ascending. Including a larger prime (processed earlier) means it will be at the end of the sorted list. To make the sequence lexicographically larger, we want the smallest selected prime to be as large as possible. By including as many large primes as possible (subject to feasibility), we naturally drop the smallest ones, which raises the minimum of the set. This greedy is known to work for "lexicographically largest subset of fixed size with sum constraint" when processing from largest to smallest and including if possible with feasibility check using minimal sum of needed picks from left.
+        
+        # Implementation:
+        # 1. Generate primes list sorted ascending.
+        # 2. Compute prefix sums of primes: pref[i] = sum of primes[0..i-1] (pref[0]=0).
+        # 3. Find maximum k: largest i such that pref[i] <= s (i from 1 to m). Let k = that i.
+        #    If k == 0, return [].
+        # 4. Now we need to select k primes to get lexicographically largest.
+        #    Let m = len(primes)
+        #    Precompute prefix sums for fast min sum queries: pref as above.
+        #    For a range [0, i-1] (primes indices < i), the smallest sum of t primes from that range is pref[i] - pref[i-t]? Actually if we take the smallest t from the first i primes (indices 0..i-1), that's sum of primes[0..t-1] = pref[t]. But when restricting to indices < i, the smallest t primes in that set are the first t primes overall if t <= i. So min sum for t primes from first i primes is pref[min(t, i)]? But careful: the set of available smaller primes is exactly primes[0..i-1] (all primes less than current prime since primes are sorted). So the smallest t primes among them are the first t primes (if t <= i), which sum to pref[t]. However, if we have already decided to include some primes from the larger side, the left set is always the smallest primes overall. Since we process from large to small and only consider picking from indices < i for the remaining picks, and we haven't picked any from indices < i yet (because we are going descending), the available left primes are exactly the smallest i primes. So the minimal sum for picking t primes from left is simply pref[t] (as long as t <= i). But note: pref[t] uses the first t primes overall, which are all available since they are in left. So yes, min_needed = pref[t] if t <= i else infinity (impossible).
+        
+        #    However, when we have already included some larger primes (with index >= i), the left set size is i, and we need to pick t = need-1 primes from it. The smallest possible sum for t primes from that left set is pref[t] (since the left set contains the smallest primes). But is it always true that the smallest t primes of the left set are exactly the first t primes? Yes, because the left set is exactly primes[0..i-1], which are the smallest i primes overall. So the smallest t among them are primes[0..t-1], sum = pref[t].
+        
+        #    Therefore, feasibility check: when considering prime at index i (0-based), with current need and remaining_sum, we check if need-1 <= i (i.e., there are at least need-1 primes to the left), and if pref[need-1] <= remaining_sum - primes[i].
+        
+        #    But note: pref[need-1] might use primes that we might have already skipped or not? However, since we are going descending and haven't selected any from left yet (because we only select from current and later), the left primes are all still available. So the minimal sum for need-1 picks from left is indeed pref[need-1] (provided need-1 <= i). However, pref[need-1] uses the first need-1 primes, which are all in left if need-1 <= i. So condition holds.
+        
+        #    Algorithm:
+        #       res = [] (will store selected primes in descending order of inclusion, then reverse)
+        #       need = k
+        #       rem_sum = s
+        #       for i in range(m-1, -1, -1):
+        #           if need == 0: break
+        #           if primes[i] <= rem_sum and need-1 <= i and pref[need-1] <= rem_sum - primes[i]:
+        #               # include primes[i]
+        #               res.append(primes[i])
+        #               rem_sum -= primes[i]
+        #               need -= 1
+        #           # else skip
+        #       # After loop, we should have need == 0. (Feasibility guarantees it will succeed because we know there is at least one solution: the smallest k primes.)
+        #       res.reverse()
+        #       return res
+        
+        #    Let's test with example 2:
+        #        primes = [2,3,5,7,11,13], pref = [0,2,5,10,17,28,41]? Actually pref[0]=0, pref[1]=2, pref[2]=5, pref[3]=10, pref[4]=17, pref[5]=28, pref[6]=41.
+        #        k=3 (pref[3]=10<=15, pref[4]=17>15)
+        #        need=3, rem_sum=15.
+        #        i=5 (13): need-1=2 <=5? yes. pref[2]=5 <= 15-13=2? 5<=2 false -> skip.
+        #        i=4 (11): need-1=2 <=4 yes, pref[2]=5 <=4? 5<=4 false -> skip.
+        #        i=3 (7): need-1=2 <=3 yes, pref[2]=5 <=8? true -> include 7. rem_sum=8, need=2.
+        #        i=2 (5): need-1=1 <=2 yes, pref[1]=2 <=3? true -> include 5. rem_sum=3, need=1.
+        #        i=1 (3): need-1=0 <=1 yes, pref[0]=0 <=3? true -> include 3. rem_sum=0, need=0.
+        #        i=0 skipped.
+        #        res = [7,5,3] -> reverse -> [3,5,7]. Good.
+        
+        #    Example 1: primes=[2,3,5,7], s=20, k=4 (pref[4]=17<=20), need=4, rem_sum=20.
+        #        i=3 (7): need-1=3 <=3 yes, pref[3]=10 <=13? 10<=13 true -> include 7. rem_sum=13, need=3.
+        #        i=2 (5): need-1=2 <=2 yes, pref[2]=5 <=8? true -> include 5. rem_sum=8, need=2.
+        #        i=1 (3): need-1=1 <=1 yes, pref[1]=2 <=5? true -> include 3. rem_sum=5, need=1.
+        #        i=0 (2): need-1=0 <=0 yes, pref[0]=0 <=3? true -> include 2. rem_sum=3, need=0.
+        #        res = [7,5,3,2] -> reverse [2,3,5,7]. Good.
+        
+        #    Example 3: n=5, s=1, primes=[2,3,5], pref[1]=2>1 so k=0 -> return [].
+        
+        #    Edge: if s is very small, k=0.
+        
+        #    Need to ensure that when need-1=0, pref[0]=0 <= rem_sum - primes[i] always true if primes[i] <= rem_sum. So we include if possible.
+        
+        #    Why does this greedy produce lexicographically largest? Because we try to include the largest primes first whenever feasible (i.e., we can still pick enough smaller primes to reach total count k). This ensures that we drop the smallest possible primes, thereby maximizing the minimum of the selected set, leading to lexicographically larger sequence.
+        
+        #    Complexity: O(m) after sieve, m ~ 78k for n=1e6, fine.
+        
+        # Implementation details:
+        #   - Generate primes using efficient sieve.
+        #   - Compute prefix sums list pref where pref[0]=0, pref[i+1]=pref[i]+primes[i] for i in range(m). So pref[t] = sum of first t primes.
+        #   - Find k: binary search or linear scan since m small. Linear scan from end? We need largest i such that pref[i] <= s. Since pref is increasing, we can do:
+        #        k = 0
+        #        for i in range(m):
+        #            if pref[i+1] <= s: k = i+1  # because pref[i+1] sum of first i+1 primes
+        #        or use bisect.
+        #   - If k == 0: return []
+        #   - Then run greedy as above using pref (where pref[t] for t from 0..k). Note: when checking pref[need-1], need-1 may be 0, pref[0]=0.
+        #        need starts at k.
+        #        rem_sum = s
+        #        res = []
+        #        for i in range(m-1, -1, -1):
+        #            if need == 0: break
+        #            if primes[i] <= rem_sum and need-1 <= i:  # i is index, number of primes to left = i (since indices 0..i-1 are left of i)
+        #                # Actually left count = i (indices 0..i-1), so need-1 <= i
+        #                if pref[need-1] <= rem_sum - primes[i]:
+        #                    res.append(primes[i])
+        #                    rem_sum -= primes[i]
+        #                    need -= 1
+        #        # After loop, need should be 0.
+        #        res.reverse()
+        #        return res
+        
+        #    Let's test with a custom case: primes=[2,3,11,13], s=18.
+        #        smallest sums: 2<=18, 5<=18, 16<=18, 29>18 => k=3 (2+3+11=16<=18, 2+3+13=18? 2+3+13=18 <=18, but smallest 3 are 2,3,11 sum=16; smallest 4 sum=29>18 so k=3)
+        #        Need=3, rem=18.
+        #        i=3 (13): need-1=2 <=3? yes, pref[2]=5 <=5? 13<=18 and 5<=5 -> include 13. rem=5, need=2.
+        #        i=2 (11): need-1=1 <=2? yes, pref[1]=2 <= -? rem-11= -6? 5-11=-6 no. So skip 11.
+        #        i=1 (3): need-1=1 <=1? yes, pref[1]=2 <=2? 5-3=2, 2<=2 -> include 3. rem=2, need=1.
+        #        i=0 (2): need-1=0 <=0 yes, pref[0]=0 <=0? 2-2=0 -> include 2. rem=0, need=0.
+        #        Selected [13,3,2] -> reverse [2,3,13]. Sum=18, size 3. Is there a lexicographically larger? Other size-3 subsets: [2,3,11] sum=16, [2,11,13]=26>18, [3,11,13]=27>18. So only [2,3,13] and [2,3,11] are feasible? [2,3,11]=16 <=18, [2,3,13]=18 <=18. Lexicographically compare [2,3,11] vs [2,3,13]: at third element 11<13, so [2,3,13] is lexicographically larger. Our output [2,3,13] is correct.
+        
+        #    Another test: primes=[2,3,5,7,11], s=12.
+        #        smallest sums: 2,5,10,17>12 => k=3 (2+3+5=10<=12, 2+3+7=12<=12 also size 3 possible with 2,3,7=12). But smallest 3 are 2,3,5 sum=10; smallest 4 sum=17>12 so k=3.
+        #        Need=3, rem=12.
+        #        i=4 (11): need-1=2 <=4 yes, pref[2]=5 <=1? 12-11=1 <5 -> no.
+        #        i=3 (7): need-1=2 <=3 yes, pref[2]=5 <=5? 12-7=5, 5<=5 -> include 7. rem=5, need=2.
+        #        i=2 (5): need-1=1 <=2 yes, pref[1]=2 <=0? 5-5=0 <2 -> no.
+        #        i=1 (3): need-1=1 <=1 yes, pref[1]=2 <=2? 5-3=2, 2<=2 -> include 3. rem=2, need=1.
+        #        i=0 (2): need-1=0 <=0 yes, pref[0]=0 <=0? 2-2=0 -> include 2. rem=0, need=0.
+        #        Selected [7,3,2] -> [2,3,7]. Check other size-3 subsets with sum<=12: [2,3,5]=10, [2,3,7]=12, [2,5,7]=14>12, [3,5,7]=15>12. Lexicographically largest among feasible size-3 is [2,3,7] (since [2,3,5] < [2,3,7]). Good.
+        
+        #    Edge: when need-1 <= i fails because i < need-1, we skip. That's correct.
+        
+        #    One more: primes=[2,3,5], s=8.
+        #        smallest sums: 2,5,10>8 => k=2 (2+3=5<=8, 2+5=7<=8, 3+5=8<=8). So k=2 (since smallest 2 sum=5<=8, smallest 3 sum=10>8). Need=2, rem=8.
+        #        i=2 (5): need-1=1 <=2 yes, pref[1]=2 <=3? 8-5=3>=2 -> include 5. rem=3, need=1.
+        #        i=1 (3): need-1=0 <=1 yes, pref[0]=0 <=0? 3-3=0 -> include 3. rem=0, need=0.
+        #        Selected [5,3] -> [3,5]. Check: subsets size2: [2,3]=5, [2,5]=7, [3,5]=8. Lexicographically largest is [3,5] (since [2,5] < [3,5] because 2<3). Good.
+        
+        #    So algorithm works.
+        
+        #    Implementation steps:
+        
+        #    Sieve: use bytearray or list of bools. Since n up to 1e6, list of bools is fine.
+        #    Optimization: only up to n, but we need primes <= n.
+        
+        #    Edge: n < 2 -> no primes.
+        
+        #    Let's code.
+        
+        if n < 2:
+            return []
+        
+        # Sieve
+        is_prime = [True] * (n + 1)
+        is_prime[0] = is_prime[1] = False
+        for i in range(2, int(n ** 0.5) + 1):
+            if is_prime[i]:
+                step = i
+                start = i * i
+                # slice assignment for speed
+                is_prime[start:n + 1:step] = [False] * ((n - start) // step + 1)
+        
+        primes = [i for i in range(2, n + 1) if is_prime[i]]
+        m = len(primes)
+        
+        # prefix sums: pref[0]=0, pref[i] = sum of first i primes (i from 1..m)
+        pref = [0] * (m + 1)
+        for i in range(1, m + 1):
+            pref[i] = pref[i - 1] + primes[i - 1]
+        
+        # Find maximum k such that pref[k] <= s
+        # k in [0, m]
+        # Since pref is increasing, we can do binary search or linear.
+        # Linear scan is O(m) which is fine.
+        k = 0
+        for i in range(1, m + 1):
+            if pref[i] <= s:
+                k = i
+            else:
+                # since pref increasing, we can break if pref[i] > s and continue? Actually once >s, later are larger, so we can break.
+                # But careful: pref[i] > s doesn't guarantee all later >s? Yes, increasing. So break.
+                break
+        
+        if k == 0:
+            return []
+        
+        # Greedy selection from largest to smallest
+        need = k
+        rem_sum = s
+        selected_desc = []
+        
+        # Iterate i from m-1 down to 0
+        for idx in range(m - 1, -1, -1):
+            if need == 0:
+                break
+            if primes[idx] <= rem_sum and need - 1 <= idx:
+                # left count = idx (indices 0..idx-1), need-1 picks from left
+                if pref[need - 1] <= rem_sum - primes[idx]:
+                    selected_desc.append(primes[idx])
+                    rem_sum -= primes[idx]
+                    need -= 1
+        
+        # need should be 0 now; but just in case (should not happen), if not, fallback to smallest k primes? but feasible solution exists.
+        # Reverse to get increasing order
+        selected_desc.reverse()
+        return selected_desc
+    
+    # Note: The method name in problem is maxPrimes, as given.
+```
+[finish_reason: stop | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 724, 'completion_tokens': 7573, 'total_tokens': 8297, 'cost': 0.00120435, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 80, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00120435, 'upstream_inference_prompt_cost': 6.84e-05, 'upstream_inference_completions_cost': 0.00113595}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

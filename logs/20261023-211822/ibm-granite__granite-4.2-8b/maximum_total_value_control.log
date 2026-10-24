@@ -1,0 +1,587 @@
+
+Assistant: We need to solve the problem: given arrays value[i] and decay[i] (both length n up to 1e5), and integer m (up to 1e9), we can select indices multiple times. Each selection of index i at its t-th selection (t starting at 1) yields value[i] - decay[i] * (t-1). We can select any total number of selections ≤ m (exactly m selections? "total number of selections across all indices must not exceed m", so we can pick at most m selections; but obviously we will pick exactly m because picking more selections cannot hurt if we pick non-negative? Actually value[i] - decay[i]*(t-1) could become negative for large t. So we might stop selecting when further selections would yield non-positive contributions. However, if we have to pick exactly m selections to maximize total value? The wording "must not exceed m" means we can pick fewer than m selections if that yields higher total? But picking extra selections that yield non-positive would decrease total, so optimal will pick exactly m selections if all possible selections yield non-negative contributions; otherwise might pick less? But if some selection yields negative, you wouldn't pick it; you could pick fewer than m selections. However the constraint is "total number of selections across all indices must not exceed m". So you can choose any number k ≤ m. So the objective is maximize sum of selected values.
+
+We need to compute maximum total value.
+
+This is a known problem: "Maximum Total Value" from LeetCode? Possibly similar to "Maximum Total Value with decay". Usually solution uses greedy with priority queue: at each step pick the index with maximum current value, where current value = value[i] - decay[i] * (k_i) where k_i is number of times selected so far. But because m can be up to 1e9, we cannot simulate m steps individually.
+
+We need to find optimal allocation of selections across indices to maximize sum of arithmetic progression terms: for each index i, if we select it t_i times, total contribution from index i = sum_{k=0}^{t_i-1} (value[i] - decay[i] * k) = t_i * value[i] - decay[i] * t_i*(t_i-1)/2. We need to choose non-negative integers t_i such that sum t_i ≤ m (actually ≤ m), maximize sum (t_i * value[i] - decay[i] * t_i*(t_i-1)/2). Since adding extra selections for an index beyond where marginal gain becomes negative would not be beneficial, we can restrict t_i to be ≤ ceil(value[i]/decay[i])? Actually the marginal gain for the (t+1)-th selection of index i is value[i] - decay[i] * t. So as long as t < value[i]/decay[i], marginal gain positive; after that zero or negative. So optimal t_i will not exceed floor((value[i] - 1)/decay[i])? Actually if value[i] - decay[i]*t > 0, marginal positive; if equal zero, selecting yields zero, could be included or not; if negative, not beneficial. So we can cap t_i at most T_i = floor((value[i] - 1)/decay[i])? Let's define max useful selections per index: the largest t such that value[i] - decay[i]*(t-1) > 0 => t-1 < value[i]/decay[i] => t ≤ floor((value[i]-1)/decay[i]) + 1? Let's solve: value[i] - decay[i]*(t-1) > 0 => t-1 < value[i]/decay[i] => t ≤ floor((value[i]-1)/decay[i]) + 1? Example value=6 decay=2: value/decay=3. value - decay*(t-1) >0 => 6-2(t-1)>0 => t-1<3 => t≤3. Indeed t can be 1,2,3; the third selection yields 6-2*2=2>0, fourth would be 0? 6-2*3=0 not positive. So we can allow t where marginal >0; zero marginal can be included or not doesn't affect sum (zero adds nothing). So we can cap at t_max[i] = floor((value[i]-1)/decay[i]) + 1? Let's compute: floor((value[i]-1)/decay[i]) = floor((6-1)/2)=floor(2.5)=2; +1 =3, correct. For value=7 decay=3: value/decay≈2.33; floor((7-1)/3)=floor(2)=2; +1=3; third selection yields 7-3*2=1>0, fourth would be -2<0. So t_max=3 works. So t_max[i] = floor((value[i]-1)/decay[i]) + 1. But if value[i] < decay[i], then floor((value[i]-1)/decay[i]) = 0? value=1 decay=2: (0)/2=0 floor 0 +1 =1, correct. So cap is at most around value[i]/decay[i] +1.
+
+But m up to 1e9, but n up to 1e5. The total possible selections across all indices that have positive marginal contributions is sum t_max[i] which could be up to n * (value[i]/decay[i]) but value[i] up to 1e9, decay[i]≥1, so t_max[i] up to 1e9. So sum could be huge (up to 1e14), cannot enumerate all selections individually.
+
+We need a smarter method.
+
+Observation: The problem resembles selecting top m marginal gains from all possible selections across indices, where each index i yields a sequence of marginal gains: value[i], value[i]-decay[i], value[i]-2*decay[i], ... as long as >0. We need to pick at most m selections (since extra selections that give zero or negative would not be chosen). So the optimal solution is to take the m largest marginal gains among all these sequences (or fewer if fewer than m positive gains). Because selecting a set of selections with non-overlapping per-index counts corresponds to picking some number of terms from each sequence, and total gain is sum of selected marginal gains. Since marginal gains for each index are decreasing (by decay[i] each step), the optimal selection of up to m picks is indeed to take the m largest marginal gains overall (this is classic: picking top m from multiple decreasing sequences). However, we must ensure that we don't pick a later term from an index without picking all earlier terms? Actually if you pick the t-th marginal gain of index i (value[i] - decay[i]*(t-1)), you must have selected the previous t-1 selections of that index to achieve that marginal gain? Wait, the definition: "If you select index i for the t^th time, where t is 1-indexed, the value gained is value[i] - decay[i] * (t - 1)." That means the gain you get from the selection depends on how many times you have selected that index before (i.e., the count). So you cannot skip; you must have selected it t-1 times already to get the t-th gain. However, if you decide to select index i k times total, the total contribution is sum_{j=0}^{k-1} (value[i] - decay[i]*j). That's exactly the sum of the first k marginal gains of that index. So picking a marginal gain at position j+1 implicitly includes all previous marginal gains for that index. Thus, when picking the top m marginal gains across all sequences, you must ensure that for each index, you pick a prefix of its sequence. That's automatically satisfied if you pick the top m marginal gains overall and for each index you take a contiguous prefix? Not necessarily: Suppose you pick a later marginal gain but not an earlier one because the earlier one might be smaller than some other picks? But earlier marginal gains are larger (since decay[i] ≥0). Actually decay[i] ≥ 1? constraints say decay[i] >=1. So marginal gains are strictly decreasing: value[i] > value[i]-decay[i] > ... So the first marginal gain is the largest for that index. Therefore, if you pick any marginal gain from index i at position t (i.e., the t-th selection), you must have already picked the first t-1 selections because they are larger or equal? They are larger (since decay positive). Thus, if the t-th marginal gain is among the top m selections, then all earlier marginal gains for that index must also be among the top m selections because they are larger. However, it's possible that due to competition from other indices, the earlier marginal gain might not be selected if m is small? Example: value[0]=10 decay[0]=9 => marginal gains: 10,1,-8,... value[1]=5 decay[1]=1 => gains:5,4,3,2,... Suppose m=1. Top marginal gain is 10 (index0 first). That's fine. Suppose m=2. Top two gains might be 10 and 5? Actually gains: index0:10,1; index1:5,4,... Top two are 10 and 5. But if we pick index0 first (10) and index1 first (5), that's fine; we haven't picked index0 second (1) because it's not in top two. That's okay; we don't need to pick prefix? Wait, to get the second selection of index0 (gain 1), you must have selected index0 already once. But we selected index0 once (gain 10) and index1 once (gain 5). That's fine; we have selected index0 once, and we haven't selected index0 again. That's allowed. So picking a prefix of selections for each index is automatically satisfied if we only pick some number of selections per index; we don't need to pick all earlier marginal gains if we pick a later one? Actually if we pick the t-th selection of index i, that means we have selected index i t times total. So the set of selections includes the first t selections of that index. Therefore, if we pick a marginal gain corresponding to the t-th selection, we must have also picked the first t-1 selections. Thus, when selecting a set of selections (i.e., choosing which indices to select how many times), the marginal gains selected must include all earlier ones for that index. Therefore, the set of marginal gains selected for each index must be a prefix.
+
+Now, if we take the top m marginal gains overall without regard to prefixes, it might happen that we pick the second marginal gain of an index but not the first? That cannot happen because the first is larger than the second (since decay positive), so if the second is among top m, the first must be among top m as well because it's larger. However, if m is very small, it's possible that the first of an index is not selected while the second is selected? No, because the first is larger than the second, so if the second is in top m, the first must be at least as large, thus also in top m unless there are exactly m numbers equal? But strictly decreasing ensures first > second, so first must be included. Therefore, picking the top m marginal gains overall automatically yields a prefix for each index? Let's test edge: suppose two indices with gains: A: 10, 0; B: 9, -1; m=1. Top gain 10 from A1, we don't pick A2 (0) or B1 (9). That's fine. Suppose m=2, top gains 10 and 9, we pick A1 and B1, not A2. That's fine (prefix of A is just A1). Suppose we try to pick A2 without A1: gains A1=10, A2=0; B1=9; top m=1 could be B1=9 (if m=1) and not pick A1? That would not pick A2. But could we pick A2 without A1? That would require selecting index A twice, which includes A1 automatically. So if we pick A2 (i.e., second selection of A), we must have selected A1 already. So if our selection set includes A2 but not A1, that's impossible. But would the top m marginal gains ever include A2 without A1? Since A1 > A2, if A2 is among top m, then A1 is larger and would also be among top m (since m includes the largest m numbers). Therefore, A1 will be included. So indeed picking top m marginal gains ensures prefix property. Therefore, the optimal solution is to take the m largest marginal gains among all sequences (only those >0), and sum them.
+
+Thus the problem reduces to: for each i, generate the decreasing sequence of marginal gains: value[i], value[i]-decay[i], value[i]-2*decay[i], ..., down to >0 (or >=0? we can stop when <=0 because picking zero gain doesn't affect sum but could be used to fill up to m if we need exactly m selections? However we can select fewer than m selections if some marginal gains are negative; picking zero gain adds nothing, picking negative reduces sum, so optimal will never pick negative; zero gain can be picked or not, doesn't matter. So we can cap at gains >0). Let L_i be the count of positive gains for index i: L_i = floor((value[i]-1)/decay[i]) + 1.
+
+Now we need to pick the m largest gains among all these positive gains. However total number of positive gains across all indices could be huge (up to sum L_i up to 1e14), cannot enumerate all.
+
+We need a method to compute sum of top m positive gains efficiently.
+
+This is similar to "find sum of top m elements from multiple arithmetic sequences". We can binary search on the threshold gain G such that there are at least m positive gains >= G? But gains are integers? value[i] and decay[i] are integers, so gains are integers (value[i] - k*decay[i]) possibly negative. We can binary search on value threshold T (integer) such that the number of marginal gains >= T across all indices is at least m, and the sum of the top m gains can be computed via greedy with T.
+
+Standard approach: binary search for the smallest value V such that the total number of gains >= V is <= m? Actually we want to find the threshold gain such that we pick all gains > threshold, and possibly some gains equal to threshold.
+
+Let f(x) = total number of gains >= x. This is monotonic decreasing in x. We can binary search for the largest x such that f(x) >= m? Wait we want to find the minimum value G such that the number of gains > G is < m? Let's define: we want to select top m gains. Let threshold T be such that we take all gains > T, and then take some gains equal to T to reach total m.
+
+So we can find T such that count of gains > T < m <= count of gains >= T.
+
+We can binary search on T (integer) to find the largest T where count(>= T) >= m? Actually we need to find the minimal T such that count(> T) < m <= count(>= T). Equivalent to find T such that count(>= T) >= m and count(> T) < m.
+
+We can binary search on T (maybe in range [1, max(value)] since gains are positive). But gains can be zero? zero gains are not positive; we ignore non-positive. So we consider only positive gains.
+
+Define for a given integer bound B (could be non-integer?), we need efficient computation of count(>= B) and sum of gains >= B? But gains are arithmetic sequences decreasing with step decay[i]. For each index i, the gains are: value[i] - k*decay[i] for k=0,...,L_i-1, where L_i = floor((value[i]-1)/decay[i])+1 ensures last gain >=1? Actually last gain = value[i] - (L_i-1)*decay[i] >=1. So all positive.
+
+Given B (integer >=1), we can compute for each i the number of gains >= B: the largest k such that value[i] - k*decay[i] >= B => k <= (value[i] - B)/decay[i]. So count_i(B) = floor((value[i] - B)/decay[i]) + 1, but not exceeding L_i. Actually if B <= value[i], then the smallest k satisfying is 0; we need k such that value[i] - k*decay[i] >= B => k <= (value[i] - B)/decay[i]. So number of terms = floor((value[i] - B)/decay[i]) + 1, as long as B <= value[i]; else 0.
+
+Similarly, sum of gains >= B for index i? That would be sum of arithmetic progression from first gain (value[i]) down to the smallest gain >= B. That is the sum of first t_i terms where t_i = count_i(B). But careful: if we take all gains >= B, we are taking a prefix of the sequence (since gains decreasing). Indeed, if B is less than or equal to the smallest positive gain, we take all L_i. But if B is larger, we take only the top few gains that are >= B.
+
+However, when selecting top m gains overall, we might not take all gains >= T; we might take only some of those equal to T if there are more than needed. So we need to compute count and sum of gains > T and >= T.
+
+Standard method: binary search for threshold T such that total count of gains > T is less than m, and total count of gains >= T is at least m. Let's denote:
+
+- C_gt(T) = total number of gains strictly greater than T.
+- C_ge(T) = total number of gains greater or equal T.
+
+We want T such that C_gt(T) < m <= C_ge(T).
+
+Then we take all gains > T (they are definitely selected), and then take (m - C_gt(T)) gains equal to T (choose arbitrarily from those equal to T). Since all gains equal to T are equal, any selection works.
+
+Now compute total sum = sum_{gains > T} + T * (m - C_gt(T)).
+
+But we must ensure that for each index, when we take all gains > T, we are taking a prefix of its sequence (since gains decreasing). That's fine.
+
+Now we need to efficiently compute C_gt(T) and C_ge(T) and sum_{gains > T} for a given T.
+
+Given T (integer), for each index i, we need to find the number of gains > T. Gains are value[i] - k*decay[i] > T for k=0,...,L_i-1.
+
+Solve value[i] - k*decay[i] > T => k < (value[i] - T)/decay[i]. So the largest integer k satisfying is k_max_strict = ceil((value[i] - T)/decay[i]) - 1? Let's derive: value[i] - k*decay[i] > T => k*decay[i] < value[i] - T => k < (value[i] - T)/decay[i]. So the number of integers k >=0 satisfying is floor((value[i] - T - 1)/decay[i]) + 1? Actually if (value[i] - T) is divisible by decay[i], say value[i] - T = d * decay[i], then for k = d, we have value[i] - d*decay[i] = T, which is not > T. So k must be ≤ d-1. So number of k with value[i] - k*decay[i] > T is d = floor((value[i] - T - 1)/decay[i]) + 1? Let's define t = (value[i] - T - 1) // decay[i] + 1? Let's test: value=6, decay=2, T=4. Gains:6,4,2. >4 are 6 only? 4 is equal, not greater. So count_gt=1. (value[i]-T)=2, (value[i]-T-1)=1, 1//2=0 +1=1 correct. Another: value=7 decay=3 T=4. Gains:7,4,1. >4 are 7 only? 4 equal not greater. count=1. (value-T)=3, (value-T-1)=2, 2//3=0 +1=1 correct. Another: value=5 decay=1 T=3. Gains:5,4,3,2,1. >3 are 5,4? 4>3 yes, 3 equal not >. So count=2. (value-T)=2, (value-T-1)=1, 1//1=1 +1=2 correct. So formula: count_gt_i(T) = floor((value[i] - T - 1) / decay[i]) + 1, provided value[i] - T - 1 >= 0? If value[i] <= T, then no gains > T. Need to handle case when value[i] <= T: then count_gt_i = 0.
+
+Similarly, count_ge_i(T) = number of gains >= T: solve value[i] - k*decay[i] >= T => k <= (value[i] - T)/decay[i]. So count_ge_i(T) = floor((value[i] - T) / decay[i]) + 1, if value[i] >= T else 0.
+
+Now sum of gains > T for index i: sum of first count_gt_i terms (the largest count_gt_i gains that are > T). That is sum_{k=0}^{c-1} (value[i] - k*decay[i]), where c = count_gt_i(T). This sum can be computed as c*value[i] - decay[i] * c*(c-1)/2.
+
+Similarly, sum of gains >= T for index i: if we take all gains >= T, that corresponds to taking c_ge = count_ge_i(T) terms (the top c_ge gains that are >= T). However, note that when we later only take some of the gains equal to T, we might not take all gains equal to T. But for computing sum of gains > T (certainly taken) we use c_gt.
+
+Thus we can compute total C_gt(T), total sum_gt(T) in O(n) per evaluation.
+
+Now binary search for T. T must be in range [1, max(value)]? But gains can be as low as 1. However T could be 0? Since we only consider positive gains, the smallest gain we might include could be 1. But threshold T could be 0 if m is larger than total positive gains? Actually if m exceeds total number of positive gains across all indices, then we can only select all positive gains (since selecting zero or negative would decrease sum). So the maximum total value is sum of all positive gains. In that case, we should take all positive gains and stop. So we need to handle case where m >= total_positive = sum L_i. Then answer = sum of all positive gains.
+
+Otherwise, m < total_positive, and we need to select top m positive gains.
+
+Thus we can compute total_positive = sum L_i. If m >= total_positive, answer = sum of all positive gains modulo MOD.
+
+Otherwise, binary search T among integers from 1 to max(value) (or maybe down to 1). We need to find T such that C_gt(T) < m <= C_ge(T). Since C_gt(T) is decreasing as T increases, and C_ge(T) also decreasing.
+
+We can binary search for the smallest T such that C_ge(T) >= m? Actually we need the condition C_gt(T) < m <= C_ge(T). Equivalent to: C_gt(T) < m and C_ge(T) >= m. We can binary search on T to find the maximum T such that C_ge(T) >= m? Let's think.
+
+Define F(T) = C_ge(T). F(T) is non-increasing as T increases. We want the largest T such that F(T) >= m? Because as T increases, F(T) decreases. The maximum T for which we have at least m gains >= T would give the highest threshold where we might need to include some T's. Actually we need T such that we take all gains > T and some of gains = T. Typically we set T as the m-th largest gain value. So T is the value of the m-th largest gain (if we sort descending). So we need to find T such that the m-th largest gain is T. That is equivalent to C_ge(T) >= m and C_gt(T) < m. So T is the unique integer where this holds (if there are duplicates). We can binary search for the smallest T such that C_gt(T) < m? Let's define G(T) = C_gt(T). G(T) < m. Since G(T) decreases as T increases, we can find the smallest T such that G(T) < m? That might not directly give C_ge(T) >= m.
+
+Better approach: binary search on T to find the largest T such that C_ge(T) >= m. Let T_max be that largest T with C_ge(T) >= m. Then for that T_max, we have C_ge(T_max) >= m, and for T_max+1, C_ge(T_max+1) < m. Then we need to check C_gt(T_max). It's possible that C_gt(T_max) could be >= m? If C_gt(T_max) >= m, then the m-th largest gain is > T_max, contradicting maximality of T_max? Let's test: Suppose all gains are integers. Let T* be the m-th largest gain value. Then C_ge(T*) >= m and C_gt(T*) < m. Also for any T > T*, C_ge(T) < m (since T* is the m-th largest, there are fewer than m gains >= T for T > T*). So T_max (largest T with C_ge(T) >= m) equals T*. So we can binary search for T_max = max T such that C_ge(T) >= m.
+
+We can do binary search on integer T in [1, max(value)]. For each mid, compute C_ge(mid). If C_ge(mid) >= m, then mid is feasible (i.e., we have at least m gains >= mid), so we try higher mid (since we want largest T). Else, we need lower mid.
+
+After we find T = T_max, we compute C_gt(T) and sum_gt(T). Then remaining = m - C_gt(T). Then total sum = sum_gt(T) + T * remaining.
+
+But we must ensure that we don't exceed per-index limits? Taking all gains > T automatically respects prefixes. Taking some gains equal to T: we need to pick exactly remaining gains among those equal to T. However, for each index, the gains equal to T might appear multiple times? Since gains are value[i] - k*decay[i] = T for some k. Because decay[i] may not divide difference exactly, but there can be at most one occurrence of a given value per index? Actually arithmetic progression with difference decay[i] could hit T at most once because it's strictly decreasing and integer steps. So each index contributes at most one gain equal to T (if T lies in the sequence). Indeed, for fixed i, the gains are distinct because decay[i] >=1, so no repeats. So each index can have at most one gain equal to T. So remaining picks among gains equal to T can be any subset of indices that have a gain exactly T, up to remaining. Since all such gains are equal (value T), picking any is fine.
+
+Thus the formula works.
+
+Now we need to implement binary search efficiently.
+
+But note that value[i] up to 1e9, decay[i] up to 1e9, m up to 1e9. n up to 1e5. Binary search over range up to 1e9 (log2(1e9) ~ 30) each iteration O(n) = 1e5, total ~3e6 operations, fine.
+
+Edge Cases:
+
+- If m = 0? But constraints m >=1.
+
+- If total_positive < m, answer is sum of all positive gains.
+
+- When computing C_ge(T) for T, need to handle value[i] < T => 0.
+
+- Use integer arithmetic carefully to avoid overflow? Python big ints fine, but we need modulo at end. However intermediate sums can be huge (up to m * value up to 1e9 * 1e9 = 1e18, but sum of up to 1e5 indices each with up to 1e9 selections? Actually total_positive could be up to sum L_i where L_i up to 1e9, but total_positive could be up to 1e14, sum of gains could be up to ~1e14 * 1e9? That's 1e23, beyond Python int? Python can handle arbitrarily large, but we will take modulo at end. However we need to compute sum_gt(T) exactly? We need to compute sum_gt(T) exactly (as integer) to add T * remaining modulo MOD. But sum_gt(T) could be huge (up to ~1e23), but Python can handle. However we should compute modulo MOD at the end? The problem says return answer modulo 1e9+7. So we can compute everything modulo MOD? But the selection of threshold and counts depends on exact counts (not modulo). We need exact counts C_gt and C_ge to determine T and remaining. Those counts can be up to ~1e14, which fits in Python int (unbounded). So we can compute them exactly.
+
+But sum_gt(T) could be huge, but we only need sum_gt(T) modulo MOD? Actually total answer = sum_gt(T) + T * remaining. We need answer modulo MOD. So we can compute sum_gt(T) modulo MOD and then add (T * remaining) % MOD, and take mod MOD. However careful: sum_gt(T) is sum of gains > T, which are all positive integers. We can compute sum_gt(T) modulo MOD by iterating over indices and computing c = count_gt_i(T), then sum_i = c*value[i] - decay[i]*c*(c-1)//2. This can be computed modulo MOD? But division by 2 needs modular inverse of 2 modulo MOD (since MOD is prime 1e9+7). However the expression c*(c-1)//2 is integer division; we can compute it as (c*(c-1)//2) % MOD after ensuring no fractional? Since we need exact integer value for sum_gt(T) before modulo? Actually we only need final answer modulo MOD, so we can compute sum_i modulo MOD using modular arithmetic with division by 2 handled via modular inverse of 2 because (c*(c-1)//2) mod MOD = (c*(c-1) * inv2) mod MOD, but only if c*(c-1) is even? In modular arithmetic, we can compute (c*(c-1)//2) mod MOD as (c*(c-1) * inv2) % MOD because MOD is odd, and integer division is exact in integers, but using modular inverse works because 2 has an inverse modulo MOD, and (c*(c-1)//2) mod MOD = (c*(c-1) * inv2) mod MOD when c*(c-1) is even? Actually if c*(c-1) is odd, then (c*(c-1)//2) is not an integer? But c*(c-1) is always even because product of two consecutive integers is even. So integer division by 2 yields integer. In modular arithmetic, we can compute (c*(c-1) // 2) % MOD by first computing (c*(c-1)) % (2*MOD)? That's messy. Safer to compute exact integer using Python big ints and then mod at the end, since Python can handle big ints up to ~1e23 easily (fits within 78 bits? Actually 1e23 is about 2^76, still within Python's arbitrary precision, fine). So we can compute sum_gt(T) as exact integer using Python ints, then take % MOD. Similarly for total sum.
+
+But note that c can be up to ~1e9, c*(c-1)//2 up to ~5e17, times decay up to 1e9 gives up to 5e26? Let's estimate worst-case: value up to 1e9, decay up to 1e9, c up to value/decay ≈ 1e9. sum_i = c*value - decay * c*(c-1)/2 ≈ 1e9*1e9 - 1e9*(1e18)/2 = 1e18 - 5e26? That's negative? Wait decay * c*(c-1)/2 could be as large as 1e9 * (1e9*1e9)/2 = 5e26, which is huge (~2^88). Python can handle up to arbitrarily large, but performance might be slower for huge ints? But with n=1e5, each calculation of c up to 1e9 and multiplication of big ints up to ~10^27 may be okay? Python big ints of 90 bits are fine; actually 5e26 is about 2^88, still fits in a few words (Python uses 30-bit limbs? 88 bits fits in 3 limbs). So it's fine. So we can compute exact sums using Python integers and then mod at the end.
+
+But we must be careful with binary search using C_ge(mid) and C_gt(mid) computed with exact integers.
+
+Implementation steps:
+
+1. Compute L_i for each i? Not needed directly; we need total_positive = sum L_i, where L_i = floor((value[i]-1)/decay[i]) + 1 if value[i] >=1 else 1? value[i] >=1 per constraints. So compute total_pos = sum( (value[i]-1)//decay[i] + 1 ).
+
+2. If m >= total_pos: compute total sum of all positive gains. That sum = sum_i [ L_i * value[i] - decay[i] * L_i*(L_i-1)//2 ]. Return total_sum % MOD.
+
+3. Else (m < total_pos), binary search for T (integer) as described.
+
+Binary search bounds: low = 1, high = max(value). But T could be 0? No, since we only consider positive gains, smallest gain is at least 1. So low=1. However if m < total_pos, there exists at least one gain >0, and the m-th largest gain is at least 1. So T >=1.
+
+We need to find largest T such that C_ge(T) >= m.
+
+Define function count_ge(T): returns total number of gains >= T.
+
+count_ge_i(T) = 0 if value[i] < T else ( (value[i] - T) // decay[i] ) + 1.
+
+But careful: when value[i] - T is negative, integer division in Python floors toward negative infinity? We'll check condition value[i] >= T first.
+
+Similarly, count_gt_i(T) = 0 if value[i] <= T? Actually if value[i] <= T, then no gains > T. Else: (value[i] - T - 1) // decay[i] + 1, with integer floor division that floors toward negative infinity? In Python, // for negative numbers floors down, but (value[i] - T - 1) could be negative if value[i] = T. For value[i] = T, we want count_gt_i = 0 because gains > T: value[i] = T is not > T. So condition: if value[i] <= T, count_gt_i = 0. Else compute c = (value[i] - T - 1) // decay[i] + 1. Since value[i] - T - 1 >=0 when value[i] > T, safe.
+
+Similarly, count_ge_i(T) = 0 if value[i] < T else ((value[i] - T) // decay[i]) + 1. When value[i] = T, ((0)//decay[i]) +1 = 1, correct.
+
+Now binary search:
+
+lo = 1, hi = max(value) (maybe max(value) is sufficient). We'll find the maximum T such that count_ge(T) >= m.
+
+while lo <= hi:
+    mid = (lo + hi) // 2
+    if count_ge(mid) >= m:
+        T = mid
+        lo = mid + 1
+    else:
+        hi = mid - 1
+
+After loop, T = hi (since hi will be last feasible). Or we can store ans.
+
+Then compute C_gt(T) and sum_gt(T) using count_gt_i and sum_i formula.
+
+remaining = m - C_gt(T) (should be <= count_ge(T) - C_gt(T) = number of gains equal to T). Then total = sum_gt(T) + T * remaining.
+
+Return total % MOD.
+
+But we must ensure that remaining <= count_eq(T) (number of gains equal to T). It should hold by construction.
+
+Let's test with examples.
+
+Example1: value=[6,5,4], decay=[2,1,1], m=4.
+
+Compute L_i: i0: (6-1)//2+1 = 5//2+1=2+1=3? (6-1)=5//2=2 +1=3 -> gains:6,4,2? Wait L_i=3 gives gains 6,4,2 (positive). i1: (5-1)//1+1=4+1=5? (5-1)=4//1=4+1=5 -> gains:5,4,3,2,1? That's 5 gains. But is gain 1 positive? yes. i2: (4-1)//1+1=3+1=4 -> gains:4,3,2,1. total_pos = 3+5+4=12 > m=4.
+
+Binary search for T:
+
+max(value)=6.
+
+Compute count_ge(T):
+
+- T=4: count_ge_i0: value0=6>=4 -> (6-4)//2=2//2=1 +1=2? gains >=4: 6 and 4? yes 2. count_i1: (5-4)//1=1+1=2 (5,4). count_i2: (4-4)//1=0+1=1 (4). total=5 >=4. T=5: count_i0: (6-5)//2=0+1=1 (6), i1: (5-5)//1=0+1=1 (5), i2: (4-5)<0 =>0. total=2 <4. So largest T with count_ge>=4 is T=4? Check T=4 gave 5>=4, T=5 gave 2<4, so T=4.
+
+Now C_gt(4): count_gt_i0: value0=6>4 -> (6-4-1)//2+1 = (1)//2+1=0+1=1 (only gain 6 >4). i1: (5-4-1)//1+1 = (0)//1+1=1 (only gain 5>4). i2: (4-4-1) negative ->0. So C_gt=2. sum_gt: i0: c=1 -> 6; i1: c=1 ->5; total sum_gt=11. remaining = m - C_gt = 4-2=2. Number of gains equal to 4: count_ge(4)-C_gt=5-2=3 (gains equal 4: from i0:4, i1:4, i2:4). So we take 2 of them. total = 11 + 4*2 = 19. matches.
+
+Example2: value=[7,2,2], decay=[3,2,1], m=2.
+
+Compute L_i: i0: (7-1)//3+1 =6//3+1=2+1=3? (7-1)=6//3=2+1=3 -> gains:7,4,1. i1: (2-1)//2+1=1//2+1=0+1=1 -> gains:2? Actually (2-1)//2=0+1=1 -> gains:2 (since 2-2=0 not positive), correct. i2: (2-1)//1+1=1+1=2 -> gains:2,1. total_pos=3+1+2=6 >2.
+
+max(value)=7.
+
+Find T: T=4? count_ge(4): i0: (7-4)//3=3//3=1+1=2 (7,4); i1: (2-4)<0 ->0; i2: (2-4)<0 ->0; total=2 >=2. T=5: i0: (7-5)//3=2//3=0+1=1; total=1<2. So T=4.
+
+C_gt(4): i0: (7-4-1)//3+1 = (2)//3+1=0+1=1 (7>4); others 0. C_gt=1. sum_gt=7. remaining=2-1=1. gains equal to 4: count_ge(4)-C_gt=2-1=1 (i0's 4). total=7+4*1=11. matches.
+
+Example3: value=[4,3], decay=[5,4], m=5.
+
+L_i: i0: (4-1)//5+1=3//5+1=0+1=1 -> gains:4 (since 4-5= -1 not positive). i1: (3-1)//4+1=2//4+1=0+1=1 -> gains:3. total_pos=2 < m=5? m=5 >2, so answer is sum of all positive gains = 4+3=7. matches.
+
+Now edge cases: m smaller than total_pos, binary search works.
+
+Now we need to implement efficiently with O(n log max(value)).
+
+But note that max(value) can be up to 1e9, binary search about 30 iterations.
+
+Now we must also consider that T could be less than 1? No.
+
+Potential pitfalls:
+
+- When computing count_ge_i(T) and count_gt_i(T), ensure we use integer division that floors down (Python's // does floor for negative numbers). But we guard with value[i] >= T for count_ge, and value[i] > T for count_gt (or value[i] <= T gives 0). So arguments to // are non-negative, safe.
+
+- However for count_gt_i(T), we compute (value[i] - T - 1) // decay[i] + 1. If value[i] = T+1, then value[i] - T -1 =0, //decay[i]=0, +1=1 correct (gain T+1 > T). If value[i] = T, then we skip because value[i] <= T, we set 0.
+
+- For large values, multiplication might be big but fine.
+
+Now implement:
+
+MOD = 10**9+7
+
+class Solution:
+    def maxTotalValue(self, value: list[int], decay: list[int], m: int) -> int:
+        n = len(value)
+        total_pos = 0
+        L = []
+        for i in range(n):
+            # L_i = floor((value[i]-1)/decay[i]) + 1
+            # but careful: if decay[i] == 0? constraints decay[i] >=1
+            L_i = (value[i] - 1) // decay[i] + 1
+            L.append(L_i)
+            total_pos += L_i
+        max_val = max(value) if value else 0
+        if m >= total_pos:
+            total = 0
+            for i in range(n):
+                Li = L[i]
+                total += Li * value[i] - decay[i] * Li * (Li - 1) // 2
+            return total % MOD
+        
+        # binary search for T
+        lo, hi = 1, max_val
+        T = 1
+        # We'll store best T where count_ge(T) >= m
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            # compute count_ge(mid)
+            cnt_ge = 0
+            for i in range(n):
+                if value[i] < mid:
+                    continue
+                # value[i] >= mid
+                # number of gains >= mid: floor((value[i] - mid)/decay[i]) + 1
+                cnt_i = (value[i] - mid) // decay[i] + 1
+                # but ensure not exceeding L_i? Actually formula automatically gives <= L_i because (value[i]-mid)/decay[i] <= (value[i]-1)/decay[i], so cnt_i <= L_i. Good.
+                cnt_ge += cnt_i
+            if cnt_ge >= m:
+                T = mid
+                lo = mid + 1
+            else:
+                hi = mid - 1
+        
+        # Now T = hi? Actually after loop, hi is last feasible. We stored T when condition true. Simpler: after loop, hi is the maximum T with cnt_ge>=m. Let's recompute T = hi.
+        # Let's recompute T = hi after loop.
+        # Actually we can set T = hi after loop because lo > hi and hi is last feasible.
+        # We'll do:
+        # T = 1
+        # while lo <= hi:
+        #   mid = ...
+        #   if cnt_ge >= m: T = mid; lo = mid+1
+        #   else: hi = mid-1
+        # After loop, T holds the maximum feasible mid seen.
+        # So T is correct.
+
+        # Now compute C_gt and sum_gt
+        cnt_gt = 0
+        sum_gt = 0
+        for i in range(n):
+            if value[i] <= T:
+                continue
+            # count gains > T
+            # c = (value[i] - T - 1) // decay[i] + 1
+            c = (value[i] - T - 1) // decay[i] + 1
+            cnt_gt += c
+            # sum of first c gains: c*value[i] - decay[i]*c*(c-1)//2
+            sum_i = c * value[i] - decay[i] * c * (c - 1) // 2
+            sum_gt += sum_i
+        remaining = m - cnt_gt
+        # remaining should be <= number of gains equal to T, but we don't need to check
+        total = sum_gt + T * remaining
+        return total % MOD
+
+But we used L list; we can compute total_pos without storing L? We need L for total_pos and also for binary search we don't need L. So fine.
+
+Now test with examples:
+
+We'll simulate quickly mentally: works.
+
+Now edge: if m < total_pos but binary search T might be 1? Suppose all gains are >=1, and m less than total_pos, T could be 1. Then C_gt(1) counts gains >1. remaining = m - C_gt(1) will be number of gains equal to 1 selected. That's fine.
+
+Now need to ensure that when computing cnt_i for count_ge(mid), we didn't exceed L_i? It's safe.
+
+Now complexity O(n log maxV). Good.
+
+But wait: value[i] - mid could be large, but integer division fine.
+
+Now we must consider that T found via binary search using count_ge(mid) might be such that C_gt(T) < m <= C_ge(T). Is it guaranteed? Since we pick largest T with count_ge(T) >= m, then for T+1, count_ge(T+1) < m. That ensures C_gt(T) < m? Let's verify: C_gt(T) = count of gains > T. Note that count_ge(T+1) = count of gains >= T+1 = count of gains > T? Not exactly: gains > T are those >= T+1 if gains are integers? Since gains are integers, yes, because if gain > T and integer, then gain >= T+1. Conversely, gains >= T+1 are exactly gains > T. So C_gt(T) = count_ge(T+1). Indeed, because gains are integers, gain > T iff gain >= T+1. So C_gt(T) = count_ge(T+1). Therefore, if T is the largest integer such that count_ge(T) >= m, then count_ge(T+1) < m. But count_ge(T+1) = C_gt(T). So C_gt(T) < m. Also count_ge(T) >= m by definition. So condition holds. Good.
+
+Thus binary search on T with count_ge works.
+
+Now implement accordingly.
+
+Potential overflow in cnt_ge sum? cnt_ge can be up to total_pos up to ~1e14, Python int fine.
+
+Now we need to be careful that when computing cnt_i for count_ge(mid), we used (value[i] - mid) // decay[i] + 1. This could exceed L_i if mid is small? Let's check: L_i = floor((value[i]-1)/decay[i])+1. (value[i]-mid)//decay[i] +1 could be larger than L_i when mid < 1? But mid >=1, and L_i is the number of positive gains. For mid=1, (value[i]-1)//decay[i]+1 = L_i, so equal. For mid>1, (value[i]-mid)//decay[i]+1 <= (value[i]-1)//decay[i]+1 = L_i because subtracting mid-1 reduces numerator. So safe.
+
+Similarly, c for count_gt(T) uses (value[i]-T-1)//decay[i]+1 which equals L_i when T=0? but T>=1, so <= L_i.
+
+Now we should test with some random small cases via brute force to ensure correctness. Since we cannot run here, but we can reason.
+
+Edge case: decay[i] large relative to value[i], L_i=1. Then counts simple.
+
+Edge case: m=1, binary search should find T = max(value). Let's test: value=[5,3], decay=[1,1], m=1. total_pos=2? L_i: (5-1)//1+1=5, (3-1)//1+1=3? Actually L_i = value[i]? Because decay=1, gains are value[i], value[i]-1, ...,1. So total_pos=5+3=8>1. Binary search: max_val=5. count_ge(5): i0: (5-5)//1+1=1, i1: (3-5)<0 =>0 total=1 >=1; count_ge(6):0<1. So T=5. C_gt(5)=count_ge(6)=0 <1, remaining=1-0=1, sum_gt=0, total=5. Correct (pick max value).
+
+Edge case: m equals total_pos-1? Should work.
+
+Now implement in final answer.
+
+But note: In binary search we used while lo <= hi and stored T. We'll recompute T as hi after loop? Let's do simple: after binary search, T = hi (since hi is last feasible). We'll compute count_ge(hi) again to ensure hi is feasible. Safer: after loop, hi is the maximum feasible (since when cnt_ge(mid) >= m we set lo=mid+1, hi stays at mid if not). Actually standard binary search for maximum feasible:
+
+lo = 1, hi = max_val, ans = 1? We'll do:
+
+ans = 1
+while lo <= hi:
+    mid = (lo+hi)//2
+    if count_ge(mid) >= m:
+        ans = mid
+        lo = mid + 1
+    else:
+        hi = mid - 1
+
+After loop, ans is the maximum T with count_ge(T) >= m.
+
+We'll use ans.
+
+Implement:
+
+def count_ge(T):
+    cnt = 0
+    for i in range(n):
+        if value[i] < T: continue
+        cnt += (value[i] - T) // decay[i] + 1
+    return cnt
+
+Similarly count_gt(T) as above.
+
+Now compute total_pos using L_i.
+
+Now finalize.
+
+Potential bug: When computing total_pos using L_i = (value[i]-1)//decay[i] + 1, ensure value[i] >=1 (true). If value[i] = 0? Not possible per constraints (value[i] >=1). So fine.
+
+Now let's write final code.
+
+We'll define MOD = 10**9+7.
+
+Implementation details:
+
+- Use local variables for speed.
+
+- In binary search, we call count_ge(mid) many times; we can compute inline.
+
+Now produce final answer.
+
+We must output exactly the class Solution with method maxTotalValue as described.
+
+Thus final code:
+
+```python
+class Solution:
+    def maxTotalValue(self, value: list[int], decay: list[int], m: int) -> int:
+        MOD = 10**9 + 7
+        n = len(value)
+        # compute total number of positive gains and L_i if needed
+        total_pos = 0
+        for i in range(n):
+            # L_i = floor((value[i] - 1) / decay[i]) + 1
+            total_pos += (value[i] - 1) // decay[i] + 1
+        
+        max_val = max(value) if n > 0 else 0
+        
+        if m >= total_pos:
+            total = 0
+            for i in range(n):
+                Li = (value[i] - 1) // decay[i] + 1
+                total += Li * value[i] - decay[i] * Li * (Li - 1) // 2
+            return total % MOD
+        
+        # binary search for largest T such that count_ge(T) >= m
+        def count_ge(T):
+            cnt = 0
+            for i in range(n):
+                if value[i] < T:
+                    continue
+                # value[i] >= T
+                cnt += (value[i] - T) // decay[i] + 1
+            return cnt
+        
+        lo, hi = 1, max_val
+        ansT = 1
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            if count_ge(mid) >= m:
+                ansT = mid
+                lo = mid + 1
+            else:
+                hi = mid - 1
+        
+        T = ansT
+        # compute cnt_gt and sum_gt
+        cnt_gt = 0
+        sum_gt = 0
+        for i in range(n):
+            if value[i] <= T:
+                continue
+            # number of gains > T
+            c = (value[i] - T - 1) // decay[i] + 1
+            cnt_gt += c
+            sum_i = c * value[i] - decay[i] * c * (c - 1) // 2
+            sum_gt += sum_i
+        
+        remaining = m - cnt_gt
+        # remaining <= number of gains equal T (by construction)
+        total = sum_gt + T * remaining
+        return total % MOD
+```
+
+But we should verify that when value[i] <= T, we skip; for value[i] = T, gains > T none, gains equal T exist? Yes, but they are not counted in cnt_gt, they will be in remaining if needed.
+
+Now test with examples:
+
+Example1: value=[6,5,4], decay=[2,1,1], m=4.
+
+total_pos = (5//2+1)=3? (6-1)//2=2+1=3; (5-1)//1+1=4+1=5; (4-1)//1+1=3+1=4 => total=12>4.
+
+max_val=6.
+
+binary search:
+
+mid=3? count_ge(3): i0: (6-3)//2=1+1=2; i1: (5-3)//1=2+1=3; i2: (4-3)//1=1+1=2 total=7>=4 => ansT=3, lo=4.
+
+mid=5: (6-5)//2=0+1=1; i1:(5-5)//1=0+1=1; i2:(4-5)<0 ->0 total=2<4 => hi=4.
+
+mid=4: (6-4)//2=1+1=2; i1:(5-4)//1=1+1=2; i2:(4-4)//1=0+1=1 total=5>=4 => ansT=4, lo=5.
+
+mid=5? after previous step lo=5 hi=4 loop ends. ansT=4.
+
+Then cnt_gt: i0 value>4? 6>4 c=(6-4-1)//2+1 = (1)//2+1=0+1=1; i1 5>4 c=(5-4-1)//1+1=0+1=1; i2 value=4 not >4 skip. cnt_gt=2, sum_gt=6+5=11. remaining=2, total=11+4*2=19. Good.
+
+Example2 works.
+
+Now check example3: m >= total_pos -> return sum of all positive gains = 4+3=7.
+
+Now consider a case where m < total_pos but T found might be such that remaining picks from equal T might exceed the actual number of gains equal to T? That should not happen because remaining = m - cnt_gt, and count_eq = count_ge(T) - cnt_gt. By definition count_ge(T) >= m, and cnt_gt < m, so remaining <= count_ge(T) - cnt_gt = count_eq. So safe.
+
+Now we need to ensure that when computing c for count_gt(T), we used (value[i] - T - 1) // decay[i] + 1. This works for value[i] > T. For value[i] = T+1, gives (0)//decay+1=1 correct.
+
+Now potential off-by-one: Suppose value[i] = T+1, decay[i]=1, gains: T+1, T. Then gains > T is just T+1, correct.
+
+Now test with random small brute force? We'll trust.
+
+Now finalize.
+
+But note: In binary search, we used max_val = max(value). However, T could be greater than max_val? No, because gains cannot exceed max(value). So hi = max_val is sufficient.
+
+But what if max_val = 0? Not possible.
+
+Now edge: if m < total_pos but max_val might be less than 1? No.
+
+Now ensure that we use integer division correctly: In Python, // for positive numbers is floor (same as truncation). So fine.
+
+Now finalize code.
+
+We'll output as required.
+
+Thus final answer:
+
+```python
+class Solution:
+    def maxTotalValue(self, value: list[int], decay: list[int], m: int) -> int:
+        MOD = 10**9 + 7
+        n = len(value)
+        # total number of positive gains
+        total_pos = 0
+        for i in range(n):
+            total_pos += (value[i] - 1) // decay[i] + 1
+        
+        max_val = max(value) if n > 0 else 0
+        
+        if m >= total_pos:
+            total = 0
+            for i in range(n):
+                Li = (value[i] - 1) // decay[i] + 1
+                total += Li * value[i] - decay[i] * Li * (Li - 1) // 2
+            return total % MOD
+        
+        def count_ge(T: int) -> int:
+            cnt = 0
+            for i in range(n):
+                if value[i] < T:
+                    continue
+                cnt += (value[i] - T) // decay[i] + 1
+            return cnt
+        
+        lo, hi = 1, max_val
+        ansT = 1
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            if count_ge(mid) >= m:
+                ansT = mid
+                lo = mid + 1
+            else:
+                hi = mid - 1
+        
+        T = ansT
+        cnt_gt = 0
+        sum_gt = 0
+        for i in range(n):
+            if value[i] <= T:
+                continue
+            c = (value[i] - T - 1) // decay[i] + 1
+            cnt_gt += c
+            sum_i = c * value[i] - decay[i] * c * (c - 1) // 2
+            sum_gt += sum_i
+        
+        remaining = m - cnt_gt
+        total = sum_gt + T * remaining
+        return total % MOD
+```
+
+We should test with provided examples mentally. Already did.
+
+Now output.
+```python
+class Solution:
+    def maxTotalValue(self, value: list[int], decay: list[int], m: int) -> int:
+        MOD = 10**9 + 7
+        n = len(value)
+        
+        # total number of positive gains (L_i)
+        total_pos = 0
+        for i in range(n):
+            total_pos += (value[i] - 1) // decay[i] + 1
+        
+        max_val = max(value) if n > 0 else 0
+        
+        # if we can take all positive gains
+        if m >= total_pos:
+            total = 0
+            for i in range(n):
+                Li = (value[i] - 1) // decay[i] + 1
+                total += Li * value[i] - decay[i] * Li * (Li - 1) // 2
+            return total % MOD
+        
+        # count gains >= T
+        def count_ge(T: int) -> int:
+            cnt = 0
+            for i in range(n):
+                if value[i] < T:
+                    continue
+                cnt += (value[i] - T) // decay[i] + 1
+            return cnt
+        
+        # binary search for largest T with count_ge(T) >= m
+        lo, hi = 1, max_val
+        ansT = 1
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            if count_ge(mid) >= m:
+                ansT = mid
+                lo = mid + 1
+            else:
+                hi = mid - 1
+        
+        T = ansT
+        
+        # count gains > T and their sum
+        cnt_gt = 0
+        sum_gt = 0
+        for i in range(n):
+            if value[i] <= T:
+                continue
+            c = (value[i] - T - 1) // decay[i] + 1
+            cnt_gt += c
+            sum_i = c * value[i] - decay[i] * c * (c - 1) // 2
+            sum_gt += sum_i
+        
+        remaining = m - cnt_gt   # number of T-valued gains to take
+        total = sum_gt + T * remaining
+        return total % MOD
+```
+[finish_reason: stop | provider: DeepInfra | reasoning chars: 0 | usage: {'prompt_tokens': 754, 'completion_tokens': 15060, 'total_tokens': 15814, 'cost': 0.00380664, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 80, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00380664, 'upstream_inference_prompt_cost': 4.164e-05, 'upstream_inference_completions_cost': 0.003765}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

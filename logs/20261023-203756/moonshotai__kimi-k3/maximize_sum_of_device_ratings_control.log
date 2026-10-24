@@ -1,0 +1,899 @@
+
+Assistant: # Intuition
+
+**Key observation:** Since a device's rating is its *minimum* capacity, receiving units never helps increase a rating (unless the received unit raises the min, which it can't since it could be anything). But **removing** a unit from a device can *increase* its rating — if we remove the minimum element, the new minimum is the second smallest.
+
+**What the operations can do:**
+- Each device can be a "source" at most once, and when it is, it loses exactly one unit.
+- We can perform up to `m` operations, but the *last* source device cannot give its unit to another source (it must go to a different device) — actually the constraint is just that the unit goes to a *different* device, which is always possible when `m ≥ 2`.
+- **Special case `m = 1`:** No operations possible (no different device to give to), so just return the minimum.
+
+**Strategy:** For each device, we have two choices:
+1. **Don't use it as source:** rating = `min(units[i])`
+2. **Use it as source:** rating = `second_min(units[i])` (remove the smallest; if `n == 1`, device becomes empty, rating = 0)
+
+The gain from using device `i` as source is `gain[i] = second_min[i] - min[i]` (could be 0 or negative if n=1... wait if n=1, second_min is 0 conceptually, gain = -min[i], always bad, so we'd never use it unless forced).
+
+Wait — do we *have* to use all devices? No! We can do "any number including zero." So we pick a subset of sources to maximize the sum.
+
+**However**, there's a subtlety: if we use *all* devices as sources, is that feasible? Each source gives its unit to a *different* device. The last device to act as source needs some other device to receive — that's fine as long as `m ≥ 2`. So all `m` can be sources when `m ≥ 2`.
+
+**So the answer (for m ≥ 2) is:** `sum(max(min[i], second_min[i]))` — for each device, take the better of removing its minimum or not.
+
+Wait, but receiving units could *increase* a device's min? No! Receiving can only add elements; the min of a set after adding elements is `min(old_min, new_element)`, which can only stay the same or decrease. It can never increase. So receivers' ratings don't improve. 
+
+Hmm wait, actually — what if `n = 1` and a device receives units? Then min could... no, receiving still can't raise the min. The only way a rating increases is by removing the unique minimum element.
+
+So:
+- For each device with `n ≥ 2`: contribution = `max(min, second_min) = second_min` (since second_min ≥ min, removing the min is always at least as good!)
+
+Wait, is that right? `second_min ≥ min` always. So removing the minimum *never hurts* the device's own rating. And giving the unit elsewhere doesn't help the receiver but doesn't hurt either (the receiver's min can decrease if the given unit is smaller than receiver's min... **oh no, it CAN hurt the receiver!**)
+
+**Critical subtlety:** The unit you transfer lands in another device. If that unit is *smaller* than the receiver's current minimum, the receiver's rating drops!
+
+So we must be careful where we dump the removed units. Strategy:
+- For each source device, remove its **minimum** element (to maximize its own new rating).
+- That removed minimum must be placed into some *other* device. It will hurt that device's rating if it's smaller than the receiver's min.
+- Ideal "dumping ground": the device with the **largest minimum** (or a device whose min is ≥ the dumped value — even better, dump into a device whose min is *larger* than the dumped value so no harm; or a device that's already going to have low rating anyway).
+
+Hmm, this is getting complicated. Let me think again.
+
+**Cleaner formulation:** Each device can do at most one operation as source. The total sum of ratings = sum over devices of (min of final multiset).
+
+Think of it as: we choose a set `S` of source devices (possibly all, possibly none, need `|S| ≥ 1` only if we want any operation... we can also choose `S = ∅`). For each source device, we remove one element (we'd remove its minimum to help itself). Then all removed elements get redistributed to other devices (each source's removed element goes to a device ≠ itself; receivers can be sources too).
+
+The final rating of device `i`:
+- If `i ∈ S`: its multiset loses its min (optimal choice for itself), but may receive junk from others.
+- If `i ∉ S`: its multiset keeps everything, plus may receive junk.
+
+Receiving junk with value `v` sets the effective min to `min(current_min, v)`.
+
+**To maximize:** We want to dump all removed elements into a single "sacrifice" device, or distribute cleverly.
+
+**Key insight:** All the removed minimums can be dumped into the device that already has the **global smallest minimum** — wait, no, dumping into it doesn't hurt it further if the dumped values ≥ its min... but its own min is the global smallest, so any dumped value ≥ its min won't hurt it. 
+
+**Yes!** Let device `k` = the device with the globally smallest min (the "worst" device). Dump all removed units into device `k`. Since every removed value is some device's min, and `min[k]` is the smallest of all mins, every removed value ≥ min[k], so device k's rating is unaffected by receiving.
+
+But wait — what if device `k` itself is a source? Then it removes its own min, its rating becomes second_min[k], and then it receives junk possibly smaller than second_min[k]. Problem! If we dump everything into `k` and `k` is a source, then `k`'s final rating = `min(second_min[k], all dumped values including global mins from other devices)` = `min(second_min[k], smallest min among other sources)` which could be low.
+
+**Resolution:** Choose the sacrifice device `k` to be one that we do **NOT** use as a source. Then its rating stays `min[k]` (its own elements unchanged, dumped values all ≥ their sources' mins ≥ ... hmm, not necessarily ≥ min[k] if min[k] isn't the global smallest).
+
+Let me redo: pick sacrifice device `k` with the **global minimum value** among all elements? No — among all device minimums, `min[k]` is the smallest. Every dumped value is the min of its source device, hence ≥ min[k]. So dumping into non-source `k` keeps `k`'s rating at `min[k]`. 
+
+All other devices (i ≠ k) can be sources: each removes its min, gaining `second_min[i]` instead of `min[i]`, and dumps into `k` without hurting anyone (k's rating stays min[k], and other devices receive nothing).
+
+**Total:** `min[k] + sum_{i≠k} second_min[i]` where `k = argmin(min[i])`, and `second_min[i] = min[i]` if... no, `second_min[i]` is the second smallest, or `0` if `n == 1` (device becomes empty → rating 0).
+
+But wait — we could also choose to NOT use some device `i ≠ k` as source if `second_min[i] < min[i]`... but `second_min[i] ≥ min[i]` always (when n ≥ 2). When `n == 1`, second_min is 0 < min, so we should NOT use single-element devices as sources (unless it's the sacrifice device, which we don't use as source anyway).
+
+Hold on, but is it feasible for `k` to receive everything? Yes, receivers have no constraints. And sources must give to a *different* device — all give to `k`, and no source is `k`, fine. Need `m ≥ 2` for any operation; if `m = 1`, no ops possible.
+
+Also should double check: is it ever beneficial to use the sacrifice device `k` as a source and pick a different sacrifice? Option: pick sacrifice `k'` (non-source), all others including `k` are sources. Total = `min[k'] + sum_{i≠k'} second_min[i]`. We want to maximize over choice of non-source sacrifice `k'`:
+
+`answer = max over k' of [ min[k'] + sum_{i≠k'} second_min[i] ]`
+
+Let `S2 = sum of second_min over all i`. Then answer = `S2 + max over k' of (min[k'] - second_min[k'])` = `S2 - min over k' of (second_min[k'] - min[k'])`.
+
+Hmm, interesting: we pick the sacrifice to be the device where removing the min gains the least (the device where `second_min - min` is smallest). For `n == 1` devices, `second_min = 0`, so `min - second_min = min` — those are great sacrifice candidates (they can't benefit from being sources anyway).
+
+**But also compare with doing nothing / not using some devices as sources:** For non-sacrifice devices, being a source gives `second_min[i] ≥ min[i]` when `n ≥ 2`, so always beneficial (weakly). When `n == 1` and `i ≠ k'`, being a source gives 0 instead of `min[i]` — bad! So for `n == 1` non-sacrifice devices, don't use as source: contribution `min[i]`.
+
+Hmm, so general formula: each device contributes `max(min[i], second_min[i])` EXCEPT the sacrifice device `k'` which must contribute `min[k']` (it receives all the junk, and it can't be a source because someone must receive its junk... wait, why can't the sacrifice be a source?).
+
+**Can the sacrifice device also be a source?** If `k'` is a source, it removes one element and gives it to a different device, say `j`. Then `j` receives junk possibly smaller than its rating. If ALL devices are sources, then every device gives its min to someone; we can arrange a cycle: device `i` gives its min to device `i+1`. Then device `i+1` receives `min[i]`; its rating becomes `min(second_min[i+1], min[i])`. In a cycle, each device's rating = `min(second_min[i], min of predecessor)`. The bottleneck: the device whose predecessor has the global smallest min `g` gets rating ≤ `g`. And `g ≤ min[i] ≤ second_min[i]` for all i, so that device's rating = `g` (since g is smallest). Others get `min(second_min[i], predecessor's min) ≥ g`... their rating could be reduced below `second_min[i]` if predecessor's min < second_min[i].
+
+Compare: with a designated non-source sacrifice, we get `S2 + (min[k'] - second_min[k'])` = `S2 - (second_min[k'] - min[k'])`. With all-sources cycle, the predecessor-min problem: device `i` gets `min(second_min[i], min[pred(i)])`. Sum = `sum_i min(second_min[i], min[pred(i)])`. To maximize, we'd want each predecessor's min ≥ second_min[i], i.e., arrange cycle so each device receives from a device with high min. The device with the global smallest min `g`: whoever receives from it gets ≤ g. Hmm, but also the device with smallest min has second_min possibly large; it receives from someone too.
+
+This is getting complex. Which is better? Let's test with examples.
+
+**Example 1:** `[[1,3],[2,2]]`. mins = [1,2], second_mins = [3,2]. S2 = 5. Sacrifice option: pick k' minimizing second_min - min: device 0: 3-1=2; device 1: 2-2=0. Pick k'=1: answer = S2 - 0 = 5? But expected answer is 4! Let me recheck.
+
+Hmm wait, expected output is 4. Let me recompute. If k'=1 is sacrifice (non-source), device 0 is source: removes min 1 → device 0 = [3], rating 3. Dumps 1 into device 1 → device 1 = [2,2,1], rating 1. Sum = 4. 
+
+My formula gave `min[k'] + sum_{i≠k'} second_min[i] = min[1] + second_min[0] = 2 + 3 = 5`. That's wrong because device 1 received value 1 < min[1]=2! My claim "dumped values ≥ min[k']" fails: dumped value is min[0]=1 < min[1]=2.
+
+Ah I see my error: the sacrifice should be the device with the **smallest min** (k' = argmin min[i]), so all dumped values (which are other devices' mins) are ≥ min[k']. Then min[k'] is preserved. So k' must = argmin of min[i]. That forces k' = device 0 here: `min[0] + second_min[1] = 1 + 2 = 3`. That's worse than 4.
+
+Hmm, so actually with sacrifice = argmin, answer = `min[argmin] + sum_{i≠argmin} second_min[i]`. For Example 1: `1 + 2 = 3`. But the optimal is 4 (sacrifice device 1, device 0 dumps 1 into it, hurting it: rating 1 instead of 2; total 3+1=4).
+
+So the dumping can hurt the sacrifice, and the optimal sacrifice isn't necessarily the global-min device. Let me redo the general formulation.
+
+**General formulation:** Choose an ordered structure. Let's think: choose a subset `S` of sources. Each source removes its min (best for itself). The removed values get assigned to receivers (each source's value goes to a device ≠ itself; a device can receive many).
+
+Final rating of device `i`:
+- Base: `second_min[i]` if `i ∈ S` (and n≥2; 0 if n==1... if i∈S and n==1, base 0), else `min[i]`.
+- Then rating = min(base, all received values).
+
+Total = sum of ratings. We want max.
+
+Simplify: dump everything into one sacrifice device `t`. All sources ≠ t give their min to t. If `t ∈ S`... t gives its min to someone else, hurting them. Let's consider cases:
+
+**Case A: t ∉ S.** Then sources ⊆ all devices except t. For each source i (i≠t), i must give to a different device — gives to t, fine (i ≠ t). Device t's rating = `min(min[t], min over sources' mins)`. Other devices' ratings: if i ∈ S: second_min[i]; else min[i].
+
+We'd include i in S iff `second_min[i] ≥ min[i]` (always true for n≥2) — but wait, including i in S adds `min[i]` to the junk dumped into t, potentially lowering t's rating. Trade-off: i gains `second_min[i] - min[i]`, but t might drop if `min[i] < current t rating`.
+
+**Case B: t ∈ S.** Then t gives its min to some other device j. j's rating gets possibly hurt. And t receives all other junk. t's rating = min(second_min[t], junk...). This seems dominated by Case A usually, but not always.
+
+Given complexity, maybe think about it differently. Since `m*n ≤ 2e5`, we can afford O(m log m) sorting etc.
+
+**Alternative view:** The answer = max over choice of source set S and assignment of removed values. Note: we only ever remove minimums (removing a non-min never helps the source's rating... wait, actually removing non-min keeps source rating = min, same as not removing. No benefit, and creates junk. So if i ∈ S, remove its min — strictly best for itself).
+
+Hmm wait, actually there's another subtlety: what if removing a non-min and giving it... no, junk only hurts receivers. Removing min is best for source. So yes, source removes min.
+
+So the problem: choose S ⊆ devices and an assignment `f: S → devices` with `f(i) ≠ i`, maximizing:
+
+`sum_i rating_i` where `rating_i = min(base_i, {min[j] : j ∈ S, f(j) = i})`, `base_i = second_min[i]` if `i ∈ S` else `min[i]`.
+
+**Claim:** Optimal is: pick one sacrifice `t`, S = {i : i ≠ t, beneficial}, everyone dumps to t. Let me argue: any junk received by a non-source device only hurts it. Junk received by source devices also hurts. Concentrating all junk on one device minimizes total damage (damage is subadditive-ish? Actually: damage to a device = base - min(base, received values); concentrating means only one device takes damage; spreading could hurt many). Formally: sum of `min(base_i, junk values at i)` — if we move all junk to one device t, other devices keep base; t gets min(base_t, all junk). Total = `sum_{i≠t} base_i + min(base_t, min junk)`. If junk were spread, total = `sum_i min(base_i, junk_i)` ≤ ... hmm, concentrating is at least as good? `sum_{i≠t} base_i + min(base_t, J)` where J = min junk. Spread: `sum_i min(base_i, J_i)`. Since `min(base_i, J_i) ≤ base_i`, and for the device receiving J (the global min junk), `min(base, J) = min(base_t, J)` potentially same... Concentrating gives total `T_conc = sum base_i - (base_t - min(base_t, J))`. Spread gives `sum base_i - sum_i (base_i - min(base_i, J_i))`. The total loss in spread ≥ loss of the device receiving the min junk J ≥ ... hmm not exactly, since in concentration the loss is `max(0, base_t - J)` and in spread, the device that gets J also loses `max(0, base_{that} - J)`, plus others may lose more. So concentration's loss ≤ spread's loss if we choose t = the device that would receive J anyway... roughly, concentrating is optimal. Also constraint `f(i) ≠ i` in concentration: all sources dump to t, need t ∉ S. If we want t ∈ S, t's junk must go elsewhere, causing extra damage ≥ 0; likely suboptimal but need care.
+
+So: `answer = max over t of [ min_t_junk + sum_{i≠t} max(min[i], second_min[i] with participation decision) ]`... let me define:
+
+For device i ≠ t, we choose whether it's a source: contributes `second_min[i]` if source, `min[i]` if not. But if it's a source, its min joins the junk pile at t. Let `J_t = min over sources of min[i]` (junk min). t's rating = `min(min[t], J_t)` (if no sources, t's rating = min[t]).
+
+Total for given t: `sum_{i≠t} c_i + min(min[t], J_t)` where `c_i = second_min[i]` if i source else `min[i]`.
+
+Decision per i≠t: source gives `second_min[i]` but risks lowering t's term via `min[i]`. Not-source gives `min[i]`, no risk.
+
+Since `second_min[i] ≥ min[i]` (for n≥2), the gain is `d_i = second_min[i] - min[i] ≥ 0`. The risk: if `min[i]` becomes the new junk min below min[t], t's term drops.
+
+Total = `sum_{i≠t} min[i] + sum_{i∈S, i≠t} d_i + min(min[t], min_{i∈S} min[i])`.
+
+Let `base_sum = sum_i min[i]`. Total = `base_sum - min[t] + sum_{i∈S\{t}} d_i + min(min[t], min_{i∈S} min[i])`.
+
+Hmm. To handle the min-junk interaction: sort devices by min[i]. If we include device with the smallest min among sources, J = that min. Let's think: choose which devices are sources. The junk min J = smallest min[i] among sources. t's term = min(min[t], J).
+
+Let me consider: let `g = min over all i of min[i]` (global smallest device-min), achieved by device `g_idx`.
+
+**Option 1: all devices with n≥2 are sources, sacrifice t chosen optimally.** Junk values = all mins. J = g. t's rating = min(min[t], g) = g if t ≠ ... well min[t] ≥ g always, so t's rating = g. But t must not be a source... if t ∉ S, but we said all n≥2 devices are sources. If t has n≥2, contradiction. Let's just say S = all devices except t with n≥2 (t may or may not have n≥2; t is not a source). Then junk = mins of all sources; J = min over sources of min[i]. If g_idx ≠ t, J = g, t's rating = g (since min[t] ≥ g). Total = `sum_{i≠t, n_i≥2} second_min[i] + sum_{i≠t, n_i==1} min[i] + g`. To maximize, we want t to "absorb the loss": loss compared to everyone-gets-best = `(second_min[t] - min[t] if n_t≥2 else 0)`... let's define potential `P = sum_{i: n_i≥2} second_min[i] + sum_{i: n_i==1} min[i]` (everyone non-sacrifice optimal). If t has n≥2 and is sacrificed: total = `P - second_min[t] + g`. If t has n==1 sacrificed: total = `P - min[t] + g`.
+
+We choose t to maximize: t with n≥2: maximize `g - second_min[t]` → minimize second_min[t]. t with n==1: `g - min[t]` → minimize min[t]. Note for n==1, min[t] = the element itself ≥ g. And for n≥2, second_min[t] ≥ min[t] ≥ g.
+
+Also t could be g_idx itself: total = P - second_min[g_idx] + g (if n≥2) — wait but if t = g_idx, then J = min over sources' mins = second smallest min value, call g2; t's rating = min(min[t], g2) = min(g, g2) = g. Yes total = P - second_min[t] + g still holds? t's rating = g. Yes because g ≤ g2 and min[t]=g. Fine.
+
+**Option 2: don't make everyone a source.** If making i a source has d_i = 0 (second_min == min, e.g., duplicates), no gain but adds junk min[i] to pile — could lower t's rating. So only add i to S if... d_i ≥ potential damage. The damage from adding i: t's term goes from min(min[t], current J) to min(min[t], current J, min[i]) — damage only if min[i] < min(min[t], J). Damage = min(min[t],J) - min[i]. Gain = d_i. So include i if d_i > damage, i.e., `second_min[i] - min[i] > min(min[t], J) - min[i]`, i.e., `second_min[i] > min(min[t], J)`.
+
+Interesting: include i iff `second_min[i] > min(min[t], J_before?)`. This is order-dependent but if we process in increasing min[i]: Suppose we sort devices by min[i]. The junk min J is determined by the source with smallest min. Let's think: decide the set S. Let i* = source with smallest min. Then t's term = min(min[t], min[i*]). All other sources contribute d_i. We want: sources = {i : d_i > 0}? Not quite—if d_i = 0 but i is not the junk-min-determiner, including it is harmless (its junk min[i] ≥ min[i*], doesn't affect J). Wait, J = min over sources of min; if i* ∈ S already, adding i with min[i] ≥ min[i*] doesn't change J. So all devices with min[i] ≥ min[i*] can be freely added (gain d_i ≥ 0). So optimal S (given t): choose threshold: i* = the min-min device in S; S ⊇ {i ≠ t : min[i] ≥ min[i*]} plus i* itself, and excludes devices with min[i] < min[i*] (they'd get min contribution instead of second_min). Total:
+
+`T(t, i*) = sum_{i ≠ t, min[i] > min[i*]} second_min[i]... ` careful with ties: devices with min[i] == min[i*] — including them as sources doesn't change J (J = min[i*]) and gives d_i ≥ 0, so include them (weakly better). Devices with min[i] < min[i*]: give min[i] (non-source).
+
+`T(t, i*) = sum_{i≠t, min[i] < min[i*]} min[i] + sum_{i≠t, min[i] ≥ min[i*]} second_min[i] + min(min[t], min[i*])`
+
+Also the option S = ∅ (no operations): total = base_sum. That's covered if... not exactly; S=∅ gives sum min. Note T(t, i*) with i* chosen with largest min: all devices have min ≥ min[i*], so T = sum_{i≠t} second_min + min(min[t], max_min)... hmm that's the all-sources case. S=∅ isn't directly covered, but S=∅ total = sum min[i]; we can just also take max with that. Actually is S=∅ ever strictly better than all options? Example 3: [[5,5,5],[1,1,1]]: mins=[5,1], second_mins=[5,1]. Base sum = 6. Options: t=0: i* must be ≠ t? Wait i* can be any source, i* ≠ t required (i* ∈ S, t ∉ S). t=0: sources ⊆ {1}: T = second_min[1] + min(min[0], min[1]) = 1 + min(5,1) = 2. Bad. t=1: sources ⊆ {0}: T = second_min[0] + min(min[1], min[0]) = 5 + min(1,5) = 6. Good — matches answer 6. S=∅ also 6. OK covered.
+
+Example 1: mins=[1,2], sec=[3,2]. t=0: sources⊆{1}: T = sec[1] + min(min[0], min[1]) = 2 + 1 = 3. t=1: sources⊆{0}: T = sec[0] + min(min[1], min[0]) = 3 + 1 = 4 ✓.
+
+Example 2: [[1,2,3],[4,5,6]]: mins=[1,4], sec=[2,5]. t=0: sources⊆{1}: sec[1]+min(1,4)=5+1=6 ✓. t=1: sec[0]+min(4,1)=2+1=3. Answer 6 ✓.
+
+Now also consider **Case B (sacrifice t is also a source)** — could that beat Case A? If t ∈ S, then t gives min[t] to some j ≠ t. All junk (including min[t]) ends up somewhere. Equivalent: junk assignment where t's own junk goes to j. Let's bound: total = sum over i∈S of min(second_min[i], received junk min) + sum_{i∉S} min(min[i], received). Suppose we use the "cycle" idea where everyone is a source. Each device i receives from predecessor p(i): rating_i = min(second_min[i], min[p(i)]). Total = sum_i min(second_min[i], min[p(i)]). We can choose permutation p (derangement) to maximize. Compare to Case A best.
+
+Hmm. Let's think: is Case B ever strictly better? Consider devices: A: [1, 100], B: [2, 100]. mins: 1,2; secs: 100, 100. Case A: t=A: sources={B}: 100 + min(1,2)=101. t=B: sources={A}: 100 + min(2,1) = 101. Case B (cycle): A gives min 1 to B; B gives min 2 to A. A rating = min(100, 2) = 2. B rating = min(100, 1) = 1. Total 3. Much worse. Case A wins.
+
+When could Case B help? If the sacrifice t wants to be a source because d_t is large, but then it must dump its min somewhere causing damage. In Case A with sacrifice t, we lose d_t (t isn't a source). In Case B, we gain d_t but t's min lands on j, causing damage up to min[t]... and t also receives junk possibly. Seems Case A dominates when we choose t = the device with min d... hmm, but d_t large devices are bad sacrifices in Case A. Let's construct: three devices A:[1,2], B:[1,2], C:[100]. mins 1,1,100; secs 2,2,0. Case A: t must be a device; sources ⊆ others. t=C: sources⊆{A,B}: sec A + sec B + min(min[C], min junk=1) = 2+2+1 = 5. t=A: sources⊆{B,C}: C has n=1: if C source → rating 0, junk min 100... wait C's min = 100 dumped into A. sec_B=2, C as source: 0, t=A rating min(1, min(1,100)) = 1. Total 2+0+1=3. Or C not source: sec_B + min[C] + min(min[A], junk=1) = 2 + 100 + 1 = 103! Wait — t=A (non-source, rating min(1, junk min=1) = 1), sources={B}: B sec=2, C non-source: min[C]=100. Total = 1 + 2 + 100 = 103. Oh nice, I forgot non-sources keep min. So Case A t=A: sum over i≠t of best + t term: B source:2, C non-source:100, A: min(1, 1)=1 → 103.
+
+So the formula: T(t) = max over S⊆{i≠t} of sum contributions. Since including i as source always weakly ≥ min[i] for the device itself and only affects t via junk min, the earlier threshold analysis holds. Let me re-derive cleanly:
+
+`T(t) = max_{S ⊆ devices \ {t}} [ sum_{i ∈ S} second_min[i] + sum_{i ∉ S, i ≠ t} min[i] + min(min[t], min_{i∈S} min[i]) ]`
+
+(with the convention that if S = ∅, last term = min[t].)
+
+For fixed t, as we add sources in increasing order of min[i], the first (smallest-min) source determines J. Equivalent formulation: pick i* (the source with minimum min, i.e., J = min[i*]), then S = {i* } ∪ {i ≠ t : min[i] > min[i*]} ∪ optional ties... Let me re-derive: given J determined by i*, every other device i ≠ t with min[i] ≥ J can be included without changing J, gaining d_i ≥ 0. Devices with min[i] < J stay out (contribute min[i]). Also devices with min[i] == J (ties): including doesn't change J, gains d_i ≥ 0, include. But i* itself: included, gains d_{i*}, contributes second_min[i*] instead of min[i*].
+
+`T(t) = max_{i* ≠ t} [ sum_{i≠t, min[i] < min[i*]} min[i] + sum_{i≠t, min[i] ≥ min[i*]} second_min[i] + min(min[t], min[i*]) ]`
+
+Also include the empty-S option: `sum_{i≠t} min[i] + min[t] = base_sum` (independent of t). So overall answer = max(base_sum, max over t, i*≠t of the above).
+
+Hmm wait, but there's the constraint that source i* gives to a *different* device: it gives to t ≠ i*, fine. And m ≥ 2 needed for any op; if m == 1, answer = min[0] (no ops possible; can't transfer to same device, and "any different device" doesn't exist). Actually with m=1, no operations, answer = min of the only device.
+
+Now computing efficiently. Sort devices by min. But t varies... Let's restructure:
+
+Answer = `base_sum + max(0, max over valid configs of gain)` where gain for config (t, S) = `sum_{i∈S} d_i - max(0, min[t] - J)` where J = min_{i∈S} min[i], d_i = second_min[i] - min[i] ≥ 0 (for n≥2; for n==1, second_min = 0, d_i = -min[i] < 0 — we'd never include n==1 devices as sources... wait unless? second_min for n==1: device empties → rating 0. d_i = -min[i]. Including it only hurts itself and adds junk min[i]. Never beneficial. Exclude n==1 from source candidacy.)
+
+So sources ⊆ {i : n_i ≥ 2}, i* = source with smallest min. Gain = `sum_{i∈S} d_i - max(0, min[t] - min[i*])`. And optimal S given (t, i*): all i ≠ t with min[i] ≥ min[i*] and n_i ≥ 2. Hmm, plus devices with min[i] < min[i*] have d_i ≥ 0 but including them would lower J below min[i*], contradiction with i* being the smallest. So S = {i ≠ t : n_i ≥ 2, min[i] ≥ min[i*]} ∪ {i*}. Note devices with min[i] == min[i*] included freely.
+
+Gain(t, i*) = `D(≥ min[i*], excluding t) - max(0, min[t] - min[i*])` where D(≥ x, excluding t) = sum of d_i over n_i≥2 devices with min[i] ≥ x, minus d_t if t qualifies.
+
+We want max over t ≠ i*. Fix i* (with n_{i*} ≥ 2). Choose t ≠ i* to maximize `D_excl_t - max(0, min[t] - min[i*])`.
+
+Let `Dtot = sum of all d_i (n_i ≥ 2)`. D_excl_t = Dtot - d_t (where d_t = 0 if n_t == 1). So maximize over t ≠ i*: `Dtot - d_t - max(0, min[t] - min[i*])` = Dtot - min over t≠i* of [ d_t + max(0, min[t] - min[i*]) ].
+
+Define for each t: cost(t, i*) = d_t + max(0, min[t] - min[i*]).
+
+Answer = base_sum + max(0, max over i* (n≥2) of Dtot - min_{t ≠ i*} cost(t, i*)).
+
+Hmm, this is O(m^2) naively. Need smarter.
+
+cost(t, i*) = d_t + max(0, min[t] - min[i*]). If min[t] ≤ min[i*]: cost = d_t ≥ 0. If min[t] > min[i*]: cost = d_t + min[t] - min[i*].
+
+For fixed i*, we want t minimizing that. Consider two candidate types:
+- t with min[t] ≤ min[i*]: min cost = min d_t over such t.
+- t with min[t] > min[i*]: min cost = min (d_t + min[t]) - min[i*].
+
+So min_cost(i*) = min( min_{t≠i*, min[t] ≤ min[i*]} d_t, min_{t≠i*, min[t] > min[i*]} (d_t + min[t]) - min[i*] ).
+
+If we sort devices by min, we can precompute prefix min of d_t and suffix min of (d_t + min[t]). With careful handling of t ≠ i* (i* lies in the ≤ region boundary...). Sort by min ascending. For i* at position p (in sorted order): devices t with min[t] ≤ min[i*] are indices ≤ p (in sorted order), but excluding i* itself. Devices with min[t] > min[i*]: indices after the last index with min == min[i*]... careful with ties: min[t] ≤ min[i*] includes ties.
+
+Let's define sorted arrays. Let `sorted` = devices sorted by min ascending. For i* at position p, let `le_region` = all indices q with min[q] ≤ min[p] (i.e., q ≤ rightmost index with same min). Excluding p. And `gt_region` = indices q with min[q] > min[p].
+
+Precompute:
+- prefix_min_d[p] = min d_t over sorted[0..p].
+- suffix_min_dplus[p] = min (d_t + min[t]) over sorted[p..end].
+
+For i* at p with value v = min[p]: let r = rightmost index with min == v. Then:
+- candidate1 = min d_t over sorted[0..r] excluding p. If r ≥ 1... need min over range excluding single point: min(prefix_min_d[p-1], min d over sorted[p+1..r]). Precompute prefix and suffix mins of d to handle exclusion: cand1 = min(pref_d[p-1], suff_d[p+1] bounded to r...). Alternatively: min over [0..r] \ {p}: = min(pref_d[p-1], min_d_in_range(p+1, r)). Since suffix arrays give min over [p+1..end], not [p+1..r]. Hmm. Alternative: since all in [l..r] share same min v, maybe handle by: candidate1 = min over q ≤ r, q ≠ p of d_q. We can compute: if p > 0: pref_d[p-1]; if p < r: min d in (p, r]. To get range min, use sparse or just note: min over (p, r] = we can precompute for each p the "min d to the right within same-min block": suffix within block. Let's just precompute arrays:
+  - `pref_d[p]` = min d over [0..p].
+  - `suff_d[p]` = min d over [p..end].
+  - cand1 = min(pref_d[p-1] if p>0 else inf, suff_d[p+1] if p+1 ≤ r else inf). Wait suff_d[p+1] covers [p+1..end] ⊇ (p, r] but also includes > r which have min > v — those aren't in le_region. Hmm. But if q > r, min[q] > v, so not allowed in cand1. So need block-limited. Precompute `suff_d_block[p]` = min d over [p..r] where r = end of p's block. Then cand1 second part = suff_d_block[p+1] if p+1 ≤ r. Fine, easy to compute by processing blocks.
+
+- candidate2 = min over q with min[q] > v of (d_q + min[q]) - v = (min over q ≥ r+1 of d_q + min[q]) - v = suff_dplus[r+1] - v (if r+1 < m).
+
+Then min_cost(i*) = min(cand1, cand2). Gain = Dtot - min_cost. Answer candidate = base_sum + gain. Also candidate with no ops: base_sum. Take max. Also m==1 edge: no ops, answer = min[0]... but base_sum = min[0], and no i* exists if... if n≥2 and m==1, i* exists but t must ≠ i*, no valid t → skip. Answer = base_sum. Good, handle by requiring m ≥ 2 for the i* loop. Actually wait, if m == 1, can we do zero ops → base_sum. Our formula's "0" option covers it: answer = base_sum + max(0, ...) with no valid configs → base_sum. But careful: even with m ≥ 2, operations aren't mandatory, so max(0, gain) is right.
+
+Wait, but there's one more scenario I dismissed: what if the sacrifice t is also a source and uses a *different* sacrifice... I argued concentration is optimal and t ∉ S. Let me double check that allowing t ∈ S can't beat our formula. If t ∈ S: t contributes second_min[t] (gains d_t) but must send min[t] to some j ≠ t. Device j's term: min(base_j, min[t]) ≤ base_j; damage_j = max(0, base_j - min[t]) ≥ 0. Also other junk still concentrates at t? But t is a source; junk at t reduces t: t's term = min(second_min[t], J_others). Total = base_sum + d_t + sum_{i∈S', i≠t} d_i - damage_j - max(0, min[t] ... t's own loss = second_min[t] - min(second_min[t], J') where J' = min junk received by t. Compare to config where t ∉ S (same S' otherwise): t contributes min[t] instead, and junk at t: min(min[t], J') loss = max(0, min[t] - J'). Difference (t∈S minus t∉S) = d_t - [second_min[t] - min(second_min[t],J')] + [min[t] - min(min[t], J')] - damage_j = d_t - (second_min[t] - min[t]) + [min(second_min[t],J') - min(min[t],J')] ... let me just compute: t∈S contribution: min(second_min[t], J'); t∉S: min(min[t], J'). Since second_min ≥ min, min(second_min, J') ≥ min(min[t], J'). Extra gain from t∈S = min(second_min[t], J') - min(min[t], J') ≤ d_t, and it's ≤ ... If J' ≥ second_min[t]: extra = d_t. If J' ≤ min[t]: extra = 0. Else extra = J' - min[t]. Plus damage_j ≥ max(0, base_j - min[t]) ≥ 0. Hmm, so t∈S gives extra ≤ d_t but causes damage_j. In our formula (t∉S), we already count d_t? No — in our formula, t is excluded from sources, so we lose d_t but gain no damage. Alternative: pick a different sacrifice t' = j (the receiver of t's min)? This is getting complicated; let me just think whether all-source configs can beat our formula on some example.
+
+Consider two devices: A = [1, 2], B = [1, 100]. mins 1,1; secs 2,100; d: 1, 99. base_sum = 2. Dtot = 100. Formula: i* = A (min 1): min cost over t=B: min[B]=1 ≤ 1 → cost d_B = 99. gain = 100-99 = 1 → total 3. i* = B: t=A: cost d_A = 1 → gain 99 → total 101. Config: t=A sacrifice (non-source), B source: B → [100] rating 100, B's min 1 dumped to A: A = [1,2,1] rating 1. Total 101. ✓. Cycle (both sources): A gives 1→B, B gives 1→A: A: [2,1] rating 1; B: [100,1] rating 1. Total 2. Worse. ✓ formula fine.
+
+Try to find a case where all-sources cycle wins: need d_t large for the natural sacrifice but damage of dumping its min small. A=[5, 100] (min5, sec100, d95), B=[1,2] (min1, sec2, d1). base=6. Formula: i* must be n≥2; i*=B (min1): t=A: min[A]=5>1 → cost d_A + (5-1) = 95+4=99 → gain = Dtot(96) - 99 = -3 → total 3? Hmm wait gain negative → that config bad. i*=A (min5): t=B: min[B]=1≤5 → cost d_B=1 → gain 96-1=95 → total 6+95=101. Config: sacrifice B (non-source), A source: A=[100] rating100, dump 5 into B: B=[1,2,5] rating 1. Total 101 ✓. Cycle: A gives 5→B: B=[1,2,5] min 1... B rating 1 (as source B removed its own min: B=[2,5] then receives 5 → [2,5,5] rating 2. Let me redo: both sources: A removes 5 → A=[100], gives 5 to B. B removes 1 → B=[2], gives 1 to A. A = [100,1] rating 1. B = [2,5] rating 2. Total 3. Bad. OK.
+
+Three+ devices cycle could be cleverer? A=[1,50] (min1,sec50,d49), B=[2,50](min2,sec50,d48), C=[3,50](min3,sec50,d47). base=6, Dtot=144. Formula: best: i*=C(min3): t ∈ {A,B} with min ≤3: min d = d_A=49 → gain 144-49=95 → 101. i*=B(min2): t: min≤2: A (d49) → cost 49; min>2: C: d_C + (3-2)=48 → cost 48. gain 144-48=96 → 102. Config: sacrifice C? wait cost 48 corresponds to t=C: C non-source (min 3), sources A,B: dump 1,2 into C: C=[3,50,1,2] rating 1. A,B: 50+50. Total 101. Hmm but formula said gain 96 → total 102? Let me recompute: T = base_sum + Dtot - cost = 6 + 144 - 48 = 102. But direct: A source → sec 50; B source → 50; C non-source: min(3, junk min=1) = 1. Total 50+50+1 = 101 ≠ 102. Discrepancy! Let me recheck the formula. base_sum = 1+2+3 = 6. sum d over sources = 49+48 = 97. Junk J = min(1,2) = 1. t=C: term = min(min[C]=3, 1) = 1, loss = 3-1 = 2. Total = 6 + 97 - 2 = 101. So loss = min[t] - min(min[t], J) = 3 - 1 = 2. My cost formula: cost(t, i*) = d_t + max(0, min[t] - min[i*]). With i* = B (J = min[B] = 2): max(0, 3-2) = 1, d_C = 47, cost = 48. But actual loss from t: min[t] - min(min[t], J) where J = min[i*] = 2: 3 - 2 = 1. So loss_t = max(0, min[t] - J) = 1. And cost should be d_t + loss_t = 47 + 1 = 48. Total = base + Dtot - cost? base + sum_{sources} d_i - loss_t. Dtot includes d_t! Since t is NOT a source, sum over sources = Dtot - d_t (assuming all qualifying devices are sources). So total = base + (Dtot - d_t) - loss_t = base + Dtot - (d_t + loss_t) = base + 144 - 48 = 102. But actual total: A:50, B:50, C:1 → 101. 6+97-2 = 101. And Dtot - d_t = 144 - 47 = 97 ✓. loss_t = 2, but I computed cost's loss component as max(0, min[t]-min[i*]) = max(0,3-2)=1. The junk min J = min over sources of min = min(min[A], min[B]) = min(1,2) = 1 = min[A], not min[i*]=2! Because A is also a source with min 1 < min[B]. i* should be the *smallest*-min source. If sources = {A, B}, then i* = A, not B. My parameterization: i* = argmin min among sources; then all devices with min ≥ min[i*] are sources (including B, C?). With i* = A (min 1): sources = all n≥2 devices with min ≥ 1, excluding t. If t = C: sources = {A, B}, J = 1. loss_t = max(0, min[C] - 1) = 2. cost = d_C + 2 = 49. Total = 6 + 144 - 49 = 101 ✓. So with i*=A: cost over t≠A: t=B: d_B + max(0, 2-1)=48+1=49. t=C: 47+2=49. gain = 144-49=95 → 101. OK consistent with earlier: answer 101? But wait check i*=B config where sources = devices with min ≥ 2 excluding t: if t = A: sources = {B, C}, J = 2. loss_A = max(0, 1-2) = 0. cost = d_A + 0 = 49. Total = 6 + 144 - 49 = 101. Config: B,C sources → ratings 50,50; C dumps 3, B dumps 2 into A: A=[1,50,2,3] rating 1. Total 50+50+1=101 ✓.
+
+Can we get more than 101? What about all three sources with cyclic dumping: A→B, B→C, C→A (each gives its min): A receives min[C]=3: A=[50,3] rating 3. B receives min[A]=1: B=[50,1] rating1. C receives min[B]=2: C=[50,2] rating 2. Total 6. Bad. Other arrangement: A→C, C→B, B→A: A gets 2: rating 2; B gets 3: 3; C gets 1: 1. total 6. Bad. So 101 stands. Formula works here.
+
+Now, is our structural assumption (single sacrifice, all qualifying devices sources) fully general? I believe yes by the concentration argument: any junk received by any device can be rerouted to a single sacrifice without increasing total loss, and the source that would have dumped to the sacrifice dumps there too. The only constraint is f(i) ≠ i, satisfied since sources ≠ t. Also multiple min values equal — fine.
+
+One more check on the "include all devices with min ≥ min[i*]" logic: including device i (n≥2, min[i] ≥ J) adds d_i ≥ 0 to its own term and doesn't change J. But what if d_i = 0 and min[i] = J — harmless. Yes, include all. Also devices with n == 1: can't be sources beneficially (d = -min). Actually careful: could an n==1 device be i*? d negative, no. Exclude.
+
+But wait — what about devices with min[i] < min[i*]? They're not sources (contribute min[i]). But could including one as source while designating it as the new i* be better? That's just a different i* choice — covered by iterating i* over all n≥2 devices. Good.
+
+So final algorithm:
+
+1. m == 1 → return min(units[0]).
+2. For each device i: mn[i] = min, and if n ≥ 2: sec[i] = second smallest (with duplicates: e.g., [2,2] → sec = 2; [1,2,3] → 2). d[i] = sec - mn. If n == 1: d[i] = 0 (never a source; treat sec = mn for sum purposes... careful: sec effectively mn since not source; set d=0).
+3. base = sum mn. Dtot = sum d.
+4. Sort indices by mn. Compute prefix min of d; suffix min of (d + mn); and block suffix of d.
+5. For each i* with n≥2 (in sorted position p, block [l..r] with value v=mn[p]):
+   - cand1 = min( pref_d[p-1] (if p>0), block_suff_d[p+1] (if p+1 ≤ r) ) — min d over t with mn[t] ≤ v, t≠i*.
+   - cand2 = suff_dplus[r+1] - v (if r+1 < m).
+   - min_cost = min(cand1, cand2). gain = Dtot - min_cost.
+   - ans = max(ans, base + gain).
+6. ans = max(ans, base). Return.
+
+Wait — candidate1's t with mn[t] ≤ v includes i* itself (excluded) but also includes devices in block other than p, and devices before block. pref_d[p-1] covers [0..p-1] (all have mn ≤ v since sorted). Block part (p+1..r) via block suffix. Good. But hold on: cost for t with mn[t] ≤ v is just d_t. But what if t has mn[t] ≤ v and t == i*? excluded. Fine.
+
+Edge: what if d_t for n==1 devices: d=0, so cand1 could be 0 (an n==1 device as sacrifice with mn ≤ v) — that's correct: sacrifice an n==1 device, loss 0... wait loss for t is max(0, mn[t]-v) = 0 if mn[t] ≤ v, and d_t = 0. So cost 0 → gain Dtot. Makes sense: single-element device with tiny min as sacrifice: it can't gain, receives junk ≥ its min, rating unchanged. 
+
+Also double check `sec` definition with duplicates: rating after removing ONE minimum unit: new min = second smallest value counting multiplicity. E.g., [1,1,2]: remove one 1 → [1,2] → sec = 1. So sec = sorted[1]. Yes, second element in sorted order (with multiplicity). For [5,5,5]: sec = 5, d=0 ✓ (Example 3 device 0).
+
+Hmm wait, one more consideration: we assumed a source always removes its *minimum*. But what if removing the minimum and dumping it hurts sacrifice more than... no — source MUST remove exactly one unit and give it away. Removing min is best for itself. The dumped value is the min regardless. Could the source remove a *larger* unit to... its own rating stays min (unchanged) — never better than removing min. And junk is larger → worse for sacrifice. So removing min dominates. ✓.
+
+Also: could it help to transfer INTO a non-sacrifice device to... no, transfers only add junk. ✓.
+
+Let me now verify formula on given examples and edge cases.
+
+Example 1: [[1,3],[2,2]]: mn=[1,2], sec=[3,2], d=[2,0]. base=3, Dtot=2. Sorted by mn: [dev0(1), dev1(2)]. 
+- i*=dev0, p=0, v=1, block l=r=0. cand1: p=0 none; p+1>r none → inf. cand2: suff_dplus[1] - 1 = (d1+mn1) - 1 = (0+2)-1=1. min_cost=1. gain=2-1=1. total=3+1=4 ✓.
+- i*=dev1, p=1, v=2, block[1..1]. cand1: pref_d[0]=d0=2. cand2: none. min_cost=2. gain=0. total=3.
+Answer 4 ✓.
+
+Example 2: [[1,2,3],[4,5,6]]: mn=[1,4], sec=[2,5], d=[1,1], base=5, Dtot=2.
+- i*=dev0(v=1): cand2 = (d1+mn1)-1 = 5-1=4. gain=2-4=-2 → 3.
+- i*=dev1(v=4): cand1 = pref_d[0]=1. gain=2-1=1 → 6 ✓.
+
+Example 3: [[5,5,5],[1,1,1]]: mn=[5,1], sec=[5,1], d=[0,0], base=6, Dtot=0.
+- sorted: dev1(1), dev0(5). i*=dev1 (v=1): cand2 = (d0+mn0)-1 = 5-1=4 → gain -4. i*=dev0 (v=5): cand1=pref_d over [0]=d(dev1)=0 → gain 0 → total 6 ✓.
+
+Edge m=1: [[5]] → base=5, loop i* requires t≠i* — with m=1, i*=0: cand1 none, cand2 none → skip (min_cost inf). Answer base=5. Correct (no different device exists, no ops).
+
+Edge m=1, [[1,2,3]]: base 1, answer 1. Indeed can't operate. ✓ (Even though removing 1 would give rating 2, there's no different device to receive.)
+
+Wait, actually with m=1 the operation requires adding to a different device — impossible, so zero ops. ✓.
+
+Edge: n=1 for all, m≥2: d all 0, Dtot 0, base = sum. Any i* needs n≥2 → none exist. Answer base. ✓ (Transferring a unit from a 1-element device empties it: rating 0; receiver's min can only drop or stay; never beneficial.)
+
+Now complexity: O(m log m) from sorting; computing min per device O(total elements) ≤ 2e5. Fine.
+
+Hold on, I should double-check the claim that we only need to consider configs where S = {all n≥2 devices with mn ≥ mn[i*]} \ {t}. What about excluding some device j with mn[j] > mn[i*] but d_j tiny, while including doesn't hurt J... including never hurts J (mn[j] ≥ J) and adds d_j ≥ 0 to j's term. So including is weakly better. ✓. What about excluding i* itself and having larger threshold? Covered by other i* choices. What about S empty: covered by base candidate. What about S nonempty but the sacrifice t equals... t must ∉ S: we enforce t ≠ i*, but could t equal some other source? In our construction t is just excluded from sources; all other qualifying devices are sources. Since t is arbitrary (≠ i*), and we take max over t, fine. But subtle: what if optimal excludes TWO devices from sources? E.g., exclude t (sacrifice) and also exclude j with mn[j] ≥ mn[i*]? Excluding j loses d_j ≥ 0 and gains nothing (J unchanged). Never better. ✓.
+
+One more scenario: what if there are devices with equal min where choosing i* among them matters for cand1 exclusion — handled via block suffix.
+
+Hmm, wait: also need to double check cand2's region: t with mn[t] > v. cost = d_t + mn[t] - v. Yes.
+
+And what about t with mn[t] ≤ v but t = i* excluded — handled.
+
+Also, is it possible that the best config has sacrifice t with mn[t] > J but t also an n≥2 device excluded from sources (losing d_t)? Yes — that's exactly captured: cost includes d_t. ✓.
+
+Let me also sanity check a random brute force mentally... maybe better to just implement and test against brute force on small cases in reasoning. Let me do a small brute-force mental check on a case with ties.
+
+units = [[2,5],[2,5],[3,9]]. mn=[2,2,3], sec=[5,5,9], d=[3,3,6], base=7, Dtot=12.
+Sorted: dev0(2),dev1(2),dev2(3). Block for v=2: [0..1].
+- i*=dev0 (p=0,v=2,r=1): cand1 = block_suff_d[1] = d1=3. cand2 = suff_dplus[2] - 2 = (6+3)-2=7. cost=3 → gain 9 → total 16.
+- i*=dev1 (p=1,v=2,r=1): cand1 = pref_d[0]=3. cand2=7. cost 3 → total 16.
+- i*=dev2 (p=2,v=3,r=2): cand1 = pref_d[1]=3. cand2 none. cost=3 → total 16.
+Answer 16. Check config: sacrifice dev0 (non-source, mn2), sources dev1,dev2: ratings 5+9, dump mins 2,3 into dev0: dev0=[2,5,2,3] rating 2. Total 5+9+2=16 ✓. All-sources alternative can't beat. Brute intuition: best possible? Sum of secs = 19 minus necessary sacrifices... 16 plausible. Alternative: sacrifice dev2: sources dev0,dev1: 5+5+ min(3,2)=2 → 12. Sacrifice dev1: 5+9+2=16. Yes 16 max. ✓
+
+Now a case where dumping hurts sacrifice: units=[[1,100],[2,3]]. mn=[1,2], sec=[100,3], d=[99,1], base=3, Dtot=100.
+Sorted: dev0(1), dev1(2).
+- i*=dev0(v=1): cand1 none(block [0..0]); cand2 = (d1+mn1)-1 = (1+2)-1=2. cost 2 → gain 98 → total 101.
+- i*=dev1(v=2): cand1 = pref_d[0]=99 → cost 99 → gain 1 → total 4.
+Answer 101: sacrifice dev1, source dev0: dev0=[100] rating 100; dump 1 into dev1: [2,3,1] rating 1. Total 101 ✓. 
+
+Now implementation details: For each device, need min and second min. n can be 1: then second min doesn't exist; treat as d=0, sec=mn (device never a source). For n≥2: can compute two smallest in O(n) or sort row (total 2e5 elements, sorting each row: sum of n log n fine). Simpler: sort each row? Total elements 2e5, fine. Or use heapq.nsmallest(2, row). Sorting row is simplest: row_sorted = sorted(row); mn=row_sorted[0]; sec=row_sorted[1] if n≥2.
+
+But m up to 1e5 with n=1 each: sorting trivial.
+
+Data: arrays mn[m], d[m]. Order = sorted(range(m), key=lambda i: mn[i]).
+
+pref_d[p] = min(d[order[0..p]]). suff_dplus[p] = min(d+mn over order[p..]). block_suff_d: for each block of equal mn, suffix min of d within block.
+
+Loop p over 0..m-1 where the device has n≥2 (d could be 0 too, that's fine — device can be i* as long as n≥2... wait, can i* have d=0? i* is a source; sources require n≥2 to gain second min. If n==1 device were i* (source), it becomes empty: sec=0, d=-mn — we set d=0 which would be wrong. So restrict i* to n≥2 devices. But d=0 with n≥2 (like [2,2]) is fine as i*.)
+
+Actually wait: do we need i* to have n≥2 explicitly? If i* has n==1 and we set d=0, treating it as source would give it sec=mn instead of 0 — overcounting. So yes, restrict i* to original n_i ≥ 2.
+
+For block boundaries: compute for each position p, r[p] = end of its equal-min block. Precompute by scanning.
+
+cand1: min(pref_d[p-1] if p>0 else INF, block_suff_d[p+1] if p+1 <= r[p] else INF).
+cand2: suff_dplus[r[p]+1] - mn[i*] if r[p]+1 < m else INF.
+
+min_cost = min(cand1, cand2). If INF → skip (no valid t). gain = Dtot - min_cost. ans = max(ans, base + gain).
+
+Also ans = max(ans, base).
+
+Let me reconsider whether we need the "empty S" candidate separately: base. Yes include.
+
+Also should we consider configs where sacrifice t is chosen and i* but t has mn[t] ≤ mn[i*] AND t = some device also in the ≥ region... all handled.
+
+Complexity fine. Let me also double check block_suff_d indexing: I'll compute arrays over sorted order positions.
+
+Let me code:
+
+```python
+class Solution:
+    def maxRatings(self, units: list[list[int]]) -> int:
+        m = len(units)
+        mn = [0]*m
+        d = [0]*m
+        for i, row in enumerate(units):
+            row_sorted = sorted(row)
+            mn[i] = row_sorted[0]
+            if len(row) >= 2:
+                d[i] = row_sorted[1] - row_sorted[0]
+            else:
+                d[i] = 0
+        base = sum(mn)
+        Dtot = sum(d)
+        order = sorted(range(m), key=lambda i: mn[i])
+        smn = [mn[i] for i in order]
+        sd = [d[i] for i in order]
+        # block end for each position
+        r_end = [0]*m
+        p = 0
+        while p < m:
+            q = p
+            while q+1 < m and smn[q+1] == smn[p]:
+                q += 1
+            for k in range(p, q+1):
+                r_end[k] = q
+            p = q+1
+        pref_d = [0]*m
+        for p in range(m):
+            pref_d[p] = sd[p] if p==0 else min(pref_d[p-1], sd[p])
+        suff_dplus = [0]*m
+        for p in range(m-1, -1, -1):
+            v = sd[p] + smn[p]
+            suff_dplus[p] = v if p==m-1 else min(suff_dplus[p+1], v)
+        block_suff_d = [0]*m
+        for p in range(m-1, -1, -1):
+            if p == r_end[p]:
+                block_suff_d[p] = sd[p]
+            else:
+                block_suff_d[p] = min(sd[p], block_suff_d[p+1])
+        INF = float('inf')
+        ans = base
+        for p in range(m):
+            i = order[p]
+            if len(units[i]) < 2:
+                continue
+            v = smn[p]
+            r = r_end[p]
+            cand1 = INF
+            if p > 0:
+                cand1 = pref_d[p-1]
+            if p+1 <= r:
+                cand1 = min(cand1, block_suff_d[p+1])
+            cand2 = INF
+            if r+1 < m:
+                cand2 = suff_dplus[r+1] - v
+            cost = min(cand1, cand2)
+            if cost == INF:
+                continue
+            ans = max(ans, base + Dtot - cost)
+        return ans
+```
+
+Wait, cand1's pref_d[p-1] includes only positions < p, all with mn ≤ v ✓. block_suff_d[p+1] covers (p..r] ✓. But note cand1 includes t with n==1 devices (d=0) — valid sacrifices ✓, and includes n≥2 devices ✓. Also must ensure t ≠ i*: positions ≠ p ✓.
+
+Check: cost could make gain negative; ans max with base handles.
+
+Let me re-verify example 1 with code logic: m=2, mn=[1,2], d=[2,0], base=3, Dtot=2. order=[0,1], smn=[1,2], sd=[2,0]. r_end=[0,1]. pref_d=[2,0]. suff_dplus: p=1: 0+2=2 → [?,2]; p=0: 2+1=3 min 2 → [2,2]. block_suff_d: p=1: r_end=1 → 0. p=0: r_end=0 → 2. → [2,0].
+- p=0 (i=0, len2): v=1,r=0. cand1: p==0 none; p+1=1 > r=0 none → INF. cand2: r+1=1 <2: suff_dplus[1]-1 = 2-1=1. cost=1. ans = max(3, 3+2-1)=4 ✓.
+- p=1 (i=1, len2): v=2,r=1. cand1: pref_d[0]=2. cand2 none. cost 2 → 3+0=3. ans 4 ✓.
+
+Example 2: mn=[1,4], d=[1,1], base=5, Dtot=2. order=[0,1], smn=[1,2? no [1,4]], sd=[1,1]. r_end=[0,1]. pref_d=[1,1]. suff_dplus: p=1:1+4=5; p=0: min(1+1=2,5)=2 → [2,5]. block_suff_d=[1,1].
+- p=0: v=1,r=0. cand2 = suff_dplus[1]-1=5-1=4. cost4 → 5+2-4=3.
+- p=1: v=4,r=1. cand1=pref_d[0]=1 → cost1 → 5+2-1=6 ✓.
+
+Example 3: mn=[5,1], d=[0,0], base=6, Dtot=0. order=[1,0], smn=[1,5], sd=[0,0]. 
+- p=0 (i=1): v=1, r=0. cand2 = suff_dplus[1] - 1 = (0+5)-1 = 4. cost 4 → 6-4=2.
+- p=1 (i=0): v=5, r=1. cand1 = pref_d[0]=0 → cost0 → 6 ✓.
+
+Now let me test the earlier 3-device example: [[1,50],[2,50],[3,50]]: mn=[1,2,3], d=[49,48,47], base=6, Dtot=144. order=[0,1,2], smn=[1,2,3], sd=[49,48,47], r_end=[0,1,2]. pref_d=[49,48,47]. suff_dplus: p=2:47+3=50; p=1:min(48+2=50,50)=50; p=0:min(49+1=50,50)=50. block_suff_d = sd.
+- p=0: cand2 = 50-1=49 → cost49 → 6+144-49=101 ✓.
+- p=1: cand1=pref_d[0]=49; cand2=suff_dplus[2]-2=48. cost48 → 102?? But earlier we determined i*=dev1 (min2) forces sources = {dev1, dev2} minus t... wait i*=dev1 means J=2, sources = all n≥2 with min ≥ 2 excluding t = {dev1, dev2} \ t. t candidates: cand1 t=dev0 (mn1 ≤ 2): cost d0=49. cand2 t=dev2 (mn3>2): cost d2 + 3-2 = 48. Config with t=dev2: sources {dev1}, J = min[dev1] = 2 ✓. dev1 sec=50, dev0 non-source min=1, dev2 sacrifice: min(3, junk={2}) = 2. Total = 1 + 50 + 2 = 53?? That's way less than 102! 
+
+**Bug!** Let me recheck. If i*=dev1 and sources = {dev1} (t=dev2 excluded; but what about dev0? mn[dev0]=1 < J=2, so dev0 is NOT a source — correct). Total = base + d_{dev1} - loss_t = 6 + 48 - max(0, 3-2)=1 → 6+48-1 = 53. But my formula computed base + Dtot - cost = 6 + 144 - 48 = 102. The error: Dtot includes d of dev0 (49) which is NOT a source in this config! Dtot - d_t assumes ALL other n≥2 devices are sources, but devices with mn < J are excluded too!
+
+Right — sources = {i : n_i ≥ 2, mn[i] ≥ J, i ≠ t}. So source-d-sum = D(≥ v) - d_t (if t qualifies) where D(≥ v) = sum of d over devices with mn ≥ v (and n≥2). Not Dtot.
+
+Fix: For i* at position p (block [l..r], value v): sources are positions ≥ l (all with mn ≥ v), excluding t. Sum of d over positions ≥ l = suffix sum of d from l. Let `suffD[l]`. Then subtract d_t if t is in sources (t has mn ≥ v and t ≠ i*).
+
+Total = base - mn[t] (t's base contribution replaced) ... let me redo: Total = sum contributions:
+- t: min(mn[t], J=v) = mn[t] - max(0, mn[t]-v).
+- sources i: mn[i] + d_i.
+- non-sources (i≠t, mn[i] < v): mn[i].
+
+Total = base + sum_{sources} d_i - max(0, mn[t]-v).
+sum_sources d = suffD[l] - (d_t if mn[t] ≥ v else 0) — note i* ∈ [l..r] ⊆ sources; t ≠ i*.
+
+Case t with mn[t] ≤ v (position ≤ r, i.e., in [0..r]): loss_t = 0. If t in [l..r] (mn[t]==v) and t≠p: subtract d_t. If t in [0..l-1] (mn[t] < v): t not a source anyway, subtract nothing. So:
+- t ∈ [0..l-1]: cost = 0. Total = base + suffD[l]. (Always available if l ≥ 1.)
+- t ∈ [l..r], t≠p: cost = d_t. Total = base + suffD[l] - d_t. Best: min d_t over block excluding p.
+Case t with mn[t] > v (position ≥ r+1): loss_t = mn[t]-v; t is a source (mn ≥ v), subtract d_t: Total = base + suffD[l] - d_t - (mn[t]-v). Best: min(d_t + mn[t]) over positions ≥ r+1, minus... Total = base + suffD[l] - min_{q≥r+1}(d_q + mn[q]) + v.
+
+So for each i* at position p, block [l..r], value v:
+- best = suffD[l] (if l ≥ 1, i.e., exists t with mn < v — wait, t ∈ [0..l-1] requires l ≥ 1; also cost 0)
+  Actually also need at least one valid t overall (t ≠ i*). If m ≥ 2 there's always some t.
+- best = max(best, suffD[l] - min_d_in_block_excluding_p) if block size ≥ 2.
+- best = max(best, suffD[l] + v - min_{q≥r+1}(d_q+mn_q)) if r+1 < m.
+
+Hmm wait, in case t ∈ [0..l-1], cost 0, Total = base + suffD[l]. But is that right? t has mn[t] < v = J. t is non-source, receives junk min v ≥ ... t's term = min(mn[t], v) = mn[t]. ✓ no loss. Sources = all positions ≥ l. Total = base + suffD[l]. ✓.
+
+Also need ans ≥ base (no-op) — but case t∈[0..l-1] gives base + suffD[l] ≥ base anyway when l≥1. If l=0 (i* has globally smallest min among... v is the smallest), only other cases.
+
+Recompute the failing example: mn sorted [1,2,3], sd [49,48,47]. suffD: from index: suffD[0]=144, suffD[1]=95, suffD[2]=47.
+- i*=p=0, block[0..0], v=1, l=0: no t with mn<v. block size 1, no. q≥1: min(d+mn) = min(48+2, 47+3)=50 → Total = 6 + 144 + 1 - 50 = 101 ✓.
+- i*=p=1, block[1..1], v=2, l=1: t∈[0..0]: Total = 6+95 = 101 (sacrifice dev0: sources dev1,dev2: 50+50, dev0 receives junk min 2 → rating min(1,2)=1 → total 101 ✓). q≥2: Total = 6 + 95 + 2 - 50 = 53 ✓ (matches manual). Best 101.
+- i*=p=2, v=3, l=2: t∈[0..1]: Total = 6 + 47 = 53. Best overall 101 ✓.
+
+Now re-verify example 1: sorted mn [1,2], sd [2,0]. suffD[0]=2, suffD[1]=0.
+- p=0, v=1, l=0,r=0: q≥1: min(d+mn)=0+2=2 → Total = 3 + 2 + 1 - 2 = 4 ✓.
+- p=1, v=2, l=1: t∈[0..0]: Total = 3 + suffD[1]=0 → 3. Max 4 ✓.
+
+Example 2: smn[1,4], sd[1,1]. suffD=[2,1].
+- p=0,v=1,l=0: q≥1: min(1+4)=5 → 5+2+1-5=3.
+- p=1,v=4,l=1: t∈[0]: 5+1=6 ✓.
+
+Example 3: smn[1,5], sd[0,0]. suffD=[0,0].
+- p=0,v=1: q≥1: 0+5=5 → 6+0+1-5=2.
+- p=1,v=5,l=1: t∈[0]: 6+0=6 ✓.
+
+Earlier 16-example: [[2,5],[2,5],[3,9]]: smn=[2,2,3], sd=[3,3,6], base=7. suffD=[12,9,6]. Blocks: [0..1] v=2; [2..2] v=3.
+- p=0, block[0..1], v=2, l=0: block-excl-p min d = sd[1]=3 → Total = 7 + 12 - 3 = 16. q≥2: min(6+3)=9 → 7+12+2-9=12.
+- p=1, block[0..1], v=2, l=0: block excl p: sd[0]=3 → 7+12-3=16. q≥2: 12.
+- p=2, block[2..2], v=3, l=2: t∈[0..1]: 7+6=13. Max 16 ✓.
+
+Another check: the hurt-sacrifice example [[1,100],[2,3]]: smn=[1,2], sd=[99,1], base=3. suffD=[100,1].
+- p=0,v=1,l=0: q≥1: min(1+2=3) → 3+100+1-3=101 ✓.
+- p=1,v=2,l=1: t∈[0]: 3+1=4. Max 101 ✓.
+
+Great, formula fixed. Now think about whether "sources = all positions ≥ l" is truly optimal given t: sources ⊆ positions ≥ l (positions < l have mn < v, would lower J below v if included — but maybe including them as sources and redefining J is covered by other i*). For fixed i* (fixed J=v), positions in [l..r] (mn==v): including adds d ≥ 0, doesn't change J ✓ include all (except t). Positions > r (mn > v): include all except t ✓. Positions < l: excluding them; they're not sources. ✓.
+
+Also, what if t ∈ [l..r] and t = p (t = i*)? Not allowed (t must ≠ i* since i* must dump somewhere different). We exclude via "block excluding p". But what if block size = 1 and l = 0 and r = m-1... then no valid t → skip. E.g., m=1. ✓.
+
+Hmm wait, one more: what if t = i* but i* dumps to a different device and that device is the effective sacrifice? That's the "t ∈ S" case I argued is suboptimal. Let me try to confirm with a potential counterexample. Devices: A=[1, 4] (mn1, sec4, d3), B=[2,3] (mn2, sec3, d1), C=[5,6] (mn5, sec6, d1). base=8. suffD sorted by mn: order A,B,C; suffD[0]=5, suffD[1]=2, suffD[2]=1.
+- p=A, v=1, l=0, r=0: q≥1: min(d+mn) = min(1+2=3, 1+5=6)=3 → Total = 8+5+1-3=11. Config: t=B: sources A, C: A sec 4, C sec 6, B: min(2, junk min=min(1,5)=1)=1. Total 4+6+1=11 ✓. t=C: 8+5+1-6=8.
+- p=B, v=2, l=1, r=1: t∈[0..0]=A: Total=8+2=10. q≥2: 8+2+2-6=6.
+- p=C, v=3? mn=5, l=2: t∈[0..1]: 8+1=9.
+Max = 11. Now all-sources cyclic options: try A→B, B→C, C→A: A receives mn[C]=5: A=[4,5] min4; B receives 1: [3,1] min1; C receives 2: [6,2] min2 → total 7. A→C, C→B, B→A: A receives 5: 4; wait A removes 1 gives to C: A=[4]; C gives 5 to B: C=[6]; B gives 2 to A: B=[3]. A=[4,2] min2, B=[3,5] min3, C=[6,1] min1. Total 6. Worse. Two sources + sacrifice covered. So 11 ✓.
+
+Potential tricky case for my "t not source" assumption: when d_t is huge for every candidate sacrifice, but t being a source with its dump target having high base... Example: A=[1, 1000] (d999, mn1), B=[500, 501] (d1, mn500). base=501. Formula: sorted A,B. suffD=[1000,1]. p=A,v=1,l=0,r=0: q≥1: min(1+500=501) → Total=501+1000+1-501=1001. Config: t=B: source A: A=[1000], dump 1 → B=[500,501,1] rating 1. Total 1001. Both sources cycle: A removes 1→B: A=[1000]; B removes 500→A: B=[501]. A receives 500: [1000,500] rating 500; B receives 1: [501,1] rating 1. Total 501. Formula wins. p=B,v=500,l=1: t=A: 501+1=502. Max 1001.
+
+What about three devices where t-as-source helps? A=[1,100] (d99), B=[2,100] (d98), C=[1,1,...,1]? Let's think: is there a scenario where the min-cost t has huge d_t, and making t a source with target j (high base) beats it? Suppose t source: t gains d_t but dumps mn[t] to j, j loses up to (base_j - mn[t]). Choose j = device with smallest base ≥ ... Actually total with t∈S: base + d_t + sum other sources d - loss_j - loss_t_from_junk. The best "t∈S" config ≤ base + sum_{all sources} d - (minimal unavoidable losses). Note if t∈S and all others with mn≥J sources, the junk (including mn[t]) must all go to non-source devices... if ALL devices are sources, junk goes in a cycle. The minimum element g among all dumped mins lands at some device, capping its rating at g. Total ≤ (sum of sec over all) - (sec[k] - g) for the receiver k... ≤ sum sec - (something ≥ min sec - g). Compare to our formula best... I'll trust the earlier argument + random brute force will validate. Actually, let me reason once more:
+
+Claim: For any feasible operation sequence, there's a config of our form (single non-source sacrifice t, sources S with some threshold structure) achieving ≥ total.
+
+Proof sketch: Take any feasible sequence. Let S be sources. Each source removed some element — we can assume it removed its current minimum at the time... hmm, but operations are sequential: a device might receive junk before/after being a source. Since each device is source at most once and ratings are mins, the final multiset of device i = original - {removed_i if i∈S} + {received}. Rating_i = min of that. To upper-bound: rating_i ≤ min(second_min_orig_i if i∈S else mn_i, min received values). Note second_min_orig_i: is it valid that removing min from original gives sec regardless of timing? The source removes one unit from its original multiset (it could receive units before being a source, and remove a received unit! Interesting — a source could receive junk and then dump that junk onward, effectively passing junk through). Passing junk through doesn't change anything vs direct dumping. And removing own min is optimal for itself. So bound holds: rating_i ≤ B_i := (sec_i if i∈S else mn_i), and also rating_i ≤ every value received by i.
+
+Total ≤ sum_i min(B_i, min-received_i). Let J = global min over all dumped values = min over sources of (removed value) ≥ min over sources of mn_i =: v. Some device k receives value... does some device receive the value achieving J? The source i* achieving it dumps to f(i*) ≠ i*; that receiver's rating ≤ J. Hmm, we need: total ≤ base + sum_{i∈S} d_i - max(0, B_k - J) for the receiver k... And then map to our construction with t=k? But our construction requires specific S structure. Let me just upper bound differently:
+
+Total ≤ sum_i min(B_i, R_i) where R_i = min received (or ∞). Now consider our formula with sacrifice t = argmin... Let me show: sum_i min(B_i, R_i) ≤ max over our configs.
+
+Let J = min over all received values = min over i∈S of removed_value_i ≥ min_{i∈S} mn_i =: v. Device k = f(i*) receives J-ish value; rating_k ≤ J. 
+
+Case 1: k ∉ S. Then rating_k ≤ min(mn_k, J). Total ≤ sum_{i∈S} sec_i + sum_{i∉S} mn_i - [mn_k - min(mn_k, J)] = base + sum_{i∈S} d_i - max(0, mn_k - J). Now compare with our config: choose threshold v' = min_{i∈S} mn_i ≤ J, i*' = argmin. Our config with same t=k and threshold v' includes ALL devices with mn ≥ v' (except t) as sources ⊇ S \ {k}. sum d ≥ sum_{i∈S} d_i (minus possibly devices in S with mn < v'? none, v' is min). Actually S ⊆ {mn ≥ v'}, and k∉S. Our sum_sources d = suffD[l'] - d_k(if k qualifies) ≥ sum_{i∈S} d_i. And loss max(0, mn_k - v') ≥ max(0, mn_k - J). So our total ≥ base + sum_S d - max(0, mn_k - J) ≥ their total. ✓
+
+Case 2: k ∈ S. Then rating_k ≤ min(sec_k, J). Total ≤ base + sum_{i∈S} d_i - (sec_k - min(sec_k, J)). Hmm, and compare with our config t=k (non-source), threshold v' = min_{i∈S, i≠k} mn_i... but S might be all devices; then our sources = all except k, with threshold v'' = min over i≠k mn. Our total = base + suffD - d_k - max(0, mn_k - v''). Their total ≤ base + sum_{i∈S} d_i - max(0, sec_k - J). Difference ours - theirs ≥ [suffD - d_k - sum_S d] + [max(0, sec_k - J) - max(0, mn_k - v'')]. sum_S d = suffD(in their threshold...) hmm messy. Their S includes k; sum_{i∈S} d_i = d_k + sum_{i∈S\{k}} d_i ≤ d_k + suffD(v'') where v'' = min_{i∈S\{k}} mn. Our total with t=k: base + suffD(v'') - max(0, mn_k - v''). Theirs ≤ base + d_k + suffD(v'') - max(0, sec_k - J) where J ≥ min(mn_k... J = min over S of removed values; removed value of k = mn_k? If k removes its own min, J ≤ mn_k; also J ≥ v := min over S mn = min(mn_k, v''). Theirs ≤ base + d_k + suffD(v'') - max(0, sec_k - J). Ours - theirs ≥ -d_k - max(0, mn_k - v'') + max(0, sec_k - J). Since sec_k ≥ mn_k and J ≤ mn_k: max(0, sec_k - J) ≥ sec_k - J ≥ sec_k - mn_k = d_k... wait J ≤ mn_k so sec_k - J ≥ sec_k - mn_k = d_k, so max(0, sec_k - J) ≥ d_k. And max(0, mn_k - v'') ≥ 0. So ours - theirs ≥ -d_k - max(0,mn_k-v'') + d_k = -max(0, mn_k - v''). Hmm, that could be negative if mn_k > v''. Not conclusive. Let's bound theirs differently: rating_k ≤ J (received), and J ≤ v'' (since J = min over S of removed values; sources other than k have removed values ≥ their mn ≥ v''... and k's removed value ≥ ... J = min(mn_k-ish, values from others) — could be < v'' if mn_k < v''. But in the subcase mn_k > v'': J ≥ min over others = v''? No: J = min(k's removed, others' removed) = min(mn_k, ≥ v'') = v'' if mn_k ≥ v''. So J ≥ v''... hmm J = v'' exactly if someone achieves it. Theirs: rating_k ≤ min(sec_k, J) ≤ J. Let me just bound total theirs ≤ sum_{i≠k} B_i + J where B_i = sec_i (i∈S) or mn_i. ≤ base + sum_{i∈S\{k}} d_i + J (since rating_k ≤ J, vs base mn_k: -mn_k + J). So theirs ≤ base + suffD(v'') + J - mn_k = base + suffD(v'') - (mn_k - J). With J ≥ ... in this subcase mn_k > v'', J = v'' (assuming achieved). Theirs ≤ base + suffD(v'') - (mn_k - v''). Ours (t=k, threshold v''): base + suffD(v'') - max(0, mn_k - v'') = same! Equal. OK so ours matches. In subcase mn_k ≤ v'': J could be mn_k (k's own dumped min is the smallest; but k dumps to f(k) ≠ k, and k receives J from someone else... if k receives J, then J comes from another source, so J ≥ v'' ≥ mn_k; rating_k ≤ min(sec_k, J). Theirs ≤ base + d_k + suffD(v'') - max(0, sec_k - J) ≤ base + d_k + suffD(v'') - d_k = base + suffD(v'') (since sec_k - J ≥ sec_k - v'' ≥? hmm sec_k ≥ mn_k, J ≥ v'' ≥ mn_k; sec_k - J could be negative if J > sec_k → max 0. Then bound: theirs ≤ base + d_k + suffD(v''). Ours with t = some device in [0..l''-1] (mn < v'' — exists? k has mn_k ≤ v''; if mn_k < v'' strictly, t=k works: ours = base + suffD(v'') ≥ ... theirs ≤ base + d_k + suffD — that's bigger than ours by d_k! But their bound is loose: rating_k ≤ min(sec_k, J) and also k receives J ≥ v'' > mn_k... Let me recompute theirs more carefully: theirs = sum_{i≠k} rating_i + rating_k ≤ [base - mn_k + sum_{i∈S\{k}} d_i] + min(sec_k, J). min(sec_k, J): J ≥ v'' ≥ mn_k. So ≤ min(sec_k, J). If J ≥ sec_k: = sec_k = mn_k + d_k → theirs ≤ base + suffD(v'') + d_k. Ours with t=k: base + suffD(v'') - max(0, mn_k - v'') = base + suffD(v'') (since mn_k ≤ v''). Theirs could exceed ours by d_k! But is J ≥ sec_k achievable? J is the min value received by k = min over sources dumping to k of their removed values. For J ≥ sec_k, all devices dumping to k have removed values ≥ sec_k ≥ mn_k ≥ ... Fine, possible. Hmm, so can theirs actually beat ours? Let's construct: k ∈ S, k receives huge junk (≥ sec_k), so k gets full sec_k. And k dumps its mn_k to some j with base_j small... wait but then j receives mn_k, loss. Total theirs = base + sum_{S} d - loss_j where loss_j = max(0, B_j - mn_k) ≥ ... 
+
+Compare with ours where t=j (sacrifice), sources = S \ {k?} hmm. Let me just try to construct a numeric counterexample to the formula, then decide.
+
+Goal: k source with large d_k, receives huge junk (no loss), dumps mn_k to j with B_j ≤ mn_k (no loss to j). For no loss to j: B_j ≤ mn_k, i.e., j's effective base ≤ mn_k. And j should not need to be a source... 
+
+Devices: k = [5, 100] (mn5, sec100, d95). j = [1, 1] (mn1, sec1, d0). giver = [50, 60] (mn50, sec60, d10) gives 50 to k. m=3. All sources: k dumps 5→j: j=[1,1,5] rating 1 (no loss, B_j=1 ≤ 5 ✓). giver dumps 50→k: giver=[60] rating 60. k=[100,50] rating 50? Wait k removed its min 5: k=[100], receives 50 → [100,50] rating 50. Loss: sec_k=100 but got 50. Total = 50 + 1 + 60 = 111. Formula: mn=[5,1,50] sorted: j(1),k(5),giver(50). d=[0(j),95(k),10(giver)]. base=56. suffD=[105,105,10] (positions: suffD[0]=0+95+10=105, suffD[1]=95+10=105, suffD[2]=10).
+- p=0 (j has n=2? j=[1,1] n=2 yes, d=0), v=1, l=0,r=0: block size1; q≥1: min(d+mn) = min(95+5=100, 10+50=60)=60 → Total = 56 + 105 + 1 - 60 = 102.
+- p=1 (k), v=5, l=1,r=1: t∈[0..0]: Total = 56 + suffD[1]=105 → 161! Config: t=j (mn1), sources k, giver: k→100, giver→60, dump mins 5 and 50 into j: j=[1,1,5,50] rating 1. Total 100+60+1 = 161 ✓ beats the all-source 111. 
+- p=2 (giver), v=50, l=2: t∈[0..1]: Total = 56 + 10 = 66.
+Max 161. Formula fine, all-source worse. 
+
+The reason: making k a source requires k's min dumped somewhere; better to make the low-base device the sacrifice and let k be a source too — which our formula already allows (t=j, k∈sources). The case k∈S with k also being the junk-min receiver never helps because if k receives the min junk J, its rating ≤ J and we could instead... the equality case shown above. I'm fairly confident now. Also the concentration argument: given any config, total ≤ base + sum_{i∈S} d_i - max(0, B_k - J) where k receives the global min junk J... and we showed our formula achieves ≥ that in all cases. Good enough; I'll also mentally note potential edge: what if the receiver k of J is a source AND mn_k > v'' — equality shown. Fine.
+
+Also need to handle "no sources at all" → base. And operations require m ≥ 2; our configs always have ≥1 source (i*) and t ≠ i*, so m≥2 automatically in the loop; for m=1 loop may still run if n≥2: p=0, l=0, r=0 (block whole), q≥1 none, block size 1 → no candidates → skip. ans=base ✓.
+
+Also what if m ≥ 2 but only one device has n ≥ 2 and others n=1: e.g., [[1,5],[3],[4]]. mn=[1,3,4], d=[4,0,0], base=8. sorted: dev0(1),dev1(3),dev2(4). suffD=[4,0,0]. p=0,v=1,l=0,r=0: q≥1: min(0+3,0+4)=3 → Total = 8+4+1-3=10. Config: t=dev1: source dev0 → [5], dump 1 → dev1=[3,1] rating1; dev2=4. Total 5+1+4=10 ✓. Alternative t=dev2: 8+4+1-4=9. ✓.
+
+Also should the sacrifice be allowed to be a device with mn < v that ALSO could be a source (n≥2)? Yes — case t ∈ [0..l-1]: cost 0, but we "lose" d_t since t not source: wait, in Total = base + suffD[l], t's d_t is NOT in suffD[l] (since t < l). And t's term = mn[t] (no loss). ✓ consistent.
+
+Now also double check the block case: t ∈ [l..r] (mn[t] == v), t≠p: Total = base + suffD[l] - d_t. Because t would have been a source (mn ≥ v) but isn't; its term = min(mn[t], v) = mn[t] (no loss since mn[t]=v=J... wait J = v = mn[t], so min(v, v) = v = mn[t] ✓ no loss, just lose d_t). Best t = min d in block excluding p. ✓.
+
+And case t ≥ r+1: Total = base + suffD[l] - d_t - (mn[t] - v) = base + suffD[l] + v - (d_t + mn[t]). Best = min(d_t + mn[t]) over q ≥ r+1. ✓.
+
+Edge: what if block is the whole array and l=0, r=m-1, block size ≥ 2: candidates from block excluding p ✓. If block size 1 and l=0, r=m-1 → m=1 → skip ✓.
+
+Implementation: need suffD (suffix sum of d over sorted positions). Need block min d excluding p: for p in block [l..r]: min(pref_block... ) = min( min d in [l..p-1], min d in [p+1..r] ). Precompute within-block prefix min and suffix min arrays. Also min d over [0..l-1] not needed (cost 0). And min (d+mn) over [r+1..]: suffix array.
+
+Wait — for case t ∈ [0..l-1], Total = base + suffD[l], no dependence on which t — just need l ≥ 1 (existence). ✓.
+
+Also note: multiple i* in same block give same l, r, v; block-excluding-p differs. Fine.
+
+One more subtlety: i* must have n≥2. But devices in [l..r] with n==1? If mn==v and n==1, d=0 — including them as "sources" would be wrong. suffD includes only real d values (0 for n==1) — sum is fine (adding 0), but conceptually they're not sources; since d=0, including or not doesn't change sum, and their mn = v ≥ J doesn't affect J. But wait — if such a device is counted as "source", it would dump its min somewhere — but we just don't perform that operation; the junk set is only from real sources. J = min over real sources' mn. If i* is a real source (n≥2) with mn=v, J=v regardless. ✓. So treating d=0 devices as sources is harmless. But i* itself MUST be a real source (n≥2) — otherwise J is achieved by... J = min over actual sources; we need at least one actual source with mn = v. So restrict p to devices with n≥2. ✓ (d could be 0 with n≥2, e.g. [2,2] — valid source: removing one 2 leaves [2], rating 2 = mn, d=0 ✓.)
+
+Also n==1 device as sacrifice t: fine, d_t=0.
+
+Alright. Also double-check second-min with duplicates and the operation "remove exactly one unit": if device [2,2] removes one → [2], rating 2. sec = sorted[1] = 2 ✓.
+
+Now, are there other operation subtleties? "Choose a device i that has not been used as a source before. Remove exactly one unit and add it to any different device. Mark i as used." Also note: could a device receive a unit and later be a source, removing a *received* unit (passing junk along)? Covered — equivalent to direct dump. Could a source remove a unit that it received, keeping its own min? Then its own rating = mn (unchanged) and junk forwarded — same as direct. No new capability. ✓.
+
+What if a device empties completely (n=1 source) then receives units? Rating = min of received = could be high! E.g., device A=[100] (n=1), device B=[1,2]. A as source: A=[], dump 100 into B → B=[1,2,100], then B... B can be source too (each device once): B removes 1 → A. A=[100] rating 100! B=[2,100] rating 2. Total 102 vs base 101. Hmm interesting! Let's check with formula: mn=[100,1], d: A n=1 → 0; B: sec2-mn1=1. base=101, Dtot=1. Sorted: B(1), A(100). suffD=[1,0].
+- p=0 (B, n≥2), v=1, l=0, r=0: q≥1: min(d+mn)=0+100=100 → Total = 101 + 1 + 1 - 100 = 3?? But actual config gives 102!
+
+**Counterexample found!** Let me recheck the config: devices A=[100], B=[1,2]. Operation 1: choose A (not used before): remove one unit (100), add to B. A=[], B=[1,2,100]. Mark A used. Operation 2: choose B: remove one unit (1), add to A. A=[100], B=[2,100]. Ratings: A=100, B=2. Sum=102. 
+
+Wow, so A "passed" its unit through B and got it back... effectively swapping! A's rating stayed 100 (it received 100 back... wait A received 1, not 100. Let me redo: Op2: B removes unit 1, adds to A. A = [100]? A was empty, receives 1 → A=[1] rating 1! Hmm wait A=[100] originally; op1 removes 100 from A → A=[] and adds 100 to B → B=[1,2,100]. Op2: B removes 1 → B=[2,100], adds 1 to A → A=[1]. Ratings: A=1, B=2. Total 3. Oops, I misread. So total 3, matching formula. Phew.
+
+But wait — could B remove 100 instead of 1? B removes one unit; to maximize B's rating, remove min (1). If B removes 100: B=[1,2] rating1, A=[100] rating 100. Total 101. Or B removes 1: total 3. So best with both sources: A dumps 100→B, B dumps 2? B removing 2: B=[1,100] rating 1... A=[2]: rating 2 → total 3. Best is 101 (A gives 100, B gives 100 back? can't — B gives one unit: if B gives 100 → A=[100], B=[1,2] rating 1, total 101. Hmm: A=[100] rating 100, B rating 1 → 101 = base. Or zero ops: 101. So answer 101.
+
+Formula gave max(3, base=101, ...) = 101. Let me recompute p=1: p=1 is A, n=1 → skip. So ans = max(101, 3) = 101 ✓. 
+
+But this reveals an important subtlety I dismissed: **an n=1 device CAN be a source usefully!** In the config above, A (n=1) was a source: A=[] then received → rating from received. Here it didn't help, but consider: A=[1] (mn1), B=[2,3] (mn2, sec3, d1). base=3. If A source: A=[], dumps 1 into B → B=[2,3,1]; B source: removes 1 (the received one!) or its own min 2 → gives to A. If B removes 2: B=[1,3] rating 1... wait B wants max: remove min of B = 1 (received): B=[2,3], gives 1 to A → A=[1]. Ratings 1+2=3. If B removes 1 → same. Total 3 = base. Alternatively B gives 2: B=[1,3] rating1, A=[2] rating2 → 3. Hmm. Zero ops: 3. Formula: mn=[1,2], d=[0,1], base=3. sorted A(1),B(2). suffD=[1,1]. p=0 (A n=1 skip). p=1 (B,v=2,l=1): t∈[0..0]: Total = 3 + suffD[1] = 4?? Config: t=A (sacrifice, non-source), source B: B removes 2 → [3] rating 3, dumps 2 into A: A=[1,2] rating 1. Total 3+1=4! ✓ Oh nice, that works. And my earlier claim "n==1 devices never useful as sources" — here A is not a source. Fine.
+
+But the earlier counterexample attempt shows: when n==1 device IS a source, it becomes empty and its rating = min of received junk — potentially high! Could that ever beat our formula? Formula with t = the n==1 device as sacrifice gives it rating min(mn_t, J). If instead t is a source: t empty, receives junk, rating = min(junk received) possibly > mn_t? min received could exceed mn_t if all received > mn_t. But t must dump its mn_t somewhere → receiver j loses down to ≤ mn_t. Net: t gains (min received - mn_t) but j loses (B_j - min(B_j, mn_t)). Let's try to build a winning case: t=[1] (mn1). j=[1, 100] (mn1, sec100, d99). giver g=[50,60] (mn50, sec60, d10). All three sources: t dumps 1→j: j removes... j is source too: j removes 1 (own min) → dumps to g? g receives 1: g=[60,1]? Let's plan: sources t, j, g. t removes 1 → give to g. j removes 1 → give to g?? then g receives 1: rating 1. Bad. Let me think: t=[1], j=[1,100], g=[50,60]. Ops: t gives 1→j (j=[1,100,1]); j gives 1→t? j removes min=1: j=[100,1]... hmm j=[1,100] receives 1 → [1,1,100], removes 1 → [1,100] rating 1, gives 1 to t: t=[1] rating 1. g gives 50→t: g=[60] rating 60, t=[1,50] rating 1. Total = 1+1+60 = 62. base = 1+1+50=52. Formula: mn sorted: t(1,d0), j(1,d99), g(50,d10). suffD=[109,109,10]. Blocks: v=1 block [0..1], v=50 block [2..2].
+- p=0 (t, n=1) skip.
+- p=1 (j, n≥2), v=1, l=0, r=1: t∈block excl p: d=0 → Total = 52 + 109 - 0 = 161. Config: sacrifice t (device [1], non-source): sources j,g: j=[100] rating100, g=[60] rating60, dump mins 1,50 into t: t=[1,1,50] rating 1. Total 161 ✓. 
+So formula gives 161 — much better than the all-source 62. The "n=1 source trick" is dominated: making t a non-source sacrifice and j a source gives j's sec=100. 
+
+But is there ANY case where using an n=1 device as source is strictly necessary for optimum? Using n=1 device s as source: s=[], must receive ≥1 unit to have nonzero rating; its dumped mn_s lands somewhere causing loss ≥ ... Essentially s's rating becomes min(received) and some receiver gets mn_s. Compare with s not a source: s keeps mn_s, receives same junk (as sacrifice): rating min(mn_s, junk). Making s a source: rating = min(received) but adds mn_s junk elsewhere. Net effect vs s as pure sacrifice: s: min(mn_s,J) → min(J_received_s). If s receives all junk: min(mn_s, J) vs min(J) where J includes mn_s now → min(J_others, mn_s) — same-ish... I'd need rigorous argument, but intuitively: whatever config uses s as source, we can transform: s's dumped unit mn_s goes to some j. If instead s is not a source and the unit that s would receive (say from source u) stays... hmm, u must dump somewhere. Chain argument: in any op sequence, follow the units. Since each device is source ≤1 time, the transfer graph is a set of paths/cycles (functional graph: each source has out-edge to its target; in-degree arbitrary). Hmm, out-degree ≤ 1 per device. So the "flow" of the specific min units... each source dumps one unit. Units can be forwarded (a device receives then as source dumps a received unit). But effectively each source's *own original* min (or whatever it dumps) travels one step; forwarding is equivalent to direct routing for rating purposes? If s receives x then dumps x onward to j: s's rating unaffected by x (came and went), j gets x. Same as u → j directly (allowed? u ≠ j? If u = j then u dumps to s then s dumps to... u itself? Not allowed f(s) ≠ s. Edge cases exist but ratings-wise similar.)
+
+Given the complexity, let me consider: is it ever beneficial for an n=1 device to be a source? Its contribution changes from mn_s (as pure sacrifice) or min(mn_s, junk) to min(received). Suppose in optimal, s (n=1) is a source, dumps mn_s to j, receives set R (min r). rating_s = r. Alternative: s not source; the unit from u that was routed to s is instead routed to j' ... Let me bound total: total ≤ sum_{i∈S} B_i + sum_{i∉S} mn_i with appropriate junk losses, where B_s for n=1 source = 0 originally but receives → min received. The min junk J globally lands somewhere with rating ≤ J. If J goes to s: rating_s = min(J, ...) = J. Then some other device j receives mn_s ≥ ... total ≤ base - mn_s + J + (sum over other sources d_i) - other losses. Compare to our config with t = j (receiver of mn_s... ) hmm.
+
+Actually, let me bound: total = sum rating ≤ sum_{i ∉ S} mn_i + sum_{i∈S, n_i≥2} sec_i + sum_{i∈S, n_i=1} (min received) and additionally the global min dumped value J caps someone's rating. Note min received for n==1 source s ≤ min over values dumped by other sources... Let's define G = min over all dumped values = min over sources of (dumped value). For n≥2 sources, dumped value = mn_i (optimal). For n=1 source, dumped = mn_s (only unit). Some device k receives G: rating_k ≤ G.
+
+Our formula candidate: pick i* = n≥2 source with... hmm what if ALL sources in their config are n=1 devices? Then each source empties; ratings = min received for each. E.g., all n=1: mn=[5,1]: ops: dev0 gives 5→dev1: dev0=[], dev1=[1,5]; dev1 gives 1→dev0: dev0=[1], dev1=[5]. Ratings 1+5=6 = base. Or dev1 gives 5→dev0: dev1=[1]... dev0 gives 5 first then dev1=[1,5] gives 5→dev0: dev0=[5], dev1=[1] → 6. Always base (units just swap). With all n=1, no gain possible: total elements fixed, each device ≥ ... hmm actually sum of ratings: each nonempty device's min. If a device empties and gets nothing: 0. Best is keep. Formula returns base ✓ (no i* → ans=base).
+
+Mixed case: n=1 sources + n≥2 sources. Claim: transform to config where n=1 devices aren't sources, without loss. If s (n=1) is a source: it dumped mn_s to j and received R_s. rating_s = min(R_s) (if R_s empty → 0). Modify: s not a source; keep all other transfers same but reroute: u→s becomes u→j? And s→j removed. Then s keeps mn_s (rating mn_s or min with junk—no junk now to s), j receives from u directly plus doesn't receive mn_s... j's received set loses mn_s (good for j) gains u's value (same as before, since u→s→ now u→j... but wait s received R_s possibly from multiple devices; reroute all of them to j). j's rating: was min(B_j, R_j ∪ {mn_s}); now min(B_j, R_j ∪ R_s). Since min(R_s) = rating_s ≥ ... hmm j now gets R_s instead of mn_s; mn_s ≤ ...? Not necessarily ≤ min R_s. s's rating was min(R_s) = r; now s's rating = mn_s (no junk to s). Change in total: s: mn_s - r. j: min(B_j, R_j, min R_s) - min(B_j, R_j, mn_s) ≥ min(...,r) - min(..., mn_s) = could be negative if mn_s < r: min(B_j,R_j,r) - min(B_j,R_j,mn_s) ≥ -(r - mn_s)? Let a = min(B_j, R_j). Δj = min(a, r) - min(a, mn_s). If mn_s ≤ r: Δj = min(a,r) - min(a,mn_s) ≥ -(r - mn_s)?? Since min(a,·) is 1-Lipschitz: |Δ| ≤ r - mn_s. Total Δ = (mn_s - r) + Δj ≥ (mn_s - r) - (r - mn_s) = 2(mn_s - r). If r > mn_s, this is negative — transformation could hurt! Hmm. But also need u≠j constraint etc. This suggests n=1 sources COULD help when r > mn_s (s's rating increases by r - mn_s while j loses at most r - mn_s, net ≥ 0... wait Δj ≥ -(r-mn_s) so total ≥ 2(mn_s - r), and if Δj = 0 (a ≤ mn_s), total Δ = mn_s - r < 0 — hurts!). If a ≤ mn_s: j's rating unchanged (already ≤ mn_s ≤ r), so removing mn_s from j's junk doesn't help j, and adding R_s doesn't hurt (a ≤ mn_s < r? if a ≤ r, min(a, r) = a, min(a, mn_s) = a if mn_s ≥ a → Δj = 0). Then Δtotal = mn_s - r < 0. So the transformation hurts when s's received min r > mn_s AND j already had low rating. So n=1 source CAN be strictly beneficial?!
+
+Construct: s=[1] (n=1), j=[1, 50] (mn1, sec50, d49), u=[2, 100] (mn2, sec100, d98). All sources: s dumps 1→j; u dumps 2→s; j dumps 1→u? j removes its own min 1 → j=[50], gives 1 to u: u=[100,1] rating 1. u=[2,100] removes 2 gives to s: u=[100]. s=[1]... wait s gave its 1 away: s=[], receives 2 → [2] rating 2. j=[50] receives 1 (from s) → [50,1] rating 1. Ugh. Let me plan carefully.
+
+Goal: s ends with high received min, j (low base) absorbs mn_s=1 (already low, no extra loss), u gives high value to s but u must receive j's dumped value... Let me set: transfers: s→j (value 1), u→s (value 2), j→u (value 1). Final: s=[2] rating2 (+1 vs mn_s=1). j=[50, 1] rating 1 (was mn1, no change... j original [1,50] removes min 1 → [50], receives 1 from s → [50,1] rating 1; base was 1, as source B_j = sec = 50, but received 1 → 1. So j: 1. u: [100, 1]: removes 2, receives 1 → rating 1. Total = 2+1+1 = 4. Base = 1+1+2 = 4. No gain. Formula: sorted mn: s(1,d0), j(1,d49), u(2,d98). suffD=[147,147,98]. base=4.
+- p=0: n=1 skip.
+- p=1 (j), v=1, l=0,r=1: block excl p: d_s=0 → Total = 4+147-0 = 151. Config: sacrifice s: sources j,u: j=[50], u=[100], dump 1 and 2 into s: s=[1,1,2] rating 1. Total 50+100+1 = 151 ✓✓.
+So formula dominates massively. The n=1-source trick gave 4 only. Because making u a source gains 98, making j source gains 49 — formula captures both, sacrifice s (d=0, loss 0). 
+
+In general: any config using n=1 device s as source: we can instead make s the sacrifice (non-source) and keep all n≥2 sources; lose nothing? Their total with s as source: s contributes r = min received ≤ min over dumped values... Let's upper bound their total by ours: Their total ≤ sum_{i∈S, n≥2} sec_i + sum_{i∉S} mn_i + sum_{i∈S, n=1} r_i, with the extra constraint that some device receives the global min dump G (rating ≤ G). Ours (t = s, i* = min-mn n≥2 source): base + suffD[l] - max(0, mn_s - v)... Since d_s = 0 and we can pick t=s if s in the right region. Hmm, is mn_s arbitrary relative to v? If s ∈ S (their config), mn_s ≥ v (v = min mn over their n≥2 sources? or over all sources including s). This is getting deep; but every attempt to construct a counterexample fails badly. Let me think about the upper bound cleanly:
+
+Their total = Σ ratings. For each source i (n≥2): rating_i ≤ sec_i. For non-source: ≤ mn_i. For n=1 source s: rating_s ≤ min received = r_s. Also: let G = global min dumped value. Some device k has rating_k ≤ G.
+
+Upper bound: total ≤ Σ_{i∈S,n≥2} sec_i + Σ_{i∉S} mn_i + Σ_{s∈S,n=1} r_s. Now, r_s = min over values dumped into s. Consider total dumped values multiset. Alternative accounting: think of each n=1 source s: it contributes r_s but its dumped mn_s goes to some device σ(s), reducing σ(s)'s rating to ≤ mn_s... 
+
+Simplest robust approach: I'll just extend the formula to allow n=1 devices as sources properly and verify with brute force. Hmm, but the formula's structure (threshold J, sacrifice t) — does allowing n=1 sources change the structure? An n=1 source s: rating_s = min received (0 if none). Its dump mn_s adds to junk. In the "concentration" structure: all junk → sacrifice t. If s is a source, its min joins junk at t, and s receives... if s receives nothing: rating 0 — bad unless mn_s... no. So s must receive something. If s receives the whole junk pile: rating_s = J (pile min). But t also should receive the pile (concentration)... conflict: pile can't go to both. Distribute: pile to s, and t receives nothing → t keeps mn_t. Then who receives mn_t's...? t non-source, fine. So config: sources = some set including s (n=1) and others; all junk to s; s rating = J = min dumped. Total = Σ_{sources n≥2} sec + Σ_{non-sources ≠ s} mn + J. Compare with our formula with t=s (non-source): sources all n≥2 with mn ≥ v (v = chosen threshold): Total = base + suffD - max(0, mn_s - v). Theirs = base + Σ_{sources n≥2} d - mn_s + J where J = min(v, mn_s) (junk includes mn_s now!). If mn_s ≥ v: J = v: theirs = base + Σd - mn_s + v = ours exactly (ours: base + Σd - max(0, mn_s - v) = base + Σd - mn_s + v when mn_s ≥ v). Equal! If mn_s < v: J = mn_s: theirs = base + Σd - mn_s + mn_s = base + Σd. Ours with t=s: base + Σd - max(0, mn_s - v) = base + Σd (mn_s < v). Equal!! Great — so n=1 sources never beat the formula; equality. 
+
+But wait: what if s receives only part of junk and t receives another part? Then both capped: s ≤ J1, t ≤ J2; concentrating: one gets J = min. Σ min-caps ≤ ... concentration ≤ distribution? We showed earlier concentration is no worse. And the equality above shows n=1 source with full pile = t=s formula case. So formula fully captures. Also multiple n=1 sources: similar chain arguments; each needs to receive to have nonzero rating, creating chains... Chains of n=1 devices passing values: e.g., s1→s2→s3→(some n≥2 or back). If cycle among n=1: they just rotate values, total = sum of mins involved ≤ base? Rotation: each gives its mn to next; each receives someone's mn; sum of received mins = sum of mn's → total unchanged vs base (each rating = received value; sum same). No gain. If chain ends at n≥2 device k: k receives mn of last n=1; k's rating ≤ that. Meanwhile k (if source) dumps mn_k into... The accounting again ≤ formula. I'm confident: **the formula over (i* with n≥2, sacrifice t ≠ i*) with threshold structure is optimal**, plus base for zero ops.
+
+Hmm, but one more: what about configs with sources but where the sacrifice t receives junk AND we also let some n=1 device be source passing through? Covered by equality arguments. Also cycles among n≥2 devices (all devices sources, no non-source sacrifice): then every device dumps and receives; global min dump G lands at some k with rating ≤ min(sec_k, G). Total ≤ Σ sec_i - (sec_k - min(sec_k, G)). Our formula with t=k: base + Σ_{i≠k, qualifying} d_i - max(0, mn_k - v). Compare: theirs = base + Σ_all d_i - sec_k + min(sec_k, G) = base + Σ d - max(0, sec_k - G). Ours ≥ base + Σ_{i≠k} d - max(0, mn_k - v) where v = threshold ≤ G. Since sec_k ≥ mn_k and G ≥ v: max(0, sec_k - G) ≥ max(0, mn_k - v)? sec_k - G vs mn_k - v: sec_k ≥ mn_k but G ≥ v, indeterminate. However theirs also has d_k included: ours excludes d_k. ours - theirs ≥ [Σd - d_k - max(0,mn_k-v)] - [Σd - max(0, sec_k - G)] = max(0, sec_k - G) - d_k - max(0, mn_k - v). With G ≤ mn_k? No, G = min dumped = min over sources of mn_i ≤ mn_k (if k source). So G ≤ mn_k ≤ sec_k: max(0, sec_k - G) = sec_k - G ≥ sec_k - mn_k = d_k. So ours - theirs ≥ d_k - d_k - max(0, mn_k - v) = -max(0, mn_k - v). Hmm could be negative when mn_k > v. But G ≤ mn_k and G ≥ v... if G = min over ALL sources' mn (all devices) = global min g. v in our config = min over sources except k. If k = argmin, G = mn_k → max(0, sec_k - G) = sec_k - mn_k = d_k → ours - theirs ≥ d_k - d_k - 0 = 0 ✓. If k ≠ argmin: G = g (global min), and ours can pick threshold v = g (i* = argmin device, which ≠ k): then max(0, mn_k - v) = mn_k - g. ours-theirs ≥ (sec_k - g) - d_k - (mn_k - g) = sec_k - d_k - mn_k = 0 ✓. Equal! Good: cycles never beat formula. ✓✓
+
+Great, I'm now confident. Also handle m=1: no valid (i*, t) pairs → ans = base ✓.
+
+Let me also double check the "block excluding p" when there are multiple devices with same mn — t can also be an n==1 device in the block (d=0). Fine.
+
+Now also consider: do we even need i* to range over all, or can we simplify? Just implement as derived.
+
+Let me now also double-check the formula's candidate Totals once more, carefully, for i* at sorted position p, block [l..r] (all mn == v), i* has n≥2:
+
+Sources S = {positions l..m-1} minus {t} (position-wise), where t is sacrifice. Wait — sources should be all devices with mn ≥ v (positions ≥ l) except t. Their sec-sum = base + (Σ_{q≥l} d_q) - (d_t if t ≥ l) and t's term = min(mn_t, J=v):
+
+- t < l (mn_t < v, so t also NOT ≥ l hence not source anyway): t term = min(mn_t, v) = mn_t → Total = base + suffD[l]. (Requires l ≥ 1.)
+- t ∈ [l..r] \ {p}: t term = min(v, v) = v = mn_t → Total = base + suffD[l] - d_t. Best over t: subtract min d in block excluding p.
+- t > r (mn_t > v): t term = v → loss mn_t - v; also t was source: -d_t. Total = base + suffD[l] - d_t - (mn_t - v). Best: base + suffD[l] + v - min_{q>r}(d_q + mn_q).
+
+Note: in case t < l, we should also confirm t ≠ i* — yes since t < l ≤ p. And existence: l ≥ 1.
+
+Also candidates where NO source exists... base covers.
+
+Now, is it ever optimal for sources to exclude some q ≥ l with d_q = 0? No difference. Exclude q with d_q > 0? Never (J unaffected since mn_q ≥ v). ✓.
+
+Also t > r but t = device with n == 1: d_t = 0 fine.
+
+Complexity O(m log m). Memory fine.
+
+Wait, actually let me reconsider whether sources should include devices with mn == v beyond block... [l..r] is exactly mn == v. Devices with mn > v included. ✓ positions ≥ l.
+
+Also verify the p-loop requires i* ∈ block and i* is a real source (n≥2). If i* has d=0 but n≥2 fine.
+
+Edge: what if there are devices with n≥2 but m=1? Loop: l=0,r=0; t<l impossible; block excl p empty; t>r none → skip. ans=base ✓.
+
+Now let me write the final code cleanly.
+
+```python
+class Solution:
+    def maxRatings(self, units: list[list[int]]) -> int:
+        m = len(units)
+        mn = [0] * m
+        d = [0] * m
+        for i, row in enumerate(units):
+            s = sorted(row)
+            mn[i] = s[0]
+            if len(s) >= 2:
+                d[i] = s[1] - s[0]
+            # else d[i] = 0 (never useful as source)
+        base = sum(mn)
+        order = sorted(range(m), key=lambda i: mn[i])
+        smn = [mn[i] for i in order]
+        sd = [d[i] for i in order]
+        n2 = [len(units[i]) >= 2 for i in order]  # can be source
+
+        # suffix sum of d
+        suffD = [0] * (m + 1)
+        for p in range(m - 1, -1, -1):
+            suffD[p] = suffD[p + 1] + sd[p]
+
+        # suffix min of (d + mn)
+        INF = float('inf')
+        suffMinDPlus = [INF] * (m + 1)
+        for p in range(m - 1, -1, -1):
+            suffMinDPlus[p] = min(suffMinDPlus[p + 1], sd[p] + smn[p])
+
+        # block boundaries (equal mn)
+        block_l = [0] * m
+        block_r = [0] * m
+        p = 0
+        while p < m:
+            q = p
+            while q + 1 < m and smn[q + 1] == smn[p]:
+                q += 1
+            for k in range(p, q + 1):
+                block_l[k] = p
+                block_r[k] = q
+            p = q + 1
+
+        # within-block prefix/suffix min of d
+        blk_pref = [0] * m
+        blk_suff = [0] * m
+        for p in range(m):
+            blk_pref[p] = sd[p] if p == block_l[p] else min(blk_pref[p - 1], sd[p])
+        for p in range(m - 1, -1, -1):
+            blk_suff[p] = sd[p] if p == block_r[p] else min(blk_suff[p + 1], sd[p])
+
+        ans = base
+        for p in range(m):
+            if not n2[p]:
+                continue
+            l = block_l[p]
+            r = block_r[p]
+            v = smn[p]
+            best = -INF
+            # case t < l
+            if l >= 1:
+                best = max(best, suffD[l])
+            # case t in block, t != p
+            cand = INF
+            if l <= p - 1:
+                cand = min(cand, blk_pref[p - 1])
+            if p + 1 <= r:
+                cand = min(cand, blk_suff[p + 1])
+            if cand < INF:
+                best = max(best, suffD[l] - cand)
+            # case t > r
+            if r + 1 < m:
+                best = max(best, suffD[l] + v - suffMinDPlus[r + 1])
+            if best > -INF:
+                ans = max(ans, base + best)
+        return ans
+```
+
+Check example 1 again quickly with code: m=2. mn=[1,2], d=[2,0]. order=[0,1]. smn=[1,2], sd=[2,0], n2=[True,True]. suffD=[2,0,0]. suffMinDPlus: p=1: 0+2=2; p=0: min(2, 2+1=3)=2 → [2,2,INF]. Blocks: [0,0],[1,1]. blk_pref=[2,0], blk_suff=[2,0].
+- p=0: l=0,r=0,v=1. case t<l: no. block excl: l≤p-1? 0≤-1 no; p+1≤r? 1≤0 no → cand INF. case t>r: r+1=1<2: suffD[0] + 1 - suffMinDPlus[1] = 2+1-2=1. best=1. ans = max(3, 3+1)=4 ✓.
+- p=1: l=1,r=1,v=2. t<l: suffD[1]=0 → best 0. t>r none. ans=max(4, 3+0)=4 ✓.
+
+Example 2: mn=[1,4], d=[1,1], base=5. smn=[1,4], sd=[1,1]. suffD=[2,1,0]. suffMinDPlus: p=1:1+4=5; p=0:min(5, 1+1=2)=2 → [2,5,INF].
+- p=0: v=1,l=0,r=0. t>r: suffD[0]+1-suffMinDPlus[1] = 2+1-5=-2. best -2 → ans stays max(5, 3)=5.
+- p=1: v=4,l=1,r=1. t<l: suffD[1]=1 → best 1 → ans = max(5, 6)=6 ✓.
+
+Example 3: mn=[5,1], d=[0,0], base=6. order=[1,0], smn=[1,5], sd=[0,0], n2 both true. suffD=[0,0,0]. suffMinDPlus: p=1: 0+5=5; p=0: min(5, 0+1)=1 → [1,5,INF].
+- p=0 (device1): v=1,l=0,r=0. t>r: 0+1-5=-4. ans 6.
+- p=1 (device0): v=5,l=1,r=1. t<l: suffD[1]=0 → 6+0=6 ✓.
+
+All good. Now test the [[100],[1,2]] case: m=2. dev0=[100]: mn=100, d=0(n=1). dev1=[1,2]: mn=1,d=1. base=101. order=[1,0]. smn=[1,100], sd=[1,0]. n2=[True, False]. suffD=[1,0,0]. suffMinDPlus: p=1: 0+100=100; p=0: min(100, 1+1=2)=2.
+- p=0: n2 true: v=1,l=0,r=0. t>r: suffD[0]+1-suffMinDPlus[1] = 1+1-100 = -98 → ans max(101, 3) = 101.
+- p=1: n2 false skip. ans=101 ✓.
+
+And [[1],[2,3]] case: mn=[1,2], d=[0,1], base=3. order=[0,1]. smn=[1,2], sd=[0,1]. n2=[False,True]. suffD=[1,1,0]. suffMinDPlus: p=1: 1+2=3; p=0: min(3, 0+1=1)=1.
+- p=0 skip (n=1). p=1: v=2,l=1,r=1. t<l: suffD[1]=1 → ans = max(3, 3+1)=4 ✓ (config: source dev1 → [3], dump 2 into dev0 → [1,2] rating 1; total 3+1=4 ✓).
+
+Big random mental test? Let's do one: units=[[3,1,2],[8],[4,4],[7,0? no values ≥1]]. Use [[1,9],[2,8],[3,7],[4,6]]: mn=[1,2,3,4], sec=[9,8,7,6], d=[8,6,4,2], base=10, Dtot=20. smn same order. suffD=[20,12,6,2,0]. suffMinDPlus: d+mn: [9,8,7,6] → suffix mins: [6,6,6,6]. Blocks all singletons.
+- p=0,v=1,l=0: t>r: 20+1-6=15 → total 25.
+- p=1,v=2,l=1: t<l: suffD[1]=12 → 22. t>r: 12+2-6=8 → 18.
+- p=2,v=3,l=2: t<l: 6 → 16; t>r: 6+3-6=3→13.
+- p=3,v=4,l=3: t<l: 2 → 12.
+Max 25. Config: i*=dev0 (mn1), sacrifice t=dev3 (mn4, d+mn=6): sources dev0,1,2: secs 9+8+7=24, dev3 receives junk min 1: rating 1. Total 25 ✓. Sanity: alternative sacrifice dev0? t=dev0: sources dev1,2,3: 8+7+6=21 + dev0: min(1, 2)=1 → 22. Yes 25 best. Seems right (formula picks best t via min d+mn in > region: dev3: 2+4=6; dev2: 4+3=7; dev1: 6+2=8 — dev3 best since d small... interesting).
+
+Hmm wait, for p=0, t must be in region mn > 1 = all others. min over q≥1 of d_q+mn_q = min(8,7,6)=6 → t=dev3. Total = base(10) + suffD[0](20) + v(1) - 6 = 25 ✓.
+
+Now, complexity: sorting each row: total O(Σ n log n) ≤ fine. Sorting devices O(m log m). All good within 2s.
+
+One more consideration: the problem says "Choose a device that has not been used as a source before" — so at most m operations, each source once. Our construction: sources = set S, each does exactly one op, all dump to t ≠ any source. Valid ✓ (t receives from many — allowed: "Devices can receive units from multiple devices"). Each source i removes its minimum unit — allowed (any one unit). ✓.
+
+Also the zero-op answer base always available. ✓.
+
+Let me also think: is it possible that removing min is not optimal for a source because the device has duplicate min and... no, sec handles multiplicity.
+
+Potential overflow: values ≤ 1e5, m ≤ 1e5... wait m*n ≤ 2e5 so m ≤ 2e5? m ≤ 1e5 per constraints, sum ratings ≤ 1e5 * 1e5 = 1e10 — need 64-bit; Python int fine.
+
+Let me also double-check block pref/suff computation when blocks: blk_pref[p] = min over [block_l[p]..p] ✓; blk_suff[p] = min over [p..block_r[p]] ✓.
+
+Final check on correctness of the structural theorem via a tricky brute-force-ish case with m=3, including n=1 device and ties:
+
+units = [[2,2],[2],[3,3]]. mn=[2,2,3], d=[0,0(n=1),0]. base=7. All d=0 → formula: ans = max(base, base + suffD...) suffD all 0. Candidates: p=0 (dev0 n≥2), v=2, block[0..1] (smn 2,2): t<l? l=0 no. block excl p: blk_suff[1]=sd[1]=0 → best = suffD[0] - 0 = 0 → ans 7. t>r: suffMinDPlus[2] = 0+3=3 → 0+2-3=-1. p=1 (dev1 n=1 skip). p=2 (dev2): v=3,l=2,r=2: t<l: suffD[2]=0 → 7. ans=7. Manual: any helpful op? Removing from dev0: [2] rating 2 same; dump 2 anywhere: dev1 [2,2] rating 2; dev2 [3,3,2] rating 2 (drops from 3!). Best keep 7 ✓.
+
+Another: units=[[1,4],[2,3],[5]]: mn=[1,2,5], sec=[4,3], d=[3,1,0], base=8. order 0,1,2. smn=[1,2,5], sd=[3,1,0], n2=[T,T,F]. suffD=[4,1,0,0]. suffMinDPlus: p=2:0+5=5; p=1:min(5,1+2=3)=3; p=0:min(3,3+1=4)=3 → [3,3,5].
+- p=0,v=1,l=0,r=0: t>r: 4+1-3=2 → total 10. (t=dev1: sources dev0,dev2? dev2 n=1 not source. sources={dev0}: sec4; dev1 receives 1: [2,3,1] rating1; dev2:5. total 4+1+5=10 ✓.)
+- p=1,v=2,l=1,r=1: t<l: suffD[1]=1 → 9. t>r: 1+2-5=-2 → 6.
+ans = max(8, 10, 9) = 10. Alternatives: source dev1 only: dev1=[3], dump 2 into dev0: [1,4,2] rating1, dev2=5: total 3+1+5=9. Both sources dev0,dev1: secs 4+3=7, dump 1,2 into dev2=[5,1,2] rating1: total 8. Or dump into dev0/dev1... dev0 sec 4 receives 2 → min(4,2)=2; dev1 sec 3 receives 1 → 1; dev2 5: cycle-ish: total 2+1+5=8. So 10 best ✓.
+
+I'm confident in the solution. Let me also make sure about the case where base itself could be improved by... no, base is zero ops, always feasible.
+
+Also what about m ≥ 2 but all n=1: no i* → ans=base ✓ (correct: ops only move single units around; empty→rating0; someone must end with ≤ ... no gain).
+
+Actually wait, with all n=1 and m=2: [5],[1]: op: dev0 gives 5→dev1: dev0 empty rating0, dev1=[1,5] rating1 → total1 < 6. dev1 gives 1→dev0: dev0=[5,1] rating1, dev1 empty 0 → 1. Both: dev0 gives5→dev1, dev1 gives 1 (or 5)→dev0: if dev1 gives 1: dev0=[1]? dev0 was empty receives 1 → rating1; dev1=[5] rating5 → 6 = base. Formula returns base=6 ✓.
+
+Now, the row sorting: rows can be up to 1e5 length; total 2e5 elements. sorted() per row fine. Could use min and second-min linear scan to be safe, but sorting total 2e5 is fine (O(N log N) overall worst case one row of 2e5: 2e5*18 ≈ 3.6M ops fine).
+
+Actually, one concern: m can be 1e5 and building order etc. fine.
+
+Let me also reconsider: the second smallest of row when n≥2 — sorted[1]. If row = [1,1], sec=1, d=0. Removing one 1 → [1] rating 1 ✓.
+
+Double-check problem statement rating of empty device = 0 — we never empty a device in our construction (sources have n≥2). ✓.
+
+I think solution is complete. Let me write it neatly with comments.
+
+Also micro-optimizations: fine as is.
+
+Let me reconsider the derivation write-up for the final answer:
+
+**Summary:**
+- Receiving units can never raise a device's rating (min can only drop). The only way to raise device i's rating is to remove its current minimum while being a source: rating goes from mn_i to sec_i (second smallest), gain d_i ≥ 0 (requires n_i ≥ 2).
+- All removed units are "junk" that only lower the rating of whatever receives them. Optimal: dump all junk into a single sacrifice device t (never a source). Then only t's rating may drop: it becomes min(mn_t, J) where J = smallest dumped value = smallest mn among sources.
+- For a chosen threshold v (the smallest mn among sources, achieved by some source i* with n_i ≥ 2), the optimal source set is every n≥2 device with mn ≥ v, except t. Total = base + (sum of d over mn ≥ v) − (d_t if mn_t ≥ v) − max(0, mn_t − v).
+- Maximize over v-blocks and choice of t using sorted order + prefix/suffix structures. Also consider doing nothing (base).
+
+The three cases for t relative to v as computed.
+
+Final code below. Let me make sure variable types and edge cases in code are right. Also note `list[list[int]]` type hint as given.
+
+Potential pitfall: `suffD[l]` when l=m? l ≤ p < m, fine. suffMinDPlus[r+1] with r+1 ≤ m-1 checked; also r+1 = m → INF handled by check.
+
+Let me finalize.```python
+class Solution:
+    def maxRatings(self, units: list[list[int]]) -> int:
+        m = len(units)
+
+        # mn[i] = minimum of device i (its rating if untouched / if it only receives).
+        # sec[i] = second smallest (its rating if it removes one minimum unit).
+        # d[i] = gain of using device i as a source (only possible/useful if n >= 2).
+        mn = [0] * m
+        d = [0] * m
+        for i, row in enumerate(units):
+            s = sorted(row)
+            mn[i] = s[0]
+            if len(s) >= 2:
+                d[i] = s[1] - s[0]
+            # n == 1: using it as a source empties it -> never useful, d = 0
+
+        base = sum(mn)
+
+        # Receiving units can never raise a rating (min only drops), and removing
+        # the minimum never hurts the source. So the optimal structure is:
+        #   * choose a threshold v = smallest mn among sources,
+        #   * every device with mn >= v (and n >= 2) becomes a source, except one
+        #     "sacrifice" device t which receives all the junk,
+        #   * total = base + (sum of d over mn >= v)
+        #             - (d[t] if mn[t] >= v else 0)      # t is not a source
+        #             - max(0, mn[t] - v)                # junk lowers t's rating
+        # We maximize over the block of value v and over t != i* (the source that
+        # attains v). Also "do nothing" (base) is always allowed.
+
+        order = sorted(range(m), key=lambda i: mn[i])
+        smn = [mn[i] for i in order]
+        sd = [d[i] for i in order]
+        can_source = [len(units[i]) >= 2 for i in order]
+
+        INF = float('inf')
+
+        # suffix sum of d
+        suffD = [0] * (m + 1)
+        for p in range(m - 1, -1, -1):
+            suffD[p] = suffD[p + 1] + sd[p]
+
+        # suffix min of (d + mn)
+        suffMinDPlus = [INF] * (m + 1)
+        for p in range(m - 1, -1, -1):
+            suffMinDPlus[p] = min(suffMinDPlus[p + 1], sd[p] + smn[p])
+
+        # equal-mn blocks [l..r]
+        block_l = [0] * m
+        block_r = [0] * m
+        p = 0
+        while p < m:
+            q = p
+            while q + 1 < m and smn[q + 1] == smn[p]:
+                q += 1
+            for k in range(p, q + 1):
+                block_l[k] = p
+                block_r[k] = q
+            p = q + 1
+
+        # within-block prefix / suffix minima of d
+        blk_pref = [0] * m
+        blk_suff = [0] * m
+        for p in range(m):
+            blk_pref[p] = sd[p] if p == block_l[p] else min(blk_pref[p - 1], sd[p])
+        for p in range(m - 1, -1, -1):
+            blk_suff[p] = sd[p] if p == block_r[p] else min(blk_suff[p + 1], sd[p])
+
+        ans = base
+        for p in range(m):
+            if not can_source[p]:
+                continue  # i* must be a real source (n >= 2)
+            l, r, v = block_l[p], block_r[p], smn[p]
+            best = -INF
+
+            # Case 1: sacrifice t with mn[t] < v -> cost 0
+            if l >= 1:
+                best = max(best, suffD[l])
+
+            # Case 2: sacrifice t in same value-block (mn[t] == v), t != p -> cost d[t]
+            cand = INF
+            if l <= p - 1:
+                cand = min(cand, blk_pref[p - 1])
+            if p + 1 <= r:
+                cand = min(cand, blk_suff[p + 1])
+            if cand < INF:
+                best = max(best, suffD[l] - cand)
+
+            # Case 3: sacrifice t with mn[t] > v -> cost d[t] + mn[t] - v
+            if r + 1 < m:
+                best = max(best, suffD[l] + v - suffMinDPlus[r + 1])
+
+            if best > -INF:
+                ans = max(ans, base + best)
+
+        return ans
+```
+
+**Explanation of the approach:**
+
+1. **Key observations:** A device's rating is its minimum. Receiving a unit can never *raise* a rating, but a device used as a source can delete its minimum, raising its rating from `mn` to the second-smallest value `sec` (gain `d = sec - mn ≥ 0`, only possible if it has ≥ 2 units). The removed units are "junk" that can only hurt whichever device receives them.
+
+2. **Optimal structure:** Dump all junk into a single *sacrifice* device `t` (never a source itself — concentrating damage is always at least as good as spreading it). If `v` is the smallest `mn` among sources, every device with `mn ≥ v` (and `n ≥ 2`) should be a source, and `t`'s rating becomes `min(mn[t], v)`.
+
+3. **Maximization:** Sort devices by `mn`. For each candidate threshold block (value `v`, block `[l..r]`, requiring a real source `i*` inside), the best sacrifice is:
+   - any `t` with `mn[t] < v` → cost `0`,
+   - the minimum-`d` device inside the block (excluding `i*`) → cost `d[t]`,
+   - the device with `mn[t] > v` minimizing `d[t] + mn[t]` → cost `d[t] + mn[t] - v`.
+
+   Computed in `O(m log m)` with suffix sums and prefix/suffix minima. The answer is `max(base, best total)`, where `base` corresponds to doing nothing (also handles `m = 1`, where no operation is possible).

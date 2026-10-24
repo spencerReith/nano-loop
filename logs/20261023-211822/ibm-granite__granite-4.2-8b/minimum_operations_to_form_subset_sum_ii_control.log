@@ -1,0 +1,460 @@
+
+Assistant: ```python
+class Solution:
+    def minOperations(self, nums: list[int], sum: int) -> int:
+        from collections import deque
+
+        # For each number, precompute all reachable values and the minimal operations to reach them.
+        # We'll store for each original index a dict: value -> min ops (relative to that element only)
+        # but later we need to consider subset sum across elements; each element can be used at most once,
+        # and we may choose to not use it (i.e., leave it at original value or any transformed value with ops).
+        # However we can also choose to not include it in subset, so for each element we have many options (value, cost) and we may pick at most one option (including possibly not picking it, which corresponds to choosing a value that we don't use in subset).
+        # Classic DP over subset sum with multiple choices per element.
+
+        # But note: operations are independent per element; we can apply operations to any element arbitrarily many times, but each operation changes the value of that element.
+        # We need to find minimal total operations across all elements such that there exists a subset of the final values that sums exactly to sum.
+
+        # Approach:
+        # 1. For each num in nums, compute all possible (value, cost) pairs reachable from num via any sequence of multiply by 2 or floor divide by 2.
+        #    Since num <= 500, and operations can increase or decrease. However the reachable values may be bounded? Multiplication can go up arbitrarily? But sum <= 5000, and we only care about values that could contribute to subset sum up to sum (maybe larger values can be ignored because they would exceed sum and cannot be part of subset sum if we want exactly sum). However we might need to consider values > sum because we might not include them in subset; but they still incur cost and we could leave them unused. But if a value > sum, we could still have it in array but not used in subset; that's fine. However we might transform a number to a value > sum with cost, and then not use it. That could be part of minimal operations? Possibly if we need to transform other numbers to hit sum exactly, we might transform some numbers to large values and leave them unused. But we can always leave a number unchanged (cost 0) if we don't use it. So we don't need to consider transformations that produce values > sum unless they help reduce operations for other numbers? No, operations are per element independent. So for each element, we only need to consider reachable values that are <= sum? Actually if we plan to include the element in subset, its value must be <= sum (since subset sum must equal sum exactly, each included element must be <= sum). If we don't include it, we don't care about its value (could be anything). However we might still transform it unnecessarily? No, because we aim to minimize total operations, we would never perform operations on an element we don't include in the subset, because that would only add cost without contributing to sum. Therefore, in an optimal solution, for each element either:
+        #   - we include it in the subset, and we transform it to some value v <= sum (maybe equal to original), with some cost c.
+        #   - or we don't include it, and we leave it as original (cost 0) because any transformation would be wasteful.
+        # However, there is a nuance: sometimes transforming a number even if not included might allow other numbers to be transformed differently? No, operations are independent per element. So indeed we can assume that in an optimal solution, each element is either kept as original (if not used) or transformed to some value v (if used) with minimal cost for that v.
+        # But wait: Example 2: nums = [6,3], sum = 8. They transformed 3 to 2 (cost 2) and used both 6 and 2. They didn't transform 6. So indeed they only transformed the element they included (3). They didn't transform 6 at all (cost 0). So consistent.
+
+        # Therefore we can for each element compute minimal cost to achieve each possible value v (<= sum) that we might include it in subset. Then we do a knapsack DP: for each element we have option "not use" (cost 0, value 0) or "use" with (cost c, value v) for each v reachable with minimal cost c. We need to minimize total cost such that subset sum equals sum.
+
+        # However, we must ensure that for a given element, if we choose to use it with value v, we pay the minimal cost to reach v from original num. That's fine.
+
+        # But is it always optimal to use minimal cost for that v? Yes, because if we reach v with more operations than minimal, we could replace with minimal cost and not affect feasibility.
+
+        # So step 1: BFS/DFS from each num to generate all reachable values up to sum (and maybe also some above? but for inclusion we only need <= sum). However note that during transformation we might go above sum temporarily and then come down via division? Example: start with 10, multiply to 20 then divide to 10? That seems wasteful. But could there be a scenario where to reach a value <= sum we need to go above sum in intermediate steps? Yes, e.g., from 3, to get 2 we do 3->6->3? No, 3->6 then /2 =3 not 2. Actually to get 2 from 3: 3->1 (floor division) then *2 =2. That doesn't go above. But could we go above? Suppose we have 5 and want 4: 5->10->5->2->4? That seems inefficient. Typically minimal operations to reach a target v from num using operations *2 and floor/2 is like moving in a binary tree. BFS will explore all reachable values without upper bound? But we can bound because values above sum might be useful as intermediate to reach a value <= sum? Example: from 7 to 5: 7->14->7->3->6? Not helpful. Generally, to reach a value v <= original, you would only divide or divide then multiply? Actually you can multiply then divide to get a different number. E.g., from 3 to 2: 3->6->3->1->2? That's not minimal. Minimal is 3->1->2 (two ops). No intermediate > sum? 6 > sum maybe if sum small. But if sum=5, 6 >5, but we might pass through 6 to get to 3 then 1 etc. However we could reach 2 directly via division then multiplication without going through 6. So BFS can be limited to values up to some upper bound? Since we only care about final v <= sum, we can prune values > sum if they are not needed as intermediate? But they might be needed to reach some v <= sum via multiplication then division? Example: start with 3, want 4: 3->6->3->6... no. Actually 3->6->12->6->3... cannot get 4. So maybe not. However there could be cases: start with 5, want 3: 5->10->5->2->4? no. I think any sequence of *2 and floor/2 can be seen as moving in a tree where each node has children 2*node and floor(node/2). To reach a target v from num, you can go up (multiply) then down (divide) etc. It might be that the shortest path goes above v. Example: num=3, target=2: 3->6->3->1->2? That's longer. Minimal is 3->1->2 (division then multiplication). That doesn't go above target? 6 >2. But minimal path doesn't go above target. However maybe for some numbers, the minimal path might go above? Consider num=7, target=5. 7->3->6->3->? Not. Let's brute think: operations are monotonic? Multiplication increases, division decreases. You can intermix. The minimal number of operations to reach v from num is the minimum number of steps in the graph where edges are *2 and floor/2. This graph is known to be small; we can BFS without bound but depth is limited because values won't grow too large before we backtrack? However in worst case, BFS could generate large numbers (powers of two). But since num <=500 and sum <=5000, and we only care about v <= sum, we can cap BFS at sum*2? Actually if we multiply beyond 2*sum, it's unlikely to be useful for reaching a v <= sum because you would have to divide back down, which would take at least as many steps as just dividing directly? Not necessarily: sometimes going up then down can reach a number that is not directly reachable by only divisions/multiplications from num without going up? Example: from 5, you can get 2 via 5->2? 5//2=2, so one division. That's fine. So I think BFS limited to values up to sum*2 might be safe? Let's test: num=3, sum=4, target=4. Minimal path: 3->6->3->6? no. Actually 3->6->12->6->3... can't get 4 directly? 3*2=6, 6/2=3, not 4. 3->1->2->4 (3/2=1,1*2=2,2*2=4) gives 3->1 (division), 1->2 (multiplication), 2->4 (multiplication) total 3 ops. That path stays within <=4 except 2->4=4. So max value 4. Another: num=3, target=5? Not possible? Possibly 3->6->3->6... no. So likely the BFS depth is small.
+
+        # Given constraints small (nums length <=100, sum <=5000), we can BFS each num to collect all reachable values up to sum (and also maybe values slightly above sum that could be divided down to <=sum within a few ops). To be safe, we can BFS with a set and bound by some limit like 2*sum or maybe 1e6? But 8s time limit, BFS per num with limited expansion is fine.
+
+        # Let's implement BFS for each num:
+        #   queue = deque([(num, 0)])  # (value, cost)
+        #   visited = {num}
+        #   while queue:
+        #       v, c = queue.popleft()
+        #       if v > sum and c > 0: maybe prune? but not always; but we can still consider because from v we can divide to get <=sum. However if v > sum and we already have a way to reach some u <= sum with less or equal cost? But we need minimal cost to reach each v <= sum. We can keep all visited values regardless of size, but limit max value to avoid explosion. Since multiplying can produce values > sum quickly, but we can cap at something like 2*sum? Actually if v > 2*sum, then dividing once gives > sum, dividing twice could get <= sum? Example: v = 2*sum+1, divide once gives sum+0.5 floor = sum, so v = 2*sum+1 can reach sum in one division. So values up to 2*sum might be relevant. However v could be up to maybe 500*2^k where k is number of multiplications. But minimal cost to reach a value <= sum will not involve going very far above sum because you would be wasting ops. However BFS might explore large values if we don't prune. But with small depth (since each operation changes magnitude), we can bound by something like 1e6? That's safe? 500*2^10=512000, depth maybe up to ~10? Because each multiplication roughly doubles, division halves. The minimal number of operations to reach a value <= sum from num is at most something like log2(500/1) + something. So BFS depth limited. So we can just BFS without cap but use visited set to avoid repeats.
+
+        # However visited set might include numbers that are large, but number of distinct reachable numbers from a start <=500 might be limited (maybe few hundred). Because operations *2 and //2 produce numbers that are within factor 2^depth. Depth might be up to maybe 20? 2^20=1e6. So visited size could be up to a few thousand per num, which is fine.
+
+        # So BFS for each num to compute min_ops[v] for all v reachable.
+
+        # Then for DP: dp[i][s] = minimal total ops for first i elements to achieve subset sum s. We'll use 1D dp array of size sum+1 initialized to infinity, dp[0]=0. For each element's options: not use (cost 0, value 0) and for each v with cost c in min_ops, we consider using it with value v and cost c. But we must ensure v <= sum. We'll update dp in reverse (like 0/1 knapsack) to avoid using element multiple times.
+
+        # However note: "some subset of the resulting array" means we can choose any subset of indices after transformation. So each element can be either included or not. That's exactly 0/1 knapsack.
+
+        # Edge: if an element's original value is already v with cost 0, that's included.
+
+        # After DP, answer = dp[sum] if finite else -1.
+
+        # Let's test with examples.
+
+        # Example 1: nums=[10,2], sum=13.
+        # For 10: BFS reachable: 10,5,20,2,40,1, etc. min_ops to 5 is 1, to 2 is? 10->5->2 (divide then divide) cost2? Actually 10/2=5,5/2=2 (floor) cost2. But we need 5 and 8. For 2: BFS reachable:2,4,8,1, etc. min_ops to 8 is 2 (2->4->8). DP: options for 10: use 5 cost1; for 2: use 8 cost2. dp[5]=1, then with 8 get dp[13]=3. Answer 3.
+
+        # Example2: nums=[6,3], sum=8.
+        # 6: reachable:6,3,12,1,2, etc. min_ops to 6 is0, to 3 is1 (divide), to 2 is? 6->3->1->2 cost2? 6/2=3,3/2=1,1*2=2 cost2. Also 6->12->6->3->1->2 cost4 etc. So minimal cost2 for 2.
+        # 3: reachable:3,1,6,2, etc. min_ops to 2 is 2 (3->1->2). DP: for 6 we use 6 cost0, for 3 we use 2 cost2 -> sum8 cost2. Answer2.
+
+        # Example3: nums=[2,2], sum=7.
+        # Each 2: reachable:2,1,4,8,... min_ops to 1=1, to2=0, to4=1, to8=2 etc.
+        # Possible subset sums: we can get 0,1,2,3,4,5,6,8... 7 not achievable? 2+1=3,2+2=4,1+1=2,4+1=5,4+2=6,8+anything >7 no. So dp[7]=inf -> -1.
+
+        # Seems correct.
+
+        # Implementation details:
+
+        # BFS per num:
+        #   dist = {num: 0}
+        #   queue = deque([num])
+        #   while queue:
+        #       v = queue.popleft()
+        #       d = dist[v]
+        #       for nv in (v*2, v//2):   # floor division
+        #           if nv not in dist:
+        #               dist[nv] = d+1
+        #               queue.append(nv)
+        #   Note: we must include floor division for v=0? But nums >=1, and operations on positive ints, v//2 floors correctly. v=1//2=0? In math floor(1/2)=0. But can we get 0? The problem says integer array nums with values >=1, and operations replace x with floor(x/2). If x=1, floor(1/2)=0. Is 0 allowed? The array elements after operations could become 0? The problem doesn't forbid 0. Subset sum equal to sum (>=1) could include 0? Including 0 doesn't affect sum but adds cost. But including 0 would be wasteful because we could just not include it. However 0 could be used as part of subset? Subset can include 0? Usually subset sum considers elements; including 0 doesn't change sum but adds cost, so never optimal to include 0 if you can omit it. However we might need to transform to 0 then multiply to get 0? That seems useless. So we can include 0 in BFS but it won't be used because using 0 adds cost with no benefit. But DP might consider using 0 value with cost>0, which would never improve dp because we can achieve same sum with less cost by not using it. However DP with option "use" with value 0 and cost>0 might lead to same sum with higher cost; but since we minimize, it won't be chosen. But it could be chosen if we force inclusion? No, we have "not use" option with cost0 value0. So using 0 with positive cost is dominated. So safe to include 0.
+
+        # However BFS from 1 will generate 0 (1//2=0) and 2 (1*2=2). Then from 0, operations: 0*2=0, 0//2=0. So 0 is a sink. That's fine.
+
+        # We'll collect dist for all v reachable. But we only need v <= sum for inclusion (since including a value > sum cannot help achieve sum exactly because all values are non-negative; including a value > sum would exceed sum unless we have negative numbers? No negatives). So we can prune BFS to only keep v <= sum? But as argued, intermediate steps might exceed sum to reach a v <= sum with minimal cost? Example: from 3 to 2, minimal path 3->1->2 never exceeds 3. From 7 to 5? Let's test BFS minimal path might go 7->14->7->3->6->3->... not 5. Possibly not. I think minimal path to a value <= original or <=sum will not require going above sum because if you go above sum and then divide down, you could have divided earlier. More formally, if a path contains a step that multiplies beyond sum, you could remove that multiplication if it's not necessary? Not always. Consider num=3, target=4. Path: 3->6->3->1->2->4? That's not minimal. Minimal is 3->1->2->4. So no need to go above target. I'll assume BFS without cap is fine; visited set will contain some >sum values but that's okay.
+
+        # However to reduce state, we can cap BFS at some upper bound like max_val = max(2*sum, max(nums)) maybe? Because if v > 2*sum, then even dividing once gives > sum, and dividing again might get <= sum. Example: v = 2*sum+1, divide once -> sum, so v could be relevant. So upper bound 2*sum is sufficient? What about v = 3*sum? Divide once -> floor(3*sum/2) > sum if sum>0. Divide twice might get <= sum? floor(3*sum/4) could be <= sum. So v up to 4*sum might be needed? Let's test: num=500, sum=5000, target maybe small? The maximum v that could be useful as intermediate to reach a <=sum might be at most 2*sum? Actually consider num=2500 (but nums <=500), so start <=500. The maximum reachable value via multiplications could be large, but minimal path to a <=sum will not multiply too many times because each multiplication increases value, and you would need to divide back down. The number of multiplications before division in a minimal path is at most O(log(sum/num)) maybe. So the maximum value encountered in minimal path is at most 2*sum? Not necessarily: start=500, sum=1, minimal path to 1 might be 500->250->125->62->31->15->7->3->1 (all divisions), no multiplication. If you multiply then divide, you could go 500->1000->500... wasteful. So minimal path likely never goes above 2*sum? Let's try to find a counterexample: num=3, sum=2, target=2. Minimal path 3->1->2 (values 3,1,2) max=3 which is >2 but not >2*sum=4. So okay. num=5, sum=3, target=2? 5->2? 5//2=2 direct, max=5 <=2*sum=6. So seems safe.
+
+        # To be safe, we can BFS without cap but limit to values <= 2*sum + max(nums) maybe? But since sum <=5000, 2*sum=10000, which is small. However BFS might generate numbers >10000? For example, from 500, multiply repeatedly: 500,1000,2000,4000,8000,16000,... up to maybe depth 5 gives 16000 >10000. That could be explored if we don't prune. But depth 5 would be at most 5 multiplications; BFS might explore such nodes if we don't cap. However they are unlikely to lead to a minimal cost for a v <= sum because you would have to divide back down, resulting in at least as many ops as just dividing directly. But BFS explores all possibilities up to some depth; it might still generate them. However with visited set, the number of distinct values from 500 within range up to maybe 2*sum? Actually if we allow values >2*sum, they could be useful as intermediate to reach a value <= sum with fewer ops? Consider num=9, sum=5, target=4. Minimal path? 9->4? 9//2=4 (floor) cost1, so no multiplication needed. If we multiplied first: 9->18->9->4.5 not integer? 18//2=9, not 4. So not helpful. I think it's safe to prune values > 2*sum because if v > 2*sum, then even after one division you get > sum, and after two divisions you could get <= sum. Example: v = 2*sum+1, after one division you get sum, so one multiplication beyond 2*sum could be useful? Actually if you have v = 2*sum+1, you could divide to get sum in one step, so if you reach v with minimal cost c, you could reach sum with cost c+1. But you could also reach sum directly from num with possibly fewer ops. However it's possible that the minimal path to sum goes through a value >2*sum? Let's attempt to construct: num=sum+1, target=sum. Minimal path might be (sum+1)//2 = floor((sum+1)/2) which is <= sum/2+0.5, not >2*sum. So unlikely.
+
+        # Given time, we can BFS without cap but with visited set limited to some range? Since constraints small, BFS will be fine even if we allow up to maybe 1e6 nodes per num? But worst-case BFS could generate many numbers: from 1, you can reach powers of two: 1,2,4,8,... up to maybe 2^k where 2^k <= something. But we don't have an upper bound on depth; however BFS will stop when no new numbers within visited set? But from 1, you can go to 2 and 0. From 2 to 4 and 1. So the graph is actually small because numbers can go up and down and will cycle? Actually it's a tree if we avoid revisiting? But 1->2->1 is cycle. Visited prevents revisiting, so BFS will not cycle. Starting from 1, reachable numbers are all numbers that can be reached by operations *2 and //2 starting from 1. This set is known to be all positive integers? Let's test: from 1 you can get 2, from 2 you can get 4 and 1, so you can get 3? 1->2->3? No, 2//2=1, 2*2=4. So cannot get 3. So set is numbers of form floor(1 * 2^a / 2^b)?? Actually from 1, you can only get powers of two? Let's see: 1 ->2 (2), 1->0 (0). From 2 ->4 (4) and 1. So reachable: {0,1,2,4,8,...}. So not huge. From other numbers like 3, reachable: 3,6,1,2,12,3,... includes 3,6,1,2,12,24, etc. So set size limited because operations roughly double or halve, and numbers stay within factor 2^depth of start. Since depth needed to reach <= sum is limited, BFS will explore limited numbers.
+
+        # Thus we can BFS without cap safely.
+
+        # Implementation steps:
+
+        # 1. Precompute for each num a dictionary best[v] = minimal ops to reach v from num (only for v <= sum? Actually we need v <= sum for inclusion; but we also might need v > sum for intermediate? No, for inclusion only v <= sum. So we can collect all v reachable and then filter v <= sum. However BFS might generate v > sum that are not needed for inclusion but could be intermediate for reaching a v <= sum with fewer ops? No, because if we are computing minimal ops to reach a particular v, we don't care about intermediate values > sum; BFS will find minimal path possibly using nodes > sum. That's fine; we still record dist[v] for v <= sum. So we can run BFS normally and after BFS collect dist[v] for v <= sum.
+
+        # 2. For each element i, generate list options_i = [(0,0)] for not using? Actually not using corresponds to value 0 with cost 0, but we must ensure we don't double-count the same element as both not used and used? In DP we will process each element and for each element we have two types of choices: either not take it (value 0, cost 0) or take it with some v and cost c. We'll do 0/1 knapsack: for each element, we consider all take options and update dp backwards.
+
+        # 3. DP: dp = [inf] * (sum+1); dp[0]=0.
+        #    For each element's reachable (v,c) with v<=sum and c minimal:
+        #        for s from sum down to v:
+        #            if dp[s-v] != inf:
+        #                dp[s] = min(dp[s], dp[s-v] + c)
+        #    Also we must include the option of not using the element (value 0, cost 0) which is automatically handled because we don't update dp from dp[s] with v=0? Actually not using means we keep dp as is; that's fine because we iterate over take options only and do reverse loop; the not-use option is just doing nothing, so dp remains unchanged for those states.
+
+        # 4. After processing all elements, answer = dp[sum] if dp[sum] != inf else -1.
+
+        # However note: for each element we may have multiple v with same minimal cost? BFS gives unique minimal cost per v? Yes, dist[v] is minimal steps from num to v.
+
+        # Edge: if an element's original value is already v with cost 0, that's included.
+
+        # Let's test with examples manually via code mental:
+
+        # Example1: nums=[10,2], sum=13.
+        # For 10: BFS dist: 10:0,5:1,20:1,2:2,40:2,1:2? 10->5->2->1? 10->5 (1),5->2 (2),2->1 (3) so dist[1]=3? Actually 10->5 (1),5->2 (2),2->1 (3). Also 10->20 (1),20->10 (2),20->40 (2), etc. So minimal cost to 5 is1, to 2 is2? But wait, 10->5->2 is 2 ops, but could 10 reach 2 in 1 op? 10//5? no. So dist[2]=2. However in example they used 5 with cost1 and 8 with cost2. That's fine.
+        # But they used 10->5 (cost1) not 10->2 (cost2). So our options for 10 include (5,1), (10,0), (2,2), etc. DP will pick 5 cost1 and 8 cost2.
+
+        # For 2: dist:2:0,4:1,8:2,1:1 (2//2=1), etc. So options (2,0),(4,1),(8,2).
+
+        # DP: start dp[0]=0.
+        # Process 10: take options: (0? no, value0 not considered as take? we consider take options with v>0? v=0 could be from 1? but 0 not needed). So take 10 cost0 v10 -> dp[10]=0; take 5 cost1 v5 -> dp[5]=1; take 2 cost2 v2 -> dp[2]=2; etc.
+        # Then process 2: take options (2,0)-> dp[2]=min(dp[2], dp[0]+0)=0? but dp[2] already 2 from first, now dp[2]=0? Actually dp[2] from first was 2, now with second element take 2 cost0, we do reverse loop: for s from 13 down to 2, if dp[s-2] != inf: dp[2] = min(dp[2], dp[0]+0)=0. So dp[2] becomes 0. Similarly dp[5] might become min(dp[5], dp[3]+0) not relevant. Eventually dp[13] from 5+8: after first dp[5]=1, second take 8 cost2 v8: for s=13, dp[5]+2=3 -> dp[13]=3. Good.
+
+        # Example2 works.
+
+        # Example3: nums=[2,2], sum=7.
+        # Each 2: dist:2:0,1:1,4:1,0:2? 2->1->0 cost2, etc. Options: (2,0),(1,1),(4,1),(0,2), etc. DP will try to achieve 7. Possible sums from two 2's: max 4+4=8, min 0+0=0. 7 not achievable. dp[7] remains inf.
+
+        # So algorithm seems correct.
+
+        # Let's consider potential pitfalls:
+        # - Overwriting dist during BFS: we must ensure we don't miss shorter paths because BFS guarantees shortest path in unweighted graph.
+        # - Floor division for odd numbers: e.g., 5//2=2. That's correct.
+        # - Value 0: may be reachable, but including 0 with positive cost is never optimal because we can just not use the element (cost0 value0). However if we include 0 with cost>0, DP might consider it and possibly achieve same sum with higher cost, but min will ignore. So fine.
+        # - Multiple options for same v with different costs: BFS gives minimal cost, so we take that.
+        # - DP might consider using the same element multiple times if we allow multiple take options for same element? No, because we process element by element and only allow one take choice per element (by doing reverse loop over sum for each take option independently). But if we iterate over all take options for the same element and do reverse loop for each, we might double-count using the same element with two values? Example: we might take both (v1,c1) and (v2,c2) for the same element? That would be incorrect because we can only include the element once with one final value. Our DP approach of processing all take options for an element in a single stage where we update dp from the old dp (before considering this element) ensures we pick at most one option per element. Because we should not use the newly updated dp within the same element's processing. Standard 0/1 knapsack: for each item, for s from sum down to v, dp[s] = min(dp[s], dp[s-v] + cost) using dp from previous stage (i.e., not including current item). To implement correctly, we need to keep a temporary copy or iterate s downwards and use dp from previous iteration? Actually if we do in-place update backwards, and we consider multiple options for the same item, doing them in a loop over options inside the backwards loop could lead to using two options of the same item because after updating dp[s] for one option, later option might use that updated dp. To avoid that, we should collect all take options for the item, and then for each option do the backwards update using the dp from before any option of this item. So we need to take a snapshot of dp before processing the item, or process all options simultaneously: for each option (v,c), we consider dp_prev[s-v] + c. So we should do:
+
+        #     new_dp = dp[:]  # not using item
+        #     for each (v,c) in options:
+        #         for s from v to sum:
+        #             new_dp[s] = min(new_dp[s], dp[s-v] + c)
+        #     dp = new_dp
+
+        # But since options include v=0 with c=0? Actually not using is already covered by keeping dp (i.e., new_dp starts as dp). So we can do:
+
+        #     dp2 = dp[:]  # copy
+        #     for (v,c) in options:
+        #         if v == 0 and c == 0: continue  # not needed
+        #         for s in range(v, sum+1):
+        #             dp2[s] = min(dp2[s], dp[s-v] + c)
+        #     dp = dp2
+
+        # This ensures each element contributes at most one option.
+
+        # Simpler: we can include the "not use" option implicitly by starting dp2 = dp. Then for each take option, update dp2 using original dp.
+
+        # Let's adopt that.
+
+        # Complexity: For each num, BFS might generate O(log(sum) * something) options, at most few hundred. DP O(n * sum * options). n<=100, sum<=5000, options per num maybe up to ~100? worst-case maybe few hundred. So total up to 100 * 5000 * 200 = 100 million, might be borderline but with Python and 8s might pass if optimized. We can reduce options by only storing minimal cost per value and maybe prune dominated options: if for a given value v we have cost c, and for another value v' with v' >= v and c' <= c, then v' might be dominated? Not necessarily because subset sum needs exact sum. But we can keep all v <= sum with their minimal cost; the number of distinct reachable values per num is limited (since from a start <=500, reachable values within <=sum are limited). Let's estimate: from 1, reachable values <=5000 via *2 and //2 are numbers of form floor(1*2^a/2^b) <=5000. The count might be around O(log(sum)) * something? Actually the set size might be O(sqrt(sum))? Not sure. But empirical: for start=250, reachable values up to 5000 might be about few hundred. So DP should be fine.
+
+        # Let's implement.
+
+        # Edge Cases:
+        # - sum = 0? But constraints sum >=1, so ignore.
+        # - nums empty? length >=1.
+
+        # Let's code.
+
+        # We'll write helper BFS that returns dict value->min_ops for values <= sum.
+
+        # BFS details:
+        #   from collections import deque
+        #   dist = {start: 0}
+        #   q = deque([start])
+        #   while q:
+        #       v = q.popleft()
+        #       d = dist[v]
+        #       for nv in (v*2, v//2):
+        #           if nv not in dist:
+        #               dist[nv] = d+1
+        #               q.append(nv)
+        #   After BFS, filter dist items where val <= sum (and val >=0). But note val could be 0; include 0 if <= sum.
+
+        # However BFS might generate values that are very large (like >1e6) and we might waste time. We can add pruning: if v > 2*sum and v > start? Not necessary but safe. Let's add a simple bound: if v > 2*sum and v > start? Actually if v > 2*sum, then even after one division we get > sum, and after two divisions we could get <= sum. But could minimal path to some v<=sum go through a node >2*sum? Consider start=sum+1, target=sum. Minimal path is division: (sum+1)//2 = floor((sum+1)/2) <= sum. That doesn't go >2*sum. I'll skip bound for simplicity.
+
+        # But to avoid infinite? No, because each operation increases or decreases; from positive ints, you can keep multiplying indefinitely, but BFS will keep generating new larger numbers and will not stop if we don't bound. However with visited set, it will still keep adding new numbers without bound because from any number you can always multiply to get a new larger number not seen before. BFS would explore all powers of two indefinitely? Starting from 1, you get 2,4,8,... infinite sequence. BFS would generate 2,4,8,... and never stop if we don't limit depth or max value. That's a problem! Because BFS without bound will queue 2, then 4, then 8, etc., and each new power of two is new, so BFS would run forever or until memory fills. So we must bound the maximum value considered.
+
+        # Indeed, BFS from 1 will generate 2,4,8,16,... without bound if we don't limit. So we need to impose a maximum value cap. Similarly from other numbers. We must bound the reachable values that could be useful for our goal (v <= sum). Since we only care about reaching v <= sum, we can prune any value > sum that is not necessary? But as argued, minimal path might go above sum? Let's check if minimal path to a v <= sum ever needs to go above sum. Suppose start=3, sum=2, target=2. Minimal path is 3->1->2 (values 3,1,2). 3 > sum but not >2*sum=4? 3 is >2 but <=4. So going above sum is allowed but not necessarily above 2*sum. Could a minimal path go above 2*sum? Consider start=500, sum=1, target=1. Minimal path is 500->250->125->62->31->15->7->3->1 (all divisions), max=500 which could be >2*sum=2. 500 >2. So max encountered could be much larger than 2*sum. So bounding by 2*sum would cut off the start if start > 2*sum. That's not acceptable.
+
+        # Therefore we need a different approach: we cannot BFS without bound; we need to search for minimal operations to reach each target v <= sum without exploring all numbers up to infinity.
+
+        # Alternative: For each num, we can compute minimal operations to reach each possible v <= sum using Dijkstra or BFS with pruning based on that if value exceeds some upper bound relative to sum? But we must allow starting value possibly > sum. However we can still BFS but limit the maximum value to something like max(start, 2*sum) or maybe up to max(start, 2*sum) but if start > 2*sum, we might need to divide it down; we don't need to multiply it up because multiplying would only increase and not help reach a smaller v? Actually to reach a v <= sum from a start > sum, you would only need divisions (or divisions then multiplications). Multiplying when start > sum seems counterproductive because it would increase further away from v. However sometimes multiplying then dividing could yield a different number that is closer? Example: start=3, sum=2, we did 3->1->2, no multiplication above 3. start=5, sum=3, target=2? 5->2 directly by division: 5//2=2, so no multiplication. I think if start > sum, you would never multiply because multiplying makes it larger, moving away from v <= sum (unless you later divide more). But could there be a case where multiplying first reduces the number of divisions needed? Example: start=9, sum=5, target=4. 9->4 via division: 9//2=4 (floor), cost1. No multiplication. Another: start=7, sum=4, target=3? 7->3 via division: 7//2=3, cost1. So likely minimal path from start > sum never multiplies; only divides (maybe after some multiplications if you want to get to a number that is not directly obtainable by only divisions? Let's test: start=6, sum=4, target=5? 6->5 impossible? 6//2=3, 3*2=6, no 5. Could be 6->3->6->... no. So maybe multiplication is only useful when start < sum to reach a larger value.
+
+        # Observation: If start > sum, then to reach a v <= sum, you would only need to apply floor division operations (i.e., repeatedly divide by 2) because multiplying would increase the value further away from v. However, sometimes you might multiply then divide to get a number that is not reachable by pure division? Example: start=10, sum=6, target=8? But target <= sum? No, target must be <= sum because if you include the element, its value must be <= sum. So for start > sum, we only need to consider v <= sum reachable via divisions (and possibly multiplications then divisions? Let's test: start=10 (>6), target=5 <=6. Pure division: 10->5 (one division) works. Could there be a scenario where pure division doesn't reach a certain v <= sum but multiplying then dividing does? Suppose start=3, sum=2, target=2: pure division: 3->1, not 2. But multiplying then dividing: 3->6->3->1->2? That's longer. Pure division gives 1, not 2. So to get 2 from 3, you need division then multiplication. So for start <= sum, multiplication may be needed. For start > sum, target <= sum, can multiplication help? start=10, target=6: pure division: 10->5->2 or 10->5->? 10//2=5,5//2=2, cannot get 6. Multiply then divide: 10->20->10->5->2? no 6. 10->5->10->20? no. 10->5->10? no. I doubt multiplication helps when start > sum to reach a smaller v, because multiplication increases and then division brings back, but you could have just divided directly. More formally, the set of numbers reachable from start via any sequence of *2 and //2 is the set of numbers that can be written as floor(start * 2^a / 2^b) for non-negative integers a,b with b >=0? Actually operations allow alternating. The reachable numbers are those of the form floor(start * 2^k / 2^m) for some integers k,m? Not exactly because division floors at each step. But it's known that the reachable set from a positive integer n is all numbers that appear in the binary tree where children are 2n and floor(n/2). This set includes numbers less than n (by division) and numbers greater than n (by multiplication). So when start > sum, you might still need to multiply to reach some v <= sum? Consider start=9, sum=5, target=4. Pure division: 9->4 (9//2=4) works. target=5? 9->4->2 or 9->18->9->4... no 5. Multiply then divide: 9->18->9->4? no. 9->18->36->18->9->4? no. So seems pure division suffices for reaching numbers <= start. However for start < sum, you need multiplication to increase.
+
+        # Therefore we can handle two cases per num: if num > sum, we only need to consider values reachable by repeated floor division (i.e., while v > 0: v = v//2). But also maybe division then multiplication could produce a value <= sum that is not reachable by pure division? Example: start=3, sum=2 (num=3 > sum? 3>2 yes), target=2. Pure division: 3->1, not 2. But multiplication then division gave 2. So for start > sum, multiplication can be useful because you might divide after multiplying to get a number that is not in the pure division chain. Indeed, 3->1->2 uses multiplication after division. So pure division alone doesn't reach 2 from 3 because 3//2=1, 1*2=2 requires multiplication. So when start > sum, you may still need to multiply after some divisions. However note that the sequence 3->1->2 involves a division then multiplication. The intermediate 1 is <= sum, then multiply to 2 <= sum. So you might multiply after you've gone down to <= sum. So the search space for start > sum includes numbers <= sum and also numbers > sum that are reached by multiplying from <= sum? But starting from start > sum, you might first divide down to <= sum, then multiply. So BFS from start may need to explore both directions, but the maximum value encountered might not exceed max(start, 2*sum) because after you go down to <= sum, you might multiply up to at most 2*sum (if you multiply from a value <= sum, you can get up to 2*sum). Starting from start > sum, you might multiply further above start? That would be wasteful because you are already above sum, multiplying would go further above, then you'd need to divide back, likely not minimal. So minimal path to a v <= sum from start > sum will never multiply when the current value is > sum? Let's test: start=10, sum=6, target=8? target must <=6, so not applicable. For v <= sum, if you are at a value > sum, multiplying would increase it further, moving away from v, so unlikely beneficial. So BFS can be limited to values up to max(start, 2*sum). Since start <=500 and sum <=5000, max(start,2*sum) <= 10000. That's safe.
+
+        # Similarly for start <= sum, multiplying could produce values up to 2*sum (if you multiply from <= sum). So overall we can bound BFS to values <= 2*sum (or maybe max(start, 2*sum)). But if start > 2*sum, then 2*sum < start, but we still need to consider start itself and divisions. However multiplying from start > 2*sum would go even larger, which is likely not needed for reaching v <= sum (since start already > sum, multiplying makes it larger, and then you'd have to divide back down; minimal path would avoid multiplying when already > sum? possibly sometimes you might multiply then divide to get a different number <= sum? Example: start=100, sum=60, target=50. Pure division: 100->50 works. target=75? > sum no. Could there be a case where start=100, sum=60, target=80? > sum no. So I think we can bound max value to 2*sum. If start > 2*sum, then start > 2*sum >= sum, and multiplying would only increase start, which seems useless. However division could bring it down. So BFS only needs to consider values <= 2*sum and also start if start <= 2*sum? If start > 2*sum, we still need to include start as initial node, but start > 2*sum violates the bound. But we can set bound = max(2*sum, start) ? That would be start, which could be up to 500, and 2*sum up to 10000, so bound = 2*sum is enough because start <=500 <=10000. Yes start <=500 <=10000, so 2*sum >=1000? sum>=1 so 2*sum >=2. So start always <= 500 <= 10000, so bound 2*sum >=2, but if sum is small like 1, 2*sum=2, start could be 500 >2. Then bound 2*sum=2 would exclude start=500. That's not acceptable. Example: nums=[500], sum=1. We need to reach 1 from 500. Minimal operations: 500->250->125->62->31->15->7->3->1 (all divisions) uses only divisions, no multiplication. BFS with bound 2 would only allow values <=2, but start 500 >2, so we cannot even start. So we need to include start even if >2*sum. Therefore bound must be at least start.
+
+        # So we need a bound that includes start and also allows values up to 2*sum (for multiplications from <= sum). So we can set max_val = max(start, 2*sum) maybe? But if start > 2*sum, then max_val = start, and we also need to allow multiplication from values <= sum? Those could be up to 2*sum <= start, so within start. However if start > 2*sum, multiplying from a value <= sum could produce up to 2*sum which is less than start, so within start? Actually 2*sum <= start? Not necessarily: start could be 500, sum=400, 2*sum=800 >500, so max_val should be max(start, 2*sum). That's safe.
+
+        # So we can set an upper bound U = max(start, 2*sum). Similarly, lower bound is 0.
+
+        # During BFS, if a generated value exceeds U, we can prune it because it cannot lead to a v <= sum with fewer operations than some other path? Need to ensure pruning doesn't cut off minimal path. If U = max(start, 2*sum), consider start > 2*sum, U = start. Multiplying from start would produce > start > U, so pruning would discard those. Could minimal path to a v <= sum ever require multiplying when start > 2*sum? Suppose start=1000, sum=500, 2*sum=1000, U=1000. start=1000 equals U. Multiplying would give 2000 > U, pruning would discard. Is there a minimal path that multiplies? For v <=500, you would only need divisions (or division then multiplication). Multiplying from 1000 to 2000 then dividing back to <=500 would require at least 2 ops (multiply then divide) and you could just divide directly. So minimal path won't multiply when start > sum? Possibly if start is just over sum and you want to reach a number slightly less than start? Example: start=3, sum=2, we had multiplication after division. But start=3 <= 2*sum=4, so U=4, and 3 <=4, multiplying to 6 would be >4, pruning would discard 6. However minimal path from 3 to 2 used 3->1->2, not 3->6. So pruning 6 is safe because minimal path doesn't need 6. But could there be a case where minimal path goes through a value > U? Suppose start=3, sum=2, U=4. 3->6 is >4. Is there a minimal path that goes 3->6->3->1->2? That's longer. So minimal path avoids exceeding U if U=2*sum? Let's test start=5, sum=3, 2*sum=6, U=6. Start=5 <=6. Could minimal path to 2 go 5->10->5->2? 10>6? 10>6, yes. But minimal path is 5->2 via division: 5//2=2 (one op). So no need for 10. So seems safe to prune values > 2*sum when start <= 2*sum? But what about start > 2*sum? Then U=start, and multiplying would exceed U, but likely not needed.
+
+        # However consider start=3, sum=2, 2*sum=4, U=4. Value 6 >4 would be pruned. Is there any scenario where minimal path to some v<=sum must go through a value >2*sum? Suppose start=3, sum=2, we already saw no. Try start=7, sum=4, 2*sum=8, U=8. Could minimal path to 5 go 7->14->7->3->6->3->? not 5. Probably not.
+
+        # I'll adopt pruning with bound U = max(start, 2*sum). This should keep BFS finite and efficient.
+
+        # Similarly, we can also prune values < 0? No.
+
+        # BFS with pruning:
+
+        #   U = max(start, 2*sum)
+        #   dist = {start:0}
+        #   queue = deque([start])
+        #   while queue:
+        #       v = queue.popleft()
+        #       d = dist[v]
+        #       for nv in (v*2, v//2):
+        #           if nv not in dist and 0 <= nv <= U:  # nv >=0 always
+        #               dist[nv] = d+1
+        #               queue.append(nv)
+
+        # Note: v*2 could be > U, prune.
+
+        # This ensures BFS stays within range.
+
+        # Let's test with start=500, sum=1, U= max(500,2)=500. BFS from 500 will generate 250 and 1000? 1000 >500 prune, so only 250 and 500 and 1? 500//2=250, 250//2=125, etc. So reachable: powers of two division chain. That's correct.
+
+        # With start=3, sum=2, U=max(3,4)=4. BFS: start=3, neighbors: 6>4 prune, 1 allowed. So reachable:3,1. From 1: 2 and 0. 2<=4,0<=4. So we get 2. That's correct. We missed 6 but not needed.
+
+        # Good.
+
+        # Now BFS will be fast.
+
+        # Implementation steps refined:
+
+        #   def get_options(num, sum_limit, U):
+        #       # BFS to get dist dict for values <= sum_limit (sum) and within U.
+        #       dist = {num: 0}
+        #       q = deque([num])
+        #       while q:
+        #           v = q.popleft()
+        #           d = dist[v]
+        #           for nv in (v*2, v//2):
+        #               if nv not in dist and 0 <= nv <= U:
+        #                   dist[nv] = d+1
+        #                   q.append(nv)
+        #       # collect options: for each v in dist where v <= sum_limit, (v, dist[v])
+        #       options = [(v, dist[v]) for v in dist if v <= sum_limit]
+        #       # we may want to keep only minimal cost per v (already minimal)
+        #       # sort? not needed.
+        #       return options
+
+        # But note: U depends on sum (global sum), not per num? U = max(num, 2*sum). Since sum is global, we can compute U once per num as max(num, 2*sum). That works.
+
+        # However, when we collect options for inclusion (v <= sum), we might also include v=0. That's fine.
+
+        # DP as described.
+
+        # Let's code accordingly.
+
+        # Edge: sum could be 0? not per constraints.
+
+        # We'll implement.
+
+        # Test with given examples.
+
+        # I'll simulate quickly:
+
+        # Example1: nums=[10,2], sum=13, U1 = max(10,26)=26, U2=max(2,26)=26. BFS1: start10, neighbors 20>26? 20<=26 allowed, 5 allowed. Continue. Will get 5,2,1 etc. Options: all v<=13. BFS2 similar. DP works.
+
+        # Example2: nums=[6,3], sum=8, U1=max(6,16)=16, U2=max(3,16)=16. Works.
+
+        # Example3: works.
+
+        # Potential issue: The DP using snapshot dp (dp_prev) and updating dp2 for all take options works but we must ensure we don't use the same element twice. We'll implement as:
+
+        #   dp = [inf]*(sum+1)
+        #   dp[0] = 0
+        #   for num in nums:
+        #       options = get_options(num, sum, 2*sum)  # U = max(num, 2*sum) but we can compute inside
+        #       dp_prev = dp[:]
+        #       # not use is already dp_prev, so we start dp_cur = dp_prev (copy)
+        #       dp_cur = dp_prev[:]  # this includes not using
+        #       for v,c in options:
+        #           if v == 0 and c == 0: continue  # not using already covered
+        #           for s in range(v, sum+1):
+        #               if dp_prev[s-v] != inf:
+        #                   dp_cur[s] = min(dp_cur[s], dp_prev[s-v] + c)
+        #       dp = dp_cur
+
+        # Note: options may include v=0 with c>0 (e.g., from 1 to 0). We skip v=0 because not using gives cost0 value0 which is better or equal. However if c>0 for v=0, using it would add cost without benefit, so skip.
+
+        # Complexity: options per num maybe up to few hundred, DP inner loop sum up to 5000, so per num up to 200*5000=1e6, times 100 = 1e8, borderline but with Python may pass in 8s if optimized (use list and local variables). We can try to optimize by pruning options that are dominated: if for two options (v1,c1) and (v2,c2) with v1 <= v2 and c1 <= c2, then option (v2,c2) might be dominated because for any subset sum, using v2 might be replaceable with v1? Not exactly because v1 and v2 are different values needed for exact sum. However we can keep all options; likely fine.
+
+        # Given time, we'll implement straightforward.
+
+        # Let's write code.
+
+        # We'll import deque.
+
+        # Note: The method signature is `def minOperations(self, nums: list[int], sum: int) -> int:`. We'll use `total_sum = sum` to avoid shadowing.
+
+        # Implementation:
+
+        INF = 10**9
+
+        total_sum = sum
+
+        dp = [INF] * (total_sum + 1)
+        dp[0] = 0
+
+        for num in nums:
+            # compute U
+            U = max(num, 2 * total_sum)
+            # BFS
+            from collections import deque
+            dist = {num: 0}
+            q = deque([num])
+            while q:
+                v = q.popleft()
+                d = dist[v]
+                for nv in (v * 2, v // 2):
+                    if nv not in dist and 0 <= nv <= U:
+                        dist[nv] = d + 1
+                        q.append(nv)
+            # collect options with v <= total_sum
+            options = []
+            for v, d in dist.items():
+                if v <= total_sum and v >= 0:  # v>=0 always
+                    # skip v==0 if d>0? we can include but skip later if v==0 and d>0 because not using is better
+                    options.append((v, d))
+            # DP update
+            dp_prev = dp[:]
+            dp_cur = dp_prev[:]  # not using
+            for v, c in options:
+                if v == 0 and c > 0:
+                    continue
+                # iterate s from v to total_sum
+                # we can loop s in range(v, total_sum+1) and check dp_prev[s-v]
+                for s in range(v, total_sum + 1):
+                    if dp_prev[s - v] != INF:
+                        new_cost = dp_prev[s - v] + c
+                        if new_cost < dp_cur[s]:
+                            dp_cur[s] = new_cost
+            dp = dp_cur
+
+        ans = dp[total_sum] if dp[total_sum] != INF else -1
+        return ans
+
+        # Let's test mentally:
+
+        # Example1: 
+        # num=10, U=26, BFS dist includes 10,5,20,2,40? 40>26? 40>26 prune, so 40 not included. But 20 <=26 included. So dist includes 10,5,20,2,1? 5->2->1, 20->10? yes. Options v<=13: 10,5,20? 20>13? 20>13 so not included. 2,1 etc. So options: (10,0),(5,1),(2,2),(1,2?) etc. DP works.
+
+        # Example1 works.
+
+        # Example2: similar.
+
+        # Edge: If BFS misses some reachable v <= sum because they go through a value > U? Need to ensure U large enough. Consider start=3, sum=2, U=max(3,4)=4. Value 6 >4 is pruned, but do we need 6 to reach 2? No, minimal path 3->1->2 doesn't use 6. What about reaching 4 from 2? 2->4 via multiplication, 4 <= U, fine. So seems safe.
+
+        # But consider start=5, sum=3, U=max(5,6)=6. Could minimal path to 4 require 5->10? 5->10->5->2->4? Not minimal. Minimal to 4 from 5? 5->2->4 (5//2=2,2*2=4) cost2, no 10. So fine.
+
+        # I think pruning with U = max(num, 2*sum) is safe because any optimal sequence that includes a value > 2*sum when starting from num <=500 and target v <= sum would be suboptimal? Let's attempt to prove quickly: Suppose there is an optimal sequence of operations for some element that achieves value v <= sum, and the sequence includes a value w > 2*sum. Consider the first time it exceeds 2*sum. Before that, all values <= 2*sum. After exceeding, it might come back down. We claim we can modify the sequence to avoid exceeding 2*sum without increasing operations or changing final v. Because if we ever multiply from a value x to 2x and 2x > 2*sum, then x > sum. Since x > sum and we are heading towards v <= sum, multiplying further seems wasteful. However there might be a case where x <= sum < 2x <= 2*sum? That's contradictory because if x <= sum, then 2x <= 2*sum, so not exceeding 2*sum. So exceeding 2*sum occurs only when x > sum. If x > sum and we multiply, we go further away. Could there be benefit? Possibly if later we divide by 2 multiple times to reach v. But you could instead have divided x first then multiplied later? Might reduce steps? Example: x=3, sum=2, 2*sum=4, x=3>2 but <=4. Multiplying to 6 >4. Could that be part of minimal path to 2? We saw minimal path is 3->1->2, no multiplication after division. So not needed.
+
+        # Given time constraints, I'll trust this pruning.
+
+        # However, we must ensure that for num > 2*sum, U = num, and we may prune multiplication from values <= sum that produce > num? But if num > 2*sum, then 2*sum < num, so any multiplication from a value <= sum would produce <= 2*sum < num <= U, so within bound. Multiplication from num itself would produce 2*num > num = U, so pruned. That's fine because multiplying from num when num > 2*sum is likely not needed.
+
+        # Let's test borderline: nums=[500], sum=1, U=500. BFS from 500 with prune >500 will generate 250, 1000>500 prune. So reachable: 500,250,125,...,1. That's correct.
+
+        # Another: nums=[3], sum=2, U=4. BFS generates 3,1,2,0. Good.
+
+        # So BFS works.
+
+        # DP update: we used dp_prev and dp_cur. However note that options may include v that is 0 with c=0? That would be from num=0? not possible since nums>=1. But v could be 0 with c>0. We skip v==0 and c>0. That's fine.
+
+        # But what about the case where the optimal solution uses an element with value 0? That would never be beneficial because including 0 adds cost without contributing to sum; you could just not include it and save cost. So skipping v==0 with c>0 is safe.
+
+        # However, what if the only way to achieve sum is to include a 0? That's impossible because sum>=1.
+
+        # So skip is fine.
+
+        # Let's also consider that we might have duplicate v in options with different c? BFS gives unique minimal c per v, so fine.
+
+        # Finally, return ans.
+
+        # Let's write the final code accordingly.
+
+        # I'll produce the final answer in the required format.
+
+        # Note: We need to import deque inside the method or at top. We'll import inside to avoid global? It's fine.
+
+        # We'll define INF as a large number.
+
+        # Edge: total_sum could be 0? not per constraints, but safe.
+
+        # Let's produce final code.
+
+        # One more optimization: In BFS, we might revisit values via different paths, but visited prevents that. Good.
+
+        # We'll also note that `sum` is a built-in function, but it's a parameter name; using `total_sum` avoids shadowing.
+
+        # Write code.
+
+        # I'll now output the solution.
+```python
+
+from collections import deque
+
+class Solution:
+    def minOperations(self, nums: list[int], sum: int) -> int:
+        INF = 10 ** 9
+        total = sum                     # avoid shadowing built-in sum
+        dp = [INF] * (total + 1)
+        dp[0] = 0
+
+        for num in nums:
+            # upper bound to keep BFS finite
+            U = max(num, 2 * total)
+
+            # BFS to find minimal operations for all reachable values
+            dist = {num: 0}
+            q = deque([num])
+            while q:
+                v = q.popleft()
+                d = dist[v]
+                for nv in (v * 2, v // 2):
+                    if nv not in dist and 0 <= nv <= U:
+                        dist[nv] = d + 1
+                        q.append(nv)
+
+            # collect options (value, cost) with value <= total
+            options = []
+            for v, c in dist.items():
+                if 0 <= v <= total:
+                    options.append((v, c))
+
+            # 0/1 knapsack step using a snapshot of previous dp
+            dp_prev = dp[:]
+            dp_cur = dp_prev[:]          # "not use" the element
+            for v, c in options:
+                if v == 0 and c > 0:
+                    continue            # using 0 with positive cost is never optimal
+                for s in range(v, total + 1):
+                    if dp_prev[s - v] != INF:
+                        new_cost = dp_prev[s - v] + c
+                        if new_cost < dp_cur[s]:
+                            dp_cur[s] = new_cost
+            dp = dp_cur
+
+        ans = dp[total] if dp[total] != INF else -1
+        return ans
+
+```
+[finish_reason: stop | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 637, 'completion_tokens': 15788, 'total_tokens': 16425, 'cost': 0.0024279, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 80, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0024279, 'upstream_inference_prompt_cost': 5.97e-05, 'upstream_inference_completions_cost': 0.0023682}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

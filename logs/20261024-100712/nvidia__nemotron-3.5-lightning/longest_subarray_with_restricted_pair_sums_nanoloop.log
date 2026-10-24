@@ -1,0 +1,1223 @@
+
+Assistant: 
+[finish_reason: tool_calls | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 1141, 'completion_tokens': 486, 'total_tokens': 1627, 'cost': 0.00017707, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00017707, 'upstream_inference_prompt_cost': 7.987e-05, 'upstream_inference_completions_cost': 9.72e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'content': "from typing import List\nfrom collections import defaultdict\n\nclass Solution:\n    def maxSubarray(self, nums: List[int]) -> int:\n        n = len(nums)\n        best = 0\n        # Try every possible left index\n        for left in range(n):\n            # freq[x] = how many times va
+writing
+[write_file] result: Content written to solution.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 1649, 'completion_tokens': 131, 'total_tokens': 1780, 'cost': 0.00014163, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00014163, 'upstream_inference_prompt_cost': 0.00011543, 'upstream_inference_completions_cost': 2.62e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'path': 'test.py', 'content': 'from solution import Solution\n\ns = Solution()\n\n# Example 1\nnums1 = [2,3,5,3,2,1]\nout1 = s.maxSubarray(nums1)\nprint("Example 1:", out1, "expected", 3)\n\n# Example 2\nnums2 = [3,4,5,6]\nout2 = s.maxSubarray(nums2)\nprint("Example 2:", out2, "expected", 4)'}
+writing
+[write_file] result: Content written to test.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 1802, 'completion_tokens': 27, 'total_tokens': 1829, 'cost': 0.00013154, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00013154, 'upstream_inference_prompt_cost': 0.00012614, 'upstream_inference_completions_cost': 5.4e-06}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'test.py'}
+running python
+[run_python] result: Result running test.py: stdout + stderr: Example 1: 5 expected 3
+Example 2: 4 expected 4
+
+
+Assistant: Example 1 gives 5 instead of 3. The issue is that the logic for `pair_sum_counts` doesn't fully capture the restriction: we need to ensure that there are no three *distinct* indices `i, j, k` in the current window such that `nums[i] + nums[j] == nums[k]`. The current approach tracks how many pairs sum to each value, but when we add a new element `x` at `right`, we must also consider that `x` could be the `k` (i.e., some existing pair sums to `x`), which we check. However, we also must consider that the new element `x` could serve as one of the `i` or `j` for a future `k`, but that's forward-looking and handled later.
+
+The real bug: when we add `x`, we update `pair_sum_counts` using the *current* `freq` (which does not yet include `x`). That's correct for detecting if a previous pair sums to `x`. But we also need to ensure that the new element `x` itself does not create a situation where some existing element in the window is the sum of two others that include `x`. Wait, the condition is: no three distinct indices i, j, k in the window with nums[i] + nums[j] == nums[k]. If we add `x` at position `right`, new triples could be:
+- i, j both < right, and k = right: checked by `pair_sum_counts[x] > 0`.
+- i = right, j < right, k < right: this would mean `x + nums[j] == nums[k]` for some existing k. But our `pair_sum_counts` tracks sums of pairs of elements currently in the window (excluding the new x). After we add x, we update `pair_sum_counts` with `x + val` for all previous `val`. Those new entries represent sums that involve `x`. If later we add a new element `y` that equals one of those sums, we will catch it then. But what about existing `k` that equals `x + val`? At the moment we add `x`, there might already be an element `k` (earlier in the window) that equals `x + val`. We are not checking that!
+
+So the window [left, right] after adding x might already be invalid because `x + some_existing_val == some_existing_k`. We need to detect that when we add x.
+
+Simpler approach: since n <= 1000, we can just do an O(n^2) or O(n^3) check per window, or use a two-pointer / sliding window with a more careful condition. But maybe easiest: for each left, expand right, and maintain the set of all pairwise sums of elements currently in the window, and also the set of elements. When we want to add x = nums[right], we need to ensure:
+- x is not in the set of elements already in window (that would be i or j with k = x? Wait, if x is already in the window as some element at index k, then we would have i, j, k distinct only if there exist i, j distinct from k and each other such that nums[i] + nums[j] == x. But if x appears again, we have a new index for x. The condition says "no three distinct indices i, j, k". If x already exists at some index k, and we add another occurrence at right, then we could have i, j, k' (the new index) or i, j, k (old index). We need to ensure no triple with the new index. This gets complicated.
+
+Given n <= 1000, maybe we can just check all triples? O(n^3) is 1e9 too large. But we can try to optimize.
+
+Alternative: For a fixed left, we maintain a frequency map of values in the window, and also a set of all valid pairwise sums (with counts maybe). When we consider adding x at position right, the window becomes [left, right]. The new possible triples are those involving the new index `right`. So we need to check:
+1. Does there exist i, j in [left, right-1] distinct such that nums[i] + nums[j] == nums[right]? (checked via pair_sum_counts[x] > 0)
+2. Does there exist i in [left, right-1] and j = right such that nums[i] + nums[right] == nums[k] for some k in [left, right-1]? That is, does there exist i < right such that nums[i] + x equals some element already in the window (at index != i, != right)?
+3. Does there exist i, j = right such that ... well j = right, i < right, same as 2.
+4. Also, what if nums[right] itself equals some value that combined with another creates a sum that is also in the window? That's covered by 2.
+
+But note: condition 2 checks if x + nums[i] == nums[k] for some existing k. However, we must also ensure that i, k, right are all distinct. Since i < right and k < right and i != k (they are distinct indices in the existing window), they are distinct as long as i != k. But what if nums[i] + x == nums[i]? That would mean x == 0, but nums[i] >= 1 per constraints, so not possible. What if the only way to get nums[k] is using i and the new right, but nums[k] might also be formed by other pairs; that's fine, we just need existence.
+
+So to check if adding x violates the condition, we need to know:
+- Is there a pair (i, j) both in [left, right-1] with nums[i] + nums[j] == x? (pair_sum_counts[x] > 0)
+- Is there an index i in [left, right-1] such that nums[i] + x == nums[k] for some k in [left, right-1], k != i? Since nums[i] + x > nums[i] (as x >= 1), and nums[k] is some value in the window. We can check this by iterating over all i in window, but that would make expansion O(n) per step, total O(n^2) per left, overall O(n^3) which is 1e9 worst case, maybe borderline in Python for 2s but n=1000 => 1e9 operations too much.
+
+But we can maintain something: for each value v in the window, we can know its indices. But maybe there's a simpler property.
+
+Let's re-read the condition: "no three distinct indices i, j, k such that l <= i, j, k <= r and nums[i] + nums[j] == nums[k]". This is symmetric in i and j, but k is the sum.
+
+Observation: If we maintain the set of all elements in the window, and the set of all pairwise sums of two (not necessarily distinct? but indices must be distinct, so two different positions) elements. When we add a new element x at position right, the new triples are:
+- (i, j, right) where i, j < right: need x not in pairwise sums? Actually need that x is NOT equal to any nums[i] + nums[j] for i,j < right distinct. That's pair_sum_counts[x] == 0.
+- (i, right, k) where i < right and k < right: need that x + nums[i] != nums[k] for any i, k < right with i != k. Also need to consider if i = k? If i = k, then nums[i] + x = nums[i] => x = 0 impossible. So we just need that for all i < right, x + nums[i] is not in the set of values present in [left, right-1] (but careful: if x + nums[i] equals some value that appears multiple times, we need to ensure there is an occurrence distinct from i. Since x is new and at right, and nums[k] is at some k < right, they are distinct indices. The only issue is if x + nums[i] equals nums[i] itself (x=0) impossible. But what if x + nums[i] equals nums[j] for some j != i? That's covered because nums[j] is in the set. However, we must also ensure that the index of that sum is not the same as i. Since i < right and the sum's index k < right, and i != k (they are different indices), it's fine. The only tricky case: what if x + nums[i] == nums[i]? impossible. What if x + nums[i] == nums[right]? That would be a new element compared to existing, but right is the new element, so not in the old set. So we just need to check if (x + nums[i]) is in the set of values in [left, right-1].
+
+But wait: what if there are duplicate values? Suppose the window has values [2, 2] at indices 0 and 1. x = 4. Then x + nums[0] = 6, not in set. x + nums[1] = 6. But also, could there be a triple (0, 1, right) where nums[0] + nums[1] = 4 == x? That's case 1, checked by pair_sum_counts. What about (0, right, 1)? nums[0] + x = 6 != 2. (1, right, 0) similar. So okay.
+
+What if window has [1, 2] and x = 3. Then x + 1 = 4 not in {1,2}. x + 2 = 5 not in set. But also check case 1: pair sums in {1,2} are 1+2=3. So pair_sum_counts[3] = 1. Then adding x=3 would be invalid because 1+2=3 and the new element is 3. That's caught.
+
+Now consider window [1, 3] and x = 2. Case 1: pair sums: 1+3=4, not 2. So pair_sum_counts[2]=0. Case 2: x + 1 = 3, which is in the window! The existing value 3 is at some index. So we would have indices: i (value 1), right (value 2), and k (value 3). Then nums[i] + nums[right] = 1 + 2 = 3 = nums[k]. Are i, right, k distinct? i is index of 1, k is index of 3, right is new index. Yes, distinct. So this violates the condition. Our check case 2 would catch that because 3 is in the set of existing values.
+
+But wait: what if the existing value 3 is actually at the same index as the element we are adding? No, we are adding a new element at right, so it's a new index. The existing 3 is at some earlier index. So distinct.
+
+Thus, to safely add x, we need:
+- pair_sum_counts[x] == 0 (no two previous elements sum to x)
+- For all values v in the current window (with their frequencies), x + v should not be in the current window's value set, UNLESS the only occurrence of x+v is the new element? But x+v > v >= 1, and x is new, so x+v cannot be x itself unless v=0. So if x+v is in the set of values currently in the window, then there is some index k < right with nums[k] = x+v. Then (i, right, k) where nums[i] = v gives a violation. BUT we must ensure that the index i (where nums[i] = v) is distinct from k. If v appears multiple times, we might have i and k being the same index if we are not careful. But we can just check: for each distinct value v in the window, if (x + v) is also a value in the window, we need to ensure that there exists at least one occurrence of v and one occurrence of x+v that are at distinct indices from each other and from right. Since right is new, it's distinct. The only problem is if v == x+v, i.e., v=0 impossible. If v and x+v are the same value (i.e., x=0 impossible). If v and x+v are different values, then any index of v and any index of x+v are distinct because they have different values. If v == x+v? impossible. If the window has only one occurrence of v, and that occurrence is also the only occurrence of x+v? Can't happen if v != x+v. If v == x+v, impossible. So as long as v and x+v are both present as values in the window (could be same value only if x=0), we have distinct indices. The only edge case: what if the window has value v at index i, and value x+v also at index i? That would mean v = x+v => x=0 impossible. So safe.
+
+But wait: what if the window has value v, and x+v is also v? That would mean x=0. Not possible.
+
+What if the window has value v, and x+v equals some value that appears, but the only occurrence of that value is at the same index as v? Impossible since values are different.
+
+Therefore, the condition for adding x is:
+- pair_sum_counts[x] == 0
+- For every value v present in the current window (i.e., freq[v] > 0), (x + v) not in the set of values present in the window.
+
+But is that sufficient? Let's test with earlier example: nums = [2,3,5,3,2,1]. Let's trace with this logic.
+
+But wait: there is another type of triple: (right, i, j) where i, j < right and nums[i] + nums[j] == x? That's pair_sum_counts[x] > 0, covered.
+
+What about (i, j, k) where all three are < right? Those should have been already invalid, so window would have broken earlier.
+
+What about triples involving the new element as the sum k, and i or j being the new element? That would be x = nums[i] + nums[j] with one of i,j being right. But right is the new element, so nums[right] = x. If i = right, then x = nums[right] + nums[j] => nums[j] = 0 impossible. If j = right, similar. So no.
+
+What about the new element being one of the addends, and the sum being a new element that we haven't added yet? That will be checked when we later try to add that element.
+
+So the two conditions seem necessary and sufficient for the window to remain valid after adding x.
+
+But we must also consider: what if the new element x equals some value already in the window? Then freq[x] > 0. Does that automatically create a violation? Not necessarily. Example: window [3], add another 3 at right. Current window before adding: {3}. pair_sum_counts is empty (no pairs). Check condition 1: pair_sum_counts[3] == 0 OK. Condition 2: for v=3, x+v = 6, not in window {3}. So we would allow adding another 3. But does the new window [3,3] have a violation? Indices: i=0 (3), j=1 (3), k=? We need three distinct indices. With only two elements, there is no triple. So length 2 is valid. So adding duplicate is fine as long as we don't have three elements that form a violation.
+
+What if window is [1,2] and we add 3? pair_sum_counts[3] = 1 (1+2=3), so condition 1 fails, correctly invalid.
+
+What if window is [1,3] and we add 2? Condition 1: pair sums in {1,3} are 1+3=4, so pair_sum_counts[2]=0 OK. Condition 2: v=1 => x+v=3, which IS in the window! So condition 2 fails, correctly invalid because 1+2=3.
+
+What if window is [2,4] and we add 6? Condition 1: pair sum 2+4=6 => fail. Correct.
+
+What if window is [2,5] and we add 3? Condition 1: pair sum 7, not 3 OK. Condition 2: v=2 => 5, which is in window! So 2+3=5, invalid. Indeed indices: 2 (val 2), new 3, and existing 5 => 2+3=5.
+
+What if window is [5] and we add 5? Condition 1: no pairs, OK. Condition 2: v=5 => 10 not in window OK. So allowed. Window becomes [5,5]. Valid as only two elements.
+
+What if window is [1,1,2]? Let's see if we can build it. Start left=0. right=0: add 1, window {1}. right=1: add 1. Condition 1: pair_sum_counts[1]=0. Condition 2: v=1 => 2 not in window. So allowed. Window {1,1}. right=2: add 2. Condition 1: pair sums in {1,1}: 1+1=2, so pair_sum_counts[2] would be? freq[1]=2, when adding second 1 we added pair sum 1+1=2 with count 1. So pair_sum_counts[2]=1 >0 => condition 1 fails. So cannot add 2. Indeed, window [1,1,2] has 1+1=2 with distinct indices, invalid.
+
+What about window [1,2,3]? Start 1, add 2: pair sums {3}, add 3: condition 1 pair_sum_counts[3]>0 fail. Correct.
+
+Seems solid.
+
+But wait: condition 2 says "for every value v present in the current window, x+v not in the current window". However, what if x+v is in the window, but the only occurrence of x+v is at the same index as the v we are considering? As argued, since v and x+v are different values (x>=1), they can't be at the same index. But what if the window has only one occurrence of v, and also only one occurrence of x+v, and those two indices are distinct. That's fine. The only potential issue: what if x+v equals some value that is present, but that value's only occurrence is at the new index? No, new index is not in the current window yet.
+
+But there is another subtlety: what if x+v is in the window, but the index of x+v is the same as the index of some other element that we might pair with? No, we just need existence of ANY triple. If x+v is in the window, then there exists some index k with nums[k] = x+v. And there exists some index i with nums[i] = v (could be the same k if v == x+v, but x>=1 so no). So i and k are distinct. And right is new. So triple (i, right, k) is valid distinct indices. So condition is correct.
+
+But wait: what if v appears multiple times, and x+v also appears, but the only way to pick i and k such that they are distinct from right and each other is possible. Since there are multiple copies, definitely possible.
+
+Thus, the algorithm for each left:
+- Initialize freq = empty dict (value -> count in current window)
+- Initialize pair_sum_counts = empty dict (sum -> count of pairs)
+- For right from left to n-1:
+    x = nums[right]
+    # Check condition 1
+    if pair_sum_counts.get(x, 0) > 0:
+        break
+    # Check condition 2
+    # We need to ensure for all v with freq[v] > 0, (x + v) not in freq
+    # But we can optimize: just iterate over keys in freq
+    valid = True
+    for v, cnt in freq.items():
+        if (x + v) in freq:
+            valid = False
+            break
+    if not valid:
+        break
+    # If we pass both, add x to window
+    # First, update pair_sum_counts with new pairs formed by x and existing elements
+    for val, cnt in freq.items():
+        s = val + x
+        pair_sum_counts[s] = pair_sum_counts.get(s, 0) + cnt
+    # Then add x to freq
+    freq[x] = freq.get(x, 0) + 1
+    # update best length
+    cur_len = right - left + 1
+    if cur_len > best:
+        best = cur_len
+
+Return best.
+
+Let's test this logic mentally on Example 1: nums = [2,3,5,3,2,1]
+n=6.
+
+Try left=0:
+freq={}, pair_sum={}
+right=0: x=2. cond1: pair_sum[2]=0 ok. cond2: freq empty ok. add: pair_sum updates none (freq empty). freq={2:1}. cur_len=1, best=1.
+right=1: x=3. cond1: pair_sum[3]=0 ok. cond2: freq={2:1}, v=2 => x+v=5 not in freq ok. add: for val=2, cnt=1, s=5, pair_sum[5]+=1 => pair_sum={5:1}. freq={2:1,3:1}. cur_len=2, best=2.
+right=2: x=5. cond1: pair_sum[5]=1 >0 => break. So window [0..2] = [2,3,5] invalid at right=2. Indeed 2+3=5.
+
+left=1:
+freq={}, pair_sum={}
+right=1: x=3. ok. freq={3:1}. best= max(2,1)=2.
+right=2: x=5. cond1: pair_sum[5]=0 ok. cond2: freq={3:1}, v=3 => 5+3=8 not in freq ok. add: pair_sum[3+5=8]+=1 => pair_sum={8:1}. freq={3:1,5:1}. cur_len=2, best=2.
+right=3: x=3. cond1: pair_sum[3]=0 ok. cond2: freq={3:1,5:1}. v=3 => x+v=6 not in freq. v=5 => 3+5=8 not in freq. ok. add: for val=3, cnt=1 => s=6, pair_sum[6]+=1. for val=5, cnt=1 => s=8, pair_sum[8]+=1 (now 2). freq: 3 becomes 2. cur_len=3, best=3. Window [1..3] = [3,5,3]. Check validity: pairs: 3+5=8, 3+3=6, 5+3=8. Elements: 3,5,3. None of sums (8,6) equals the remaining element? Remaining for 3+3=6 is 5? Actually triple would need i,j,k distinct. With [3,5,3], possible triples: (0,1,2): nums[0]+nums[1]=3+5=8 != nums[2]=3. (0,2,1): 3+3=6 !=5. (1,2,0): 5+3=8 !=3. So valid. Good.
+right=4: x=2. cond1: pair_sum[2]? currently pair_sum has {6:1, 8:2}. pair_sum[2]=0 ok. cond2: freq={3:2,5:1}. v=3 => x+v=5, which IS in freq! (since 5 is present). So condition 2 fails. Break. So window starting at left=1 max length 3. That matches example: [3,5,3] length 3.
+
+left=2:
+freq={}, pair_sum={}
+right=2: x=5. ok. freq={5:1}. best remains 3.
+right=3: x=3. cond1: pair_sum[3]=0 ok. cond2: freq={5:1}, v=5 => 3+5=8 not in freq ok. add: pair_sum[8]+=1. freq={5:1,3:1}. cur_len=2.
+right=4: x=2. cond1: pair_sum[2]=0 ok. cond2: freq={5:1,3:1}. v=5 => 2+5=7 not in freq. v=3 => 2+3=5, which IS in freq! So condition 2 fails. Break. So left=2 max length 2.
+
+left=3:
+right=3: x=3. ok. freq={3:1}. best=3.
+right=4: x=2. cond1: pair_sum[2]=0. cond2: freq={3:1}, v=3 => 2+3=5 not in freq ok. add: pair_sum[5]+=1. freq={3:1,2:1}. cur_len=2.
+right=5: x=1. cond1: pair_sum[1]=0. cond2: freq={3:1,2:1}. v=3 => 1+3=4 not in freq. v=2 => 1+2=3, which IS in freq! So condition 2 fails. Break. Max length from left=3 is 2.
+
+left=4:
+right=4: x=2. ok. freq={2:1}. best=3.
+right=5: x=1. cond1: pair_sum[1]=0. cond2: freq={2:1}, v=2 => 1+2=3 not in freq ok. add: pair_sum[3]+=1. freq={2:1,1:1}. cur_len=2.
+
+left=5:
+right=5: x=1. ok. cur_len=1.
+
+So best=3. Correct.
+
+Example 2: [3,4,5,6]
+left=0:
+right=0: x=3 ok. freq={3:1}
+right=1: x=4. cond1: pair_sum[4]=0. cond2: v=3 => 4+3=7 not in freq ok. add: pair_sum[7]+=1. freq={3:1,4:1}. len=2 best=2.
+right=2: x=5. cond1: pair_sum[5]=0. cond2: v=3 => 5+3=8 not in freq; v=4 => 5+4=9 not in freq ok. add: pair_sum[8] from 3+5, pair_sum[9] from 4+5. freq={3:1,4:1,5:1}. len=3 best=3.
+right=3: x=6. cond1: pair_sum[6]=0. cond2: v=3 => 9 not in freq? freq has 3,4,5. 3+6=9 not in freq. v=4 => 10 not in freq. v=5 => 11 not in freq. ok. add: pair sums with 6. freq all four. len=4 best=4.
+So returns 4. Correct.
+
+Edge cases: all same elements? nums = [1,1,1,1]. 
+left=0:
+right=0: ok freq{1:1}
+right=1: x=1. cond1: pair_sum[1]=0. cond2: v=1 => 1+1=2 not in freq ok. add: pair_sum[2]+=1 (since val=1 cnt=1). freq{1:2}. len=2 best=2.
+right=2: x=1. cond1: pair_sum[1]=0 (pair_sum has 2:1). cond2: v=1 => 1+1=2, which IS in freq! (freq has 1, but 2 is not in freq; wait freq only has value 1. 2 is not a value in freq. freq.keys() are {1}. So (x+v) = 2, not in freq. So cond2 passes! Let's re-evaluate: freq has {1:2}. v=1, x+v=2. Is 2 in freq? No, freq only has key 1. So condition 2 passes. Then we add: for val=1, cnt=2, s=2, pair_sum[2] += 2 => pair_sum[2]=3. freq[1] becomes 3. len=3 best=3.
+right=3: x=1. cond1: pair_sum[1]=0. cond2: v=1 => x+v=2, is 2 in freq? freq has key 1 only. So 2 not in freq. passes. add: pair_sum[2] += 3 => 6. freq[1]=4. len=4 best=4.
+So returns 4. But is [1,1,1,1] valid? Let's check: we need no three distinct indices i,j,k with nums[i]+nums[j]==nums[k]. With all 1s, 1+1=2, but 2 is not in the array. So no such triple. Indeed any three distinct indices will have nums[i]=1, nums[j]=1, nums[k]=1, sum=2 !=1. So entire array valid, answer 4. Correct.
+
+What about nums = [1,2,3]? We already know answer should be 2 (since 1+2=3). Let's trace:
+left=0:
+right=0: x=1 ok freq{1:1}
+right=1: x=2. cond1: pair_sum[2]=0. cond2: v=1 => 2+1=3 not in freq ok. add: pair_sum[3]+=1. freq{1:1,2:1}. len=2 best=2.
+right=2: x=3. cond1: pair_sum[3]=1 >0 break. So left=0 max 2.
+left=1:
+right=1: x=2 ok freq{2:1}
+right=2: x=3. cond1: pair_sum[3]=0. cond2: v=2 => 3+2=5 not in freq ok. add: pair_sum[5]+=1. freq{2:1,3:1}. len=2 best=2.
+left=2: x=3 len=1.
+Return 2. Correct.
+
+What about nums = [2,2,4]? 2+2=4, so max valid subarray? [2,2] length 2, [2,4]? 2+2=4 but need distinct indices; [2,4] has only two elements valid. [2,2,4] invalid. So answer 2.
+Trace:
+left=0:
+right=0: x=2 ok freq{2:1}
+right=1: x=2. cond1: pair_sum[2]=0. cond2: v=2 => 2+2=4 not in freq ok. add: pair_sum[4]+=1. freq{2:2}. len=2 best=2.
+right=2: x=4. cond1: pair_sum[4]=1 >0 break. So left=0 max 2.
+left=1:
+right=1: x=2 ok freq{2:1}
+right=2: x=4. cond1: pair_sum[4]? currently pair_sum from left=1 start empty? Wait left=1 starts fresh. right=1: x=2, freq{2:1}, pair_sum{}. right=2: x=4. cond1: pair_sum[4]=0. cond2: v=2 => 4+2=6 not in freq ok. add: pair_sum[6]+=1. freq{2:1,4:1}. len=2 best=2.
+left=2: x=4 len=1.
+Return 2. Correct.
+
+What about nums = [1,3,4]? 1+3=4, so max valid 2.
+left=0:
+right=0: 1 ok
+right=1: 3. cond1: pair_sum[3]=0. cond2: v=1 => 4 not in freq ok. add: pair_sum[4]+=1. freq{1:1,3:1}. len=2 best=2.
+right=2: 4. cond1: pair_sum[4]=1 >0 break.
+left=1:
+right=1: 3 ok
+right=2: 4. cond1: pair_sum[4]=0. cond2: v=3 => 7 not in freq ok. add: pair_sum[7]+=1. freq{3:1,4:1}. len=2 best=2.
+Return 2.
+
+Seems correct.
+
+Now, is condition 2 truly sufficient? Let's think of a potential counterexample. We need a window where after adding x, there is a triple (i, j, k) with nums[i]+nums[j]==nums[k], but neither condition 1 nor condition 2 catches it.
+
+Possible triples after adding x at right:
+Type A: i, j < right, k = right. Caught by condition 1 (pair_sum_counts[x] > 0).
+Type B: i = right, j < right, k < right. This means nums[right] + nums[j] == nums[k] for some j,k < right. Caught by condition 2: we check if x + v is in freq for any v in freq. Here v = nums[j], and x+v = nums[k] which is in freq. So caught.
+Type C: i < right, j = right, k < right. Same as Type B, symmetric.
+Type D: i = right, j = right? Not allowed because indices must be distinct; we only have one new element.
+Type E: i < right, j < right, k = right but i or j could be right? No, k=right covered Type A.
+Type F: what about triple where the new element x is used as one of the addends, and the sum is also the new element? That would be x + something = x => something = 0 impossible.
+Type G: triple where the new element x is the sum, and one of the addends is also the new element? impossible as above.
+Type H: triple where all three indices are < right? But window would have been invalid earlier, so we would have broken before.
+
+Wait, there is another type: what if the new element x equals some value already in the window, and that creates a triple with two other elements? For example, window already has [a, b] and we add x = a. Then we might have triple (index of new a, index of b, index of some c?) Let's test: nums = [2, 3, 2, 5]. Suppose window starts at 0: [2,3,2]. We already saw [2,3,2] is valid? Let's check: indices 0:2, 1:3, 2:2. Triples: (0,1,2): 2+3=5 !=2. (0,2,1): 2+2=4 !=3. (1,2,0): 3+2=5 !=2. So valid. Now if we add 5 at right=3, window [2,3,2,5]. Type B: x=5, freq before adding has {2:2, 3:1}. Condition 2: v=2 => 5+2=7 not in freq. v=3 => 5+3=8 not in freq. Condition 1: pair_sum_counts[5]? Let's trace our algorithm for left=0 on [2,3,2,5]:
+right=0: x=2 ok freq{2:1}
+right=1: x=3 ok freq{2:1,3:1}, pair_sum{5:1}
+right=2: x=2. cond1: pair_sum[2]=0. cond2: freq={2:1,3:1}. v=2 => 2+2=4 not in freq. v=3 => 2+3=5 not in freq (freq has 2,3). ok. add: pair_sum updates: val=2 cnt=1 => s=4 pair_sum[4]+=1; val=3 cnt=1 => s=5 pair_sum[5]+=1 (now 2). freq[2] becomes 2. len=3 best=3.
+right=3: x=5. cond1: pair_sum[5]=2 >0 => break. So algorithm says [2,3,2,5] invalid at right=3 because pair_sum[5]>0. Indeed, 3+2=5 using the 3 and one of the 2s. So caught by condition 1.
+
+What about a case where condition 1 and 2 both pass but a triple exists? Let's try to construct. We need a triple (i, j, k) in the new window [left, right] such that nums[i]+nums[j]==nums[k], and it's not caught by condition 1 or 2.
+
+Since we only add x at right, the new triples must involve right. So one of i,j,k is right.
+Case 1: k = right. Then nums[i]+nums[j] = x. This is condition 1.
+Case 2: i = right. Then x + nums[j] = nums[k] for some j,k < right. This is condition 2 with v = nums[j].
+Case 3: j = right. Symmetric, condition 2.
+Case 4: i = right and j = right? impossible distinct.
+Case 5: k = right and i = right? impossible.
+Case 6: what if the triple involves the new element x but not as one of the three indices? That doesn't make sense; the new element is at index right, so any triple either includes it or not. If not, it was already in the old window, which was valid.
+
+So it seems conditions 1 and 2 are necessary and sufficient.
+
+But wait: condition 2 checks "for all v in freq, x+v not in freq". However, what if x+v is in freq, but the only occurrence of x+v is at the same index as the v we are considering? As argued, v and x+v are different values (since x>=1), so they can't be at the same index. But what if the window has only one occurrence of v, and that same value v also appears as x+v? That would mean v = x+v => x=0 impossible. So safe.
+
+But there is another subtlety: what if x+v is in freq, but the index of x+v is the same as the index of some other element that we might pair with? No, we just need existence of some triple. If x+v is in freq, there is at least one index k with nums[k] = x+v. And there is at least one index i with nums[i] = v. Since v and x+v are different values, i != k. And right is new. So triple (i, right, k) has distinct indices and nums[i]+nums[right] = v + x = nums[k]. So it's a valid violation. So condition 2 correctly catches it.
+
+But what if the only index i with nums[i] = v is the same as the index k with nums[k] = x+v? Impossible since values differ.
+
+What if v appears multiple times, and x+v also appears, but all occurrences of v are at indices that are also the only occurrences of x+v? Can't happen because values are different.
+
+Thus, conditions seem solid.
+
+However, there's one more case: what if the new element x is added, and there is a triple where the new element is NOT the sum nor one of the addends, but the new element changes the frequencies such that a previously valid triple becomes invalid? No, the condition is about existence of ANY triple in the final window. If the old window was valid, adding an element can only create new triples involving the new element. It cannot "un-validate" an old triple because old triples remain with the same indices; their validity doesn't change. So we only need to check new triples.
+
+Therefore, the algorithm should be correct.
+
+Let's double-check the implementation details.
+
+We have:
+```python
+class Solution:
+    def maxSubarray(self, nums: list[int]) -> int:
+        n = len(nums)
+        best = 0
+        for left in range(n):
+            freq = defaultdict(int)
+            pair_sum_counts = defaultdict(int)
+            for right in range(left, n):
+                x = nums[right]
+                if pair_sum_counts[x] > 0:
+                    break
+                # check condition 2
+                valid = True
+                for v, cnt in freq.items():
+                    if (x + v) in freq:
+                        valid = False
+                        break
+                if not valid:
+                    break
+                # add x to window: update pair sums
+                for val, cnt in freq.items():
+                    s = val + x
+                    pair_sum_counts[s] += cnt
+                freq[x] += 1
+                cur_len = right - left + 1
+                if cur_len > best:
+                    best = cur_len
+        return best
+```
+
+Wait: in the condition 2 loop, we iterate over `freq.items()`. But `freq` at this point does NOT include `x` yet. That's correct because we are checking if adding x would create a violation with existing elements. After checking, we then update pair_sum_counts using the old freq, then increment freq[x].
+
+But there's a potential issue: when we update `pair_sum_counts`, we do:
+```python
+for val, cnt in freq.items():
+    s = val + x
+    pair_sum_counts[s] += cnt
+```
+This uses the freq before adding x. That's correct because we want to record pairs formed by x and each existing element. Since freq doesn't include the new x yet, each existing element's count is correct.
+
+But note: if there are duplicate values in freq, we are adding `cnt` for each distinct value. For example, if freq has {2:2}, and x=3, we will add pair_sum[5] += 2. That correctly accounts for the two 2s forming pairs with the new 3.
+
+Now, what about the case where x itself forms a pair with a previous occurrence of the same value? That is handled because freq[val] includes count of val, which might be x if x was already in freq. But we are iterating over freq before adding x, so if x was already present, its count is included. That's correct: if window already has a 3, and we add another 3, the pair (old 3, new 3) sum to 6, and we add pair_sum_counts[6] += cnt (which is the count of old 3s). That's correct.
+
+Now, let's test with a tricky case: nums = [1, 1, 2]. We already traced and it gave best=2 (window [1,1] valid, cannot add 2). Let's run mentally with code:
+left=0:
+freq={}, pair_sum={}
+right=0: x=1. pair_sum[1]=0. cond2: freq empty ok. update pair_sum: freq empty, nothing. freq[1]=1. cur_len=1 best=1.
+right=1: x=1. pair_sum[1]=0. cond2: freq={1:1}. v=1, x+v=2. Is 2 in freq? No. valid. update pair_sum: for val=1, cnt=1, s=2, pair_sum[2]+=1 => pair_sum={2:1}. freq[1] becomes 2. cur_len=2 best=2.
+right=2: x=2. pair_sum[2]=1 >0 => break. So left=0 max 2.
+left=1:
+freq={}, pair_sum={}
+right=1: x=1 ok freq{1:1} len=1 best=2.
+right=2: x=2. pair_sum[2]=0. cond2: freq={1:1}. v=1 => 2+1=3 not in freq ok. update: pair_sum[3]+=1. freq{1:1,2:1} len=2 best=2.
+left=2: x=2 len=1.
+Return 2. Correct.
+
+What about nums = [2, 2, 4, 4]? 2+2=4, so max valid? [2,2,4] invalid, [2,4,4]? 2+4=6 not 4, 4+4=8 not 2. But [2,4,4] has indices: 2,4,4. Triples: (0,1,2): 2+4=6 !=4. (0,2,1): 2+4=6 !=4. (1,2,0): 4+4=8 !=2. So [2,4,4] valid length 3. Also [4,4] valid. So answer should be 3? Let's check entire array [2,2,4,4]: has 2+2=4, so invalid. So max valid subarray length 3 (e.g., [2,4,4] or [2,2,4] invalid, [4,4] length 2, [2,4,4] length 3). Let's trace algorithm:
+left=0:
+right=0: x=2 ok freq{2:1}
+right=1: x=2. pair_sum[2]=0. cond2: v=2 => 4 not in freq ok. update: pair_sum[4]+=1. freq{2:2}. len=2 best=2.
+right=2: x=4. pair_sum[4]=1 >0 => break. So left=0 max 2.
+left=1:
+freq={}, pair_sum={}
+right=1: x=2 ok freq{2:1} len=1 best=2.
+right=2: x=4. pair_sum[4]=0. cond2: freq={2:1}, v=2 => 6 not in freq ok. update: pair_sum[6]+=1. freq{2:1,4:1}. len=2 best=2.
+right=3: x=4. pair_sum[4]=0 (pair_sum has 6:1). cond2: freq={2:1,4:1}. v=2 => 4+2=6, which IS in freq! (pair_sum has 6, but condition 2 checks if (x+v) in freq, i.e., value 6 in freq. freq has keys 2 and 4. 6 is not a value in freq. Wait, condition 2 is: for v in freq, if (x+v) in freq. Here x=4, v=2 => 6. freq has values 2 and 4. 6 is not in freq. So cond2 passes! Let's re-evaluate: freq dict stores value -> count. keys are the actual numbers present. So freq = {2:1, 4:1}. x=4. v=2 => x+v=6. Is 6 in freq? No, freq keys are 2 and 4. So condition 2 passes. v=4 => x+v=8 not in freq. So cond2 passes. Then we update pair_sum: for val=2 cnt=1 => s=6, pair_sum[6]+=1 (now 2). for val=4 cnt=1 => s=8, pair_sum[8]+=1. freq[4] becomes 2. cur_len=3 (right=3, left=1 => indices 1,2,3 => [2,4,4]). best=3.
+right=4? n=4 so stop.
+left=2:
+right=2: x=4 ok freq{4:1} best=3.
+right=3: x=4. pair_sum[4]=0. cond2: freq={4:1}, v=4 => 8 not in freq ok. update: pair_sum[8]+=1. freq{4:2}. len=2 best=3.
+left=3: x=4 len=1.
+Return 3. Correct! And [2,4,4] is valid as we checked.
+
+Now, what about a case where condition 2 might have a false negative? Let's try to find a counterexample manually. We need a window where after adding x, there is a triple (i, right, k) with nums[i] + x = nums[k], but x + nums[i] is NOT in the set of values currently in the window. Is that possible? If nums[i] + x = nums[k], then nums[k] is a value in the window (since k < right). So x + nums[i] is exactly nums[k], which IS in the set of values in the window. So condition 2 would catch it because we check if (x + v) in freq for v = nums[i]. Since nums[k] is in freq, it will be caught. The only way it wouldn't be caught is if nums[k] is not in freq, but by definition k is in the window, so its value is in freq. So condition 2 always catches Type B and C triples.
+
+What about triples where the new element x is the sum, but the two addends are not both entirely in the old window? That would mean one of the addends is the new element itself, which we argued is impossible (would require 0). Or both addends include the new element? Only one new element.
+
+What about triples where the new element is k, and the two addends are i and j both < right, but one of them is the same index as k? Can't, distinct indices.
+
+Thus, the algorithm seems correct.
+
+Now, complexity: For each left (n iterations), we expand right up to n. Inside the right loop, we have:
+- Check pair_sum_counts[x]: O(1)
+- Check condition 2: iterate over freq.items(). freq size at most window size, which can be up to n. So O(n) per right step.
+- Update pair sums: iterate over freq.items(): O(n) per right step.
+So per left, O(n^2) time. Total O(n^3) worst case. n=1000 => 1e9 operations, might be too slow in Python (2s limit). We need to optimize.
+
+Can we reduce the complexity? n=1000, O(n^2) total would be 1e6, fine. O(n^3) is 1e9, might TLE. We need to make condition 2 and pair sum update faster, or find a different approach.
+
+Observation: The conditions only depend on the set of values in the window and pairwise sums. Maybe we can maintain the set of values and use a boolean array or bitset since nums[i] <= 500. Constraints: nums[i] between 1 and 500. That's small! Maximum value is 500. So we can use arrays of size 501 instead of hash maps, and condition checks become O(500) which is effectively O(1) since 500 is constant. n=1000, O(n^2 * 500) = 5e8 maybe still a bit high but with small constant could pass. But we can do even better: since values are small, we can maintain frequency array of size 501, and also a boolean array or bitset for presence. Then condition 2: for v from 1 to 500, if freq[v] > 0 and (x + v) <= 500 and present[x+v]: invalid. That's a loop of 500 iterations per right step. 500 * 1000 * 1000 = 5e8 operations, might be borderline in Python but possibly okay with optimizations (maybe 2s is enough?). But we can optimize further: we only need to iterate over v that are actually present. We can maintain a list of present values, or just iterate over the freq dict keys (which are at most window size, but window size can be up to n=1000, but values are limited to 500, so at most 500 distinct values). So iterating over distinct values is at most 500. So per right step, we do at most 500 checks. Total operations: n left * n right * 500 = 1000 * 1000 * 500 = 5e8. In Python, 5e8 simple operations might take a few seconds, could be close to limit. We can try to optimize by breaking early, and also the pair sum update can be done similarly.
+
+But maybe we can do O(n^2) total by using two pointers? The validity condition is not monotonic? Usually sliding window requires monotonicity: if a window [l, r] is valid, then [l, r-1] is valid, and [l+1, r] is valid. Is that true here? If a subarray is valid, any subarray of it is also valid? Let's check: if we remove elements, we remove indices, so any triple that existed might be broken. So validness is hereditary (subarrays of valid are valid). Yes, if a window has no bad triple, any sub-window also has no bad triple because you're removing indices, so you can't create new triples, and you might remove the ones that were there. So validity is downward closed. However, the maximum length subarray problem with hereditary property can often be solved with two pointers (sliding window) where we maintain the smallest left for each right such that [left, right] is valid. But is the property "for a fixed right, as left decreases, the window becomes larger and eventually invalid"? That is, for each right, there is a minimal left such that [left, right] is valid, and for any left' < left, [left', right] is invalid. If that's true, we can use two pointers. Let's test: In example 1, for right=2 (value 5), window [0..2] = [2,3,5] invalid. [1..2] = [3,5] valid. [2..2] = [5] valid. So minimal left for right=2 is 1. For right=3 (value 3), [1..3] = [3,5,3] valid, [0..3] = [2,3,5,3] invalid (contains 2+3=5). So minimal left for right=3 is 1. For right=4 (value 2), [1..4] = [3,5,3,2] invalid (cond2 caught). [2..4] = [5,3,2]? Let's check: 5+3=8, 5+2=7, 3+2=5 -> 3+2=5 and 5 is at index 2! So [5,3,2] has 3+2=5, invalid. [3..4] = [3,2] valid. [4..4] valid. So minimal left for right=4 might be 3. It seems for each right, there is a leftmost valid start. If we can maintain left efficiently, we could get O(n^2) or O(n * maxVal). But we need to know how to update left when moving right. Typically, when we add a new element at right, we might need to move left forward until the window is valid again. Since validity is hereditary, we can just move left forward one by one, removing elements and updating our data structures, until valid. This is standard sliding window. The total number of left moves across all right is at most n, so O(n) removals. If we can support add-right and remove-left operations efficiently, we can achieve O(n * cost per operation). Cost per operation would be updating freq and pair_sum_counts. Adding right we already have O(distinct values) ~ O(500). Removing left: we need to remove nums[left] from window, update freq and pair_sum_counts. Removing an element is trickier because pair_sum_counts tracks pairs involving that element. We would need to decrement counts for pairs formed by the removed element and all other elements currently in the window. That's also O(distinct values) per removal. So total O(n * 500) = 5e5 operations, very fast! Then we can just do two pointers.
+
+Let's verify if the "minimal left for each right" property holds. That is, if [L, R] is valid, then for any R' > R, the minimal valid L' for R' is >= the minimal valid L for R? Not necessarily monotonic in that simple way, but the standard sliding window approach for "longest valid subarray" where validity is hereditary (all subarrays of valid are valid) works by maintaining left pointer that only moves forward. We start left=0, for each right from 0 to n-1, we add nums[right], then while window [left, right] is invalid, we increment left and remove nums[left-1] (or whatever). Since we only move left forward, total increments O(n). This works as long as the "invalid" check can be done and we can remove elements. The key is: when we add a new element at right, the window might become invalid. We then increment left until it becomes valid again. Because validity is hereditary, once we remove enough elements, it will become valid. And we don't need to reset left to 0 for each right; we just continue from current left. This is standard for problems like "longest subarray with at most K distinct" etc.
+
+But we must be careful: is it true that if [left, right] is invalid, then [left+1, right] might still be invalid, and we keep moving left. And we never need to decrease left. This is true if the property "window [l, r] is valid" is such that for fixed r, the set of l for which it's valid is a suffix of [0, r] (i.e., if it's valid for l, it's valid for all l' > l). Is that true here? Let's check: Suppose [l, r] is valid. Is [l+1, r] always valid? Yes, because [l+1, r] is a subarray of [l, r], and we argued validity is hereditary (subarrays of valid are valid). So if [l, r] is valid, then any subarray including [l+1, r] is valid. Therefore, for a fixed r, if [l, r] is invalid, then any l' < l will also yield an invalid window? Wait: if [l, r] is invalid, could [l-1, r] be valid? Yes, adding an element on the left could potentially make it valid? No, adding an element can only create new triples, it cannot remove existing ones. So if [l, r] is invalid, then [l-1, r] (which is larger) might also be invalid, but could it be valid? If [l, r] is invalid, that means there exists a bad triple entirely within [l, r]. If we expand to the left by adding a new element at l-1, we might create more triples, but the original bad triple is still there (since indices l..r are still included). So [l-1, r] would also be invalid because it contains the same bad triple. Therefore, for a fixed r, the set of l such that [l, r] is valid is exactly a set of l values that are >= some minimal left L_min(r). And if l >= L_min(r), then [l, r] is valid. And if l < L_min(r), it's invalid. This means the validity condition for fixed r is monotonic in l: validity holds for l >= L_min(r), fails for l < L_min(r). This is exactly the property needed for the two-pointer sliding window approach where we maintain left pointer and only move it forward.
+
+Let's double-check: Suppose we have window [l, r] valid. Then [l+1, r] is a subarray, so valid. So if we start with left=0, and for each right we add nums[right], the window [left, right] might become invalid. Then we increment left by 1, and [left+1, right] is a subarray of the previous, so it might still be invalid, but we keep incrementing until valid. Since we only move left forward, and left never decreases, total increments <= n. This works.
+
+But we must ensure that when we increment left and remove nums[left], we correctly update our data structures (freq and pair_sum_counts). And when we add nums[right], we update them. Then we check if window is valid. How do we check if window is valid? We could just check if the window has any violation. But with the two-pointer approach, we need a way to know if the current window is valid after additions/removals. We could maintain a count of "violations" or just check conditions. But maybe easier: we can just use the same expansion-from-left approach but optimized with the small value range, or we can just use the O(n^2) algorithm with the small value optimization (500 distinct values) which might be fast enough. Given n=1000, O(n^2 * 500) = 5e8, in Python might be ~2-3 seconds, could pass or might be close. But we can also implement the two-pointer with O(n * 500) which is much faster and safer.
+
+Let's design the two-pointer approach.
+
+We maintain:
+- freq: array of size 501 (since nums[i] in [1,500]) counting occurrences of each value in current window [left, right].
+- pair_sum_counts: array of size maybe up to 1000? Since max value 500, max sum is 1000. Actually nums[i] <= 500, so max sum is 1000. But wait, condition 2 checks x+v where x,v <= 500, so sum <= 1000. But pair_sum_counts needs to track sums that could be up to 1000. However, we also need to check if a sum equals some element in the window, and elements are <= 500. So we only care about sums up to 500? Actually pair_sum_counts is used to check condition 1: pair_sum_counts[x] > 0 where x is the new element, and x <= 500. So we only need pair_sum_counts for values up to 500. But when we update pair sums, we might generate sums > 500. Those sums will never be queried as x (since x <= 500), but they might be used in condition 2? Condition 2 checks if x+v is in freq. x+v could be > 500. But freq only contains values <= 500. So if x+v > 500, it can never be in freq. So we can ignore pair sums > 500, or we can just allocate array of size 1001 and only check up to 500. To be safe, we can use dictionary or array of size 1001. Since 1001 is small, we can just use array of size 1001 for pair_sum_counts. But wait: what if a sum > 500 is needed for condition 2? Condition 2 is: for v in freq, if (x+v) in freq. Since freq only has keys <= 500, if x+v > 500, it's automatically not in freq. So we don't need to track pair sums > 500 for condition 2. However, pair_sum_counts is also used in condition 1: pair_sum_counts[x] where x <= 500. So we only need to maintain pair_sum_counts for values 1..500. But when we add a new element x and update pair sums with existing vals, we might generate sums > 500. We can just ignore those (don't add to pair_sum_counts) because they will never be checked as x (x <= 500). But wait: could a sum > 500 become an x later? No, x is always an element from nums, which is <= 500. So we can safely ignore sums > 500. This saves space and time.
+
+But there's a catch: condition 2 checks if (x+v) is in freq. We don't need pair_sum_counts for that; we just check if the value x+v exists in freq. So pair_sum_counts is only for condition 1 (checking if any two previous elements sum to x). And condition 1 only needs to know if there is a pair summing to x (x <= 500). So we only need pair_sum_counts for values up to 500.
+
+However, when we remove an element from the left, we need to decrement pair_sum_counts for pairs that involved that element. If we only tracked sums <= 500, we need to know which sums <= 500 were formed by the removed element and remaining elements. That's doable: when removing val = nums[left], we iterate over all other values v present in the window (with their counts), and if val + v <= 500, we decrement pair_sum_counts[val+v] by the count of v (or appropriate amount). But we must be careful with double counting if val == v.
+
+Alternatively, we can just use dictionaries for pair_sum_counts, since the number of distinct sums is at most the number of pairs, which could be O(n^2) but in practice limited by values <= 500, so at most 500 distinct sums. Using arrays of size 501 is simple.
+
+Let's think about the two-pointer algorithm details.
+
+We have left = 0, right from 0 to n-1.
+For each right:
+    x = nums[right]
+    # Try to add x to window [left, right-1] to make [left, right]
+    # First, check if adding x would violate conditions.
+    # But in two-pointer, we can just add x, and if window becomes invalid, we move left forward until valid.
+    # However, we need to be able to "add" x and then "remove" left elements.
+    # We need functions: add_right(x), remove_left().
+
+But we must ensure that the order of operations is correct. Standard pattern:
+left = 0
+best = 0
+for right in range(n):
+    add(nums[right])
+    while not valid_window():
+        remove(nums[left])
+        left += 1
+    best = max(best, right - left + 1)
+
+But we need to define valid_window(). We could maintain a flag or count of violations. Since we have conditions 1 and 2, we can maintain whether the current window satisfies them. But it might be simpler to just use the expansion-from-left approach but with two pointers? Actually, the expansion-from-left approach we had earlier is O(n^2) with small constant if we optimize with arrays. Given n=1000, O(n^2) is 1e6, and with 500 factor it's 5e8. But we can perhaps optimize the inner loops to break early, and also the distinct values in window are at most 500, but often much less. Maybe the O(n^2) approach with early break is fast enough. Let's estimate: for each left, we expand right until break. In worst case, window might be valid for many right steps. But maybe average case is much less. However, we want a solution that definitely passes within 2s. Two-pointer with O(n * maxVal) is safer and elegant.
+
+Let's design the two-pointer with freq array and pair_sum_counts array, and a way to check validity.
+
+We need to maintain:
+- freq[1..500]: count of each value in current window.
+- pair_sum[1..500]: number of unordered pairs (i,j) with i<j in window such that nums[i]+nums[j] == s. We only care about s <= 500.
+
+When we add a new element x at right:
+- Before adding, we need to check if the new window would be invalid. But in two-pointer, we can just add x, and then if window invalid, we move left. However, we must define "invalid" based on the current window state. We can maintain a variable `violations` or just check conditions after addition. But checking conditions from scratch each time might be O(500). Since we do it for each right, total O(n * 500) which is fine.
+
+But we must be careful: when we add x, we need to update pair_sum and freq. Then we can check if the window is valid. If not, we remove left elements one by one, updating freq and pair_sum, until valid.
+
+How to check if window is valid after additions/removals?
+Conditions for window [left, right] to be valid:
+- There is no triple i,j,k distinct with nums[i]+nums[j]==nums[k].
+Equivalently:
+1. For the current window, there is no pair (i,j) such that nums[i]+nums[j] == nums[k] for some k. This is equivalent to: for every value v in window, and for every pair summing to v, but we can check using our maintained data.
+Actually, we can maintain a boolean or count of "bad" pairs. But maybe easier: after each add/remove, we can just re-verify the conditions by scanning? But we want O(1) or O(500) check.
+
+Let's derive conditions based on freq and pair_sum.
+
+Given freq array (size 501) and pair_sum array (size 501, where pair_sum[s] = number of pairs (i,j) in window with nums[i]+nums[j] == s, i<j).
+
+When is the window invalid?
+- There exists some index k in window such that nums[k] = s, and pair_sum[s] > 0. But wait: pair_sum[s] counts pairs of distinct indices. If pair_sum[s] > 0, does that guarantee there is a triple? Not necessarily, because the pair might involve the same index as k? But pair_sum counts pairs of indices within the window. If pair_sum[s] > 0, there exist two distinct indices i,j in window with nums[i]+nums[j] = s. If s also appears as some nums[k] in the window, we need to ensure i, j, k are distinct. If s appears in the window, there is at least one index k with nums[k] = s. Could it be that the only pairs summing to s use the index k itself? For example, window has values [2, 3] and we add another 2? Let's not rely on pair_sum alone; we need the full conditions we derived earlier: condition 1 and condition 2. But those conditions were for adding a new element. For the whole window, we can just check: is there any triple? We can check using the same logic: for each value v in window, etc. But maybe we can maintain a count of "violating triples". However, maintaining exact count might be complex.
+
+Alternative: Since we only need to know if the window is valid, and we are using two-pointer where we add then remove left until valid, we can just check validity by scanning the window? But scanning O(window size) per check could make total O(n^2) which is 1e6, acceptable! n=1000, O(n^2) is 1e6 operations, very fast. We don't need complex maintenance; we can just, after each add/remove, check validity by a function that iterates over the current window and checks the condition. But checking validity of a window of size m takes O(m^2) or O(m * distinct) naively. If we do that inside the while loop, worst-case could be O(n^3). But maybe we can check validity in O(m * 500) or O(m^2) but m up to 1000, so O(m^2) per check might be 1e6 per check, and we might have many checks. Better to have O(1) or O(500) check.
+
+Let's stick to maintaining the conditions we derived for adding an element, but adapted for the whole window. Actually, our earlier conditions for adding x were: 
+- pair_sum_counts[x] == 0 (before adding x)
+- for all v in freq (before adding x), x+v not in freq.
+These were necessary and sufficient for the window [left, right] to be valid after adding x, assuming [left, right-1] was valid. In the two-pointer approach, we start with an empty window, and we add elements one by one. If we always maintain the invariant that the current window [left, right] is valid, then when we add a new right, we can use those two conditions to check if the new window is valid. If it's invalid, we need to move left forward. But moving left forward removes elements, which might make it valid again. And we can use the same conditions to check validity after removals? Actually, if we maintain the invariant that [left, right-1] is valid, then adding right might break it. We can check the two conditions. If they fail, we remove leftmost element, update data structures, and check again. Since we only move left forward, and the window size decreases, eventually it will become valid. And we can use the same pair_sum_counts and freq to check the conditions.
+
+But we must ensure that the conditions we used for adding x are exactly the conditions for the whole window to be valid, given the previous window was valid. Let's verify: We proved that if [left, right-1] is valid, then adding nums[right] yields a valid window iff pair_sum_counts[x] == 0 and for all v in freq (before adding), x+v not in freq. This was under the assumption that the old window was valid. So if we maintain the invariant that the window before adding right is valid, then we can use these two checks.
+
+In the two-pointer algorithm:
+- We start with left=0, right=-1, empty window (valid).
+- For each right from 0 to n-1:
+    x = nums[right]
+    # We want to add x to the current window [left, right-1] to get [left, right].
+    # But we must first check if adding x would keep it valid.
+    # However, we also might need to move left forward before adding? Standard two-pointer usually adds the element, then if invalid, removes from left. But we can also check before adding. Let's think.
+
+If we just add x unconditionally, update freq and pair_sum, then check if window is valid. If not valid, we remove left elements one by one until valid. But to check validity after adding x, we need a way to check. We could just use the two conditions we had, but those conditions assume the old window was valid. If we always maintain the invariant that the window before adding right is valid, then after adding x, we can check the two conditions. If they pass, the new window is valid. If they fail, the new window is invalid, and we need to move left forward. But moving left forward will remove elements from the left, which changes freq and pair_sum. We can then re-check the conditions for the new window (which will have a smaller left). But after removing left, the window [left+1, right] might not have been valid before adding right? Actually, we know [left, right-1] was valid. After removing left, [left+1, right-1] is a subarray, so it's valid. Then we can consider adding right again? This gets a bit tangled.
+
+Standard approach for hereditary properties: we can just maintain the window [left, right] and after each addition, we check validity by a function. To make it efficient, we can maintain a count of "violations". But maybe we can just use the O(n^2) algorithm with the small value optimization, which is simpler and less error-prone. Given n=1000, O(n^2 * 500) = 5e8. In Python, a tight loop of 5e8 might take ~2-4 seconds. We can optimize by using local variables, avoiding function calls, and breaking early. Also, the inner loop over freq.items() will often have fewer than 500 elements because window size might be small, and distinct values limited. Moreover, the moment a violation is found, we break. So average case could be much faster. Many test cases might not hit worst case. But to be safe, we can implement the two-pointer with proper maintenance.
+
+Let's try to design the two-pointer with the two conditions, maintaining freq and pair_sum_counts arrays of size 501.
+
+We need to support:
+- add_right(x): add x to the right end of window.
+- remove_left(): remove the leftmost element from window.
+- is_valid(): return True if current window is valid.
+
+But we can integrate the validity check into the add_right process. Since we know the old window [left, right-1] is valid (by induction), we can check the two conditions before/after adding. Let's formalize:
+
+We maintain:
+- left, right pointers. Initially left=0, right=-1, window empty.
+- freq[1..500] = 0
+- pair_sum[1..500] = 0 (counts pairs i<j in window with sum s)
+- We also might need to know if the window is currently valid. But we can just ensure that after each step, the window is valid.
+
+Algorithm:
+left = 0
+best = 0
+for right in range(n):
+    x = nums[right]
+    # Try to add x to the window [left, right-1]
+    # First, check if adding x would violate conditions, assuming [left, right-1] is valid.
+    # Condition 1: pair_sum[x] == 0
+    # Condition 2: for all v with freq[v] > 0, (x + v) not in freq (i.e., freq[x+v] == 0, but careful with bounds)
+    # If both hold, we can safely add x.
+    # If not, we need to move left forward until conditions hold, then add x.
+    # But moving left forward changes the window, and we might need to re-check.
+    # Actually, we can just move left forward one by one, removing elements, and after each removal, check if the new window [left+1, right-1] is valid? But we know [left, right-1] was valid, so [left+1, right-1] is valid (subarray). Then we can try adding x again.
+    # So we can have a while loop: while not (condition1 and condition2 for adding x to current window):
+    #     remove nums[left]
+    #     left += 1
+    # Then add x.
+
+But wait: condition2 checks "for all v in freq (before adding x), x+v not in freq". If we remove left, freq changes, so conditions might become true.
+
+Let's test this logic on Example 1: nums = [2,3,5,3,2,1]
+left=0, right=-1, freq all 0, pair_sum all 0.
+right=0: x=2. Check conditions for adding 2 to empty window: cond1: pair_sum[2]=0 ok. cond2: freq empty ok. So we can add. Add 2: freq[2]=1. pair_sum updates: freq empty, so nothing. window [0,0] valid. best=1.
+right=1: x=3. Current window [0,0] valid. Check cond1: pair_sum[3]=0 ok. cond2: freq has v=2, x+v=5 not in freq ok. Add 3: freq[3]=1. Update pair_sum: for val=2 cnt=1, s=5, pair_sum[5]+=1. freq now {2:1,3:1}. window [0,1] valid. best=2.
+right=2: x=5. Current window [0,1] valid. Check cond1: pair_sum[5]=1 >0 => fail. So we enter while loop: remove nums[left] = nums[0]=2. left becomes 1. Remove 2: we need to update freq and pair_sum. After removing 2, window is [1,1] = [3]. freq: 3 becomes 0? Wait, freq[2] was 1, becomes 0. pair_sum[5] was 1, we need to decrement it because the pair (2,3) that summed to 5 is removed. How to update pair_sum when removing an element? We need to know which pairs involved the removed element. When we added 3, we did: for val, cnt in freq (which at that time had {2:1}): s=5, pair_sum[5]+=1. So when removing 2, we should do: for val in freq (current freq before removal? Actually we need to remove the contributions of the element being removed. The element being removed is 2. The current freq before removal has {2:1, 3:1}. The pairs involving the 2 we are removing are: with other elements in window. Since we only have one 2 and one 3, the pair (2,3) summed to 5. So we should decrement pair_sum[5] by the count of the other element? More generally, when removing val = nums[left], we need to iterate over all other values v present in the window (including possibly val itself if count >1), and decrement pair_sum[val+v] by the appropriate count. But we must be careful not to double count and to account for the fact that the removed element is no longer there.
+
+Maybe it's easier to just recompute freq and pair_sum from scratch after each removal? But that would be O(window size) per removal, total O(n^2) which is fine. n=1000, O(n^2) is 1e6, very fast. We could just, when we need to remove left, rebuild the window from left+1 to right-1? But we are in a loop moving left one by one. Rebuilding each time would be O(n) per removal, total O(n^2) per right, leading to O(n^3). Not good.
+
+Better: we can maintain freq and pair_sum correctly on add and remove. Let's derive the update rules.
+
+When we add an element x to the right:
+- Before adding, we have freq (counts of values in [left, right-1]) and pair_sum (counts of pairs in [left, right-1]).
+- We first check conditions using the old freq and pair_sum.
+- Then we update:
+    for each v in freq (with count cnt):
+        s = v + x
+        if s <= 500: pair_sum[s] += cnt   (we only track sums <= 500)
+    freq[x] += 1
+
+When we remove an element y from the left (y = nums[left]):
+- We are removing one occurrence of y from the window.
+- Before removal, freq has counts, pair_sum has counts.
+- We need to "undo" the addition of this y. But the element y might have been added at some point, and since then other elements might have been added/removed. However, in our two-pointer, we only add elements at right and remove from left in order. The window is always a contiguous subarray [left, right]. The elements are added in order of right, and removed in order of left. So the element being removed was the leftmost element of the current window, and it was added at some earlier right step (or was initial). Since we only ever add at right and remove from left, the multiset of elements in the window is exactly the subarray. We can maintain freq and pair_sum by reversing the add operations, but we need to know the state of freq and pair_sum at the time y was added. However, because we only add and remove in stack-like order (FIFO for left, LIFO for right? Actually right only moves forward, left only moves forward. This is a sliding window where elements enter at right and leave at left. The net effect is that the window slides. The element being removed was added at some point when right was at its position, and since then, some elements on the right may have been added and some on the left removed. The pair_sum counts include pairs formed by this y with all elements currently in the window at the time of removal. To correctly decrement, we can just iterate over all current elements in the window (excluding the one being removed) and decrement pair_sum for pairs involving y. But we can do this efficiently using freq.
+
+When removing y = nums[left]:
+- We need to remove y from freq: freq[y] -= 1.
+- We need to remove all pairs that involved this particular occurrence of y. Since there might be multiple occurrences of y, we are removing one specific occurrence (the leftmost). The pairs that this occurrence formed with other elements in the window: for each other value v present in the window (with its current count, but note that the count of v might include elements that were added after y? Actually, the window is [left, right]. The element y is at index left. The other elements are at indices left+1 ... right. When we added those elements, pair_sum was updated accordingly. To remove y, we need to decrement pair_sum for each pair (y, v) where v is any element currently in the window (at indices left+1..right). But we must be careful: if there are multiple v's, we decrement by the count of v, but we must not double count if v == y.
+
+Simpler: when removing y, we can just iterate over all values v from 1 to 500, and if freq[v] > 0 (before decrementing freq[y]? Actually we should compute the decrements based on the current freq before we modify it, but excluding the y we are removing? Let's think.
+
+Current window has freq counts. We are removing one occurrence of y. The pairs that this occurrence had with other elements: for each value v (1..500), if v != y, the number of pairs between this y and v is freq[v] (since each occurrence of v forms a pair with this y). If v == y, the number of pairs between this y and other occurrences of y is (freq[y] - 1) because we exclude this y itself. But wait: pair_sum counts unordered pairs (i,j) with i<j. When we added elements, we did: for each new x, for each val in freq (before adding), pair_sum[val+x] += cnt. This counts each unordered pair exactly once, when the second element of the pair is added. So pair_sum[s] is the total number of unordered pairs in the current window with sum s. If we remove an element y, we need to subtract the number of pairs that involved this specific y. Since pair_sum was built by adding elements one by one, the pairs involving y were added at the moment y was inserted, and possibly later when other elements were added that formed pairs with y? Actually, when a new element z is added after y, we do: for val in freq (which includes y), pair_sum[val+z] += cnt. So pairs (y, z) are added at that time. So pair_sum accumulates all pairs. To remove y, we need to remove all pairs that include y. The total number of pairs involving y in the current window is: for each v (including y), the number of occurrences of v that are paired with this y. But since pair_sum counts unordered pairs, and we are removing one specific y, we can compute the decrement as follows:
+
+Before removal, freq[y] = count of y in window.
+The number of unordered pairs that include this particular y is:
+- pairs with other values v != y: for each v != y, there are freq[v] such pairs (since each occurrence of v pairs with this y).
+- pairs with other occurrences of y: there are (freq[y] - 1) such pairs (since we pair with the other y's).
+But wait: pair_sum[s] counts each unordered pair once. If we just subtract these amounts from pair_sum, we might be subtracting pairs that were added at different times, but the total count should decrease by exactly the number of pairs that included this y. However, we must ensure we don't subtract pairs that don't include this y. Since we are removing one specific occurrence, the total pairs in the window will decrease by the number of pairs that had this y as one element. That number is exactly: sum over v of (number of occurrences of v that are not this y). But since all occurrences of v are symmetric, it's: for v != y: freq[v]; for v == y: freq[y] - 1. So total pairs involving this y = (sum_{v != y} freq[v]) + (freq[y] - 1) = (total elements in window - 1) - (freq[y] - 1?) Let's compute: total elements = S = sum_{all v} freq[v]. The number of pairs involving this specific y is (S - 1) because y can pair with any of the other S-1 elements. But wait: pair_sum counts unordered pairs, and each pair is counted once. If we remove y, the total number of pairs in the window should decrease by exactly the number of pairs that included y, which is (S - 1). Is that true? Let's test with a small window. Window [2,3] (S=2). pair_sum: 2+3=5, so pair_sum[5]=1. Remove 2: S becomes 1, pair_sum should become 0. Decrease is 1, which equals S-1 = 1. Window [2,2] (S=2, two 2s). pair_sum[4]=1 (since 2+2=1 pair). Remove one 2: S becomes 1, pair_sum should become 0. Decrease should be 1. S-1 = 1. Window [2,3,4] (S=3). pair sums: 2+3=5, 2+4=6, 3+4=7. pair_sum[5]=1, [6]=1, [7]=1. Remove 2: remaining [3,4], pair_sum should have 3+4=7:1. Decrease: we removed pairs (2,3) and (2,4), so two pairs decreased. S-1 = 2. Yes! So the number of pairs involving a specific element y is exactly (S - 1), where S is the current window size (number of elements). But we need to decrement the correct pair_sum entries. We can't just decrement pair_sum by (S-1) overall; we need to decrement the specific sums.
+
+But we can compute the decrement by iterating over all v present in freq (before removal) and adjusting pair_sum[v + y] accordingly. Specifically, before removing y, we have freq[v] for all v. The number of pairs involving this y and value v is:
+- if v != y: freq[v] pairs (each occurrence of v pairs with this y).
+- if v == y: (freq[y] - 1) pairs (this y pairs with the other y's).
+But wait: pair_sum[s] is the total count of unordered pairs with sum s. If we subtract freq[v] from pair_sum[y+v] for each v != y, and subtract (freq[y]-1) from pair_sum[2*y] (if 2*y <= 500), we are removing exactly the pairs that include this y. However, we must be careful: when we added elements, we added pairs (val, x) where val was in freq at the time x was added. The current freq[v] might include elements that were added after y. But since pair_sum accumulates all pairs, the total count of pairs (y, v) in pair_sum is exactly freq[v] (if v != y) or freq[y]-1 (if v == y), regardless of when they were added, because every time a new element v is added, it pairs with all existing elements including y (if y is already there). So the total count of such pairs in pair_sum is indeed the product of counts? Actually, if there are multiple y's and multiple v's, pair_sum[y+v] counts the number of unordered pairs (i,j) with one being y and one being v. If freq[y] = a, freq[v] = b, then the number of such pairs is a*b (if y != v). If y == v, it's C(a,2) = a*(a-1)/2. But our pair_sum update rule: when adding x, for each val in freq (with count cnt), we do pair_sum[val+x] += cnt. This correctly counts pairs: if we have multiple same values, it adds the count. Let's test: window starts empty. Add 2: freq[2]=1, pair_sum unchanged. Add another 2: before adding, freq has {2:1}. We do pair_sum[4] += 1. freq[2] becomes 2. Now pair_sum[4]=1. But the actual number of unordered pairs of 2s is C(2,2)=1. Correct. Add third 2: before adding, freq has {2:2}. pair_sum[4] += 2 => pair_sum[4]=3. Actual pairs: C(3,2)=3. Correct. Add 3: before adding, freq has {2:3}. pair_sum[5] += 3 => pair_sum[5]=3. Actual pairs (2,3): 3*1=3. Correct. So pair_sum[s] correctly tracks the total number of unordered pairs with sum s, considering multiplicities.
+
+Now, if we want to remove one occurrence of y, we need to decrement pair_sum such that the counts reflect the new window. We can do this by reversing the add operation: when y was added, it paired with all elements that were in freq at that time. But since we don't have history, we can compute the decrement based on the current freq and the element being removed.
+
+Current freq before removal: freq[y] = a, freq[v] = b for v != y.
+We are removing one y. The new freq will have freq[y] = a-1, freq[v] = b.
+The new pair_sum should have:
+- For s = y + v (v != y): new count = old count - a (since the removed y paired with all a occurrences of y? Wait, old count of pairs (y, v) is a * b (since there are a y's and b v's). New count should be (a-1)*b. So decrement by b.
+- For s = 2*y (if y == v): old count of pairs among y's is C(a,2) = a*(a-1)/2. New count should be C(a-1,2) = (a-1)*(a-2)/2. Decrement by (a-1).
+But our pair_sum update when adding was: for each val in freq (before adding), pair_sum[val+x] += cnt. This means pair_sum[s] is built incrementally. The current pair_sum[s] already includes all pairs. To remove one y, we can simply iterate over all v in 1..500, and if freq[v] > 0 (before removal), we decrement pair_sum[v+y] by freq[v] (if v != y) or by (freq[y]-1) (if v == y)? Wait, earlier we said old count of (y, v) pairs is a*b. To decrement by b, we need to know b = freq[v]. But if we decrement pair_sum[v+y] by freq[v] for each v != y, and by (freq[y]-1) for v == y, will that correctly reduce pair_sum to the new state? Let's test with an example.
+
+Example: window has two 2s and one 3. freq: {2:2, 3:1}. pair_sum: from earlier, add 2: pair_sum[4]=0? Actually let's build:
+Start empty.
+Add first 2: freq[2]=1, pair_sum unchanged.
+Add second 2: before add, freq={2:1}. pair_sum[4] += 1 => pair_sum[4]=1. freq[2]=2.
+Add 3: before add, freq={2:2}. pair_sum[5] += 2 => pair_sum[5]=2. freq[3]=1.
+Now pair_sum: 4:1, 5:2.
+Window: [2,2,3]. Pairs: (2a,2b): sum 4, (2a,3): sum 5, (2b,3): sum 5. Total pair_sum[4]=1, pair_sum[5]=2. Correct.
+Now remove one 2 (say the leftmost). We want new window [2,3]. New freq: {2:1, 3:1}. New pair_sum: 5:1, 4:0.
+Current freq before removal: {2:2, 3:1}. We remove one 2.
+How to decrement?
+If we do: for v in freq.keys(): if v != 2: pair_sum[2+v] -= freq[v] => v=3: pair_sum[5] -= freq[3]=1 => pair_sum[5] becomes 1. Good.
+For v == 2: we need to decrement pair_sum[4] by (freq[2]-1) = 1 => pair_sum[4] becomes 0. Good.
+So the rule: when removing one occurrence of y:
+- For each v from 1 to 500:
+    if freq[v] > 0:
+        if v != y:
+            pair_sum[y+v] -= freq[v]
+        else: # v == y
+            pair_sum[2*y] -= (freq[y] - 1)
+- Then decrement freq[y] by 1.
+
+But wait: what if there are multiple v's and we iterate over all v? We must ensure we don't double count or miss. The above iterates over all v with freq[v] > 0. Since freq is an array, we can just loop v from 1 to 500, and if freq[v] > 0, apply the decrement. This will correctly adjust pair_sum.
+
+Let's test with another example: window [2,3,4] as before. freq: {2:1,3:1,4:1}. pair_sum: 5:1, 6:1, 7:1.
+Remove 2: freq before: {2:1,3:1,4:1}. y=2.
+v=3: v != y => pair_sum[2+3=5] -= freq[3]=1 => pair_sum[5]=0.
+v=4: v != y => pair_sum[6] -= freq[4]=1 => pair_sum[6]=0.
+v=2: v == y => pair_sum[4] -= (freq[2]-1)=0 => pair_sum[4] unchanged (was 0).
+After removal, freq[2] becomes 0. pair_sum now: 5:0, 6:0, 7:1. Correct, remaining [3,4] has pair sum 7.
+
+What if we remove 3 from [2,3,4]? freq before: {2:1,3:1,4:1}. y=3.
+v=2: v != y => pair_sum[3+2=5] -= freq[2]=1 => pair_sum[5]=0.
+v=4: v != y => pair_sum[7] -= freq[4]=1 => pair_sum[7]=0.
+v=3: v == y => pair_sum[6] -= (freq[3]-1)=0 => pair_sum[6] unchanged (was 1).
+After removal, freq[3]=0. pair_sum: 5:0, 6:1, 7:0. Remaining [2,4] has pair sum 6. Correct.
+
+What if window has duplicates: [2,2,3] we did, worked.
+
+What if window [2,2,2]? freq: {2:3}. pair_sum[4] = C(3,2)=3.
+Remove one 2: y=2. freq before: {2:3}. v=2: v == y => pair_sum[4] -= (freq[2]-1)=2 => pair_sum[4] becomes 1. freq[2] becomes 2. Correct, remaining two 2s have 1 pair.
+
+What if window [1,2,3]? freq: {1:1,2:1,3:1}. pair_sum: 1+2=3 => pair_sum[3]=1; 1+3=4 => pair_sum[4]=1; 2+3=5 => pair_sum[5]=1.
+Remove 1: y=1. v=2: pair_sum[3] -= freq[2]=1 => 0. v=3: pair_sum[4] -= freq[3]=1 => 0. v=1: pair_sum[2] -= (freq[1]-1)=0 => unchanged. freq[1]=0. Remaining [2,3] pair_sum[5]=1. Correct.
+
+Seems the removal rule works perfectly!
+
+Now, what about condition 2 check? Condition 2: for all v with freq[v] > 0 (before adding x), (x + v) not in freq. Since freq is an array of size 501, we can check: for v in 1..500, if freq[v] > 0 and (x + v) <= 500 and freq[x+v] > 0: invalid. But wait: we also need to ensure that the index of x+v is distinct from the index of v. As argued, since x >= 1, x+v > v, so they are different values, hence different indices. But what if x+v > 500? Then it's automatically not in freq (since freq only has values <= 500). So we can just check if x+v <= 500 and freq[x+v] > 0. If x+v > 500, condition 2 automatically passes for that v.
+
+But there's a subtlety: what if the window has value v, and x+v is also v? That would mean x=0, impossible. So fine.
+
+Condition 1: pair_sum[x] > 0? pair_sum[x] is the count of pairs summing to x. Since we only maintain pair_sum for sums <= 500, and x <= 500, we can just check pair_sum[x] > 0.
+
+But wait: pair_sum[x] counts unordered pairs (i,j) in the current window with sum x. If pair_sum[x] > 0, does that guarantee a violation when adding x? Yes, because there exist two distinct indices i,j in the current window such that nums[i]+nums[j] == x. Then adding x at right creates a triple (i,j,right) with distinct indices. So condition 1 is correct.
+
+Now, the two-pointer algorithm with these maintenance rules:
+
+We maintain:
+- left = 0
+- best = 0
+- freq = [0]*501  (indices 1..500 used)
+- pair_sum = [0]*501 (indices 1..500 used; we might also need sum up to 1000? But we only care about sums <= 500 for condition 1. However, when we add x, we update pair_sum for s = val + x. If s > 500, we can ignore it because it will never be queried as x (x <= 500). But wait: when we later remove elements, we might need to decrement pair_sum for sums > 500? If we ignore them, we must ensure we never need to decrement them. But our removal rule decrements pair_sum[y+v] for all v. If y+v > 500, we would be accessing pair_sum index out of bounds if we only have size 501. We could either make pair_sum size 1001, or we can just ignore updates where s > 500, and in removal, only decrement if y+v <= 500. But is it safe to ignore pair sums > 500? Let's think: condition 1 only checks pair_sum[x] for x <= 500. So we never need pair_sum for sums > 500. However, when we remove an element, we need to correctly update pair_sum for the pairs that are removed. If we never incremented pair_sum for sums > 500, then when we remove, we must not try to decrement those sums. But our removal rule as derived assumes we have the correct pair_sum counts for all sums. If we omitted some increments, the current pair_sum might be inconsistent with the actual pairs, and the removal decrement might be wrong or access out of bounds.
+
+To be safe, we can just make pair_sum array of size 1001 (since max sum is 500+500=1000). 1001 is small, memory is negligible. Then we can track all sums, and condition 1 only checks up to 500, but we maintain all. That's simpler and avoids edge cases.
+
+So let's use pair_sum of size 1001 (indices 0..1000, we'll use 1..1000). freq of size 501 (1..500).
+
+Now, the two-pointer algorithm steps:
+
+Initialize:
+left = 0
+best = 0
+freq = [0]*501  # index 1..500
+pair_sum = [0]*1001 # index 1..1000
+
+For right in range(n):
+    x = nums[right]
+    # We want to add x to window [left, right-1].
+    # But first, we need to ensure that adding x is valid, given current window is valid.
+    # However, in two-pointer, we can just try to add x, and if the window becomes invalid, we move left forward.
+    # But we need a way to check if the window is valid after adding x.
+    # We can use the two conditions:
+    # Condition 1: pair_sum[x] == 0
+    # Condition 2: for all v in 1..500 with freq[v] > 0, (x+v > 500 or freq[x+v] == 0)
+    # If both hold, we can add x directly.
+    # If not, we need to move left forward until conditions hold, then add x.
+    # But moving left forward changes the window, and we must update freq and pair_sum accordingly.
+
+    # So we can have a while loop:
+    while True:
+        # Check if adding x would be valid
+        cond1 = (pair_sum[x] == 0)
+        cond2 = True
+        # iterate v from 1 to 500 where freq[v] > 0
+        # we can optimize by only iterating over v that are present; but 500 is small.
+        for v in range(1, 501):
+            if freq[v] > 0:
+                s = x + v
+                if s <= 500 and freq[s] > 0:
+                    cond2 = False
+                    break
+        if cond1 and cond2:
+            break
+        # else, remove leftmost element and move left forward
+        y = nums[left]
+        # remove y from window
+        # update pair_sum and freq for removal of y
+        # removal rule:
+        for v in range(1, 501):
+            if freq[v] > 0:
+                if v != y:
+                    pair_sum[y+v] -= freq[v]
+                else:
+                    pair_sum[2*y] -= (freq[y] - 1)
+        freq[y] -= 1
+        left += 1
+        # Note: after removal, the window [left, right-1] should be valid (since it's a subarray of previous valid window).
+        # But we loop again to check conditions for adding x to the new window.
+
+    # Now we can safely add x
+    # First, update pair_sum with new pairs formed by x and existing elements
+    for v in range(1, 501):
+        if freq[v] > 0:
+            s = v + x
+            if s <= 1000:  # we can just always do s <= 1000, but x,v <= 500 so s <= 1000 always
+                pair_sum[s] += freq[v]
+    freq[x] += 1
+    # Now window [left, right] is valid
+    cur_len = right - left + 1
+    if cur_len > best:
+        best = cur_len
+
+Return best.
+
+Let's test this algorithm mentally on Example 1: nums = [2,3,5,3,2,1]
+n=6. freq size 501, pair_sum size 1001, all zero. left=0, best=0.
+
+right=0: x=2.
+while True:
+cond1: pair_sum[2]==0 True.
+cond2: freq all 0, loop doesn't run, cond2 True.
+break.
+add x:
+for v in 1..500: freq[v]>0? none.
+freq[2] += 1 => freq[2]=1.
+cur_len = 0-0+1=1 best=1.
+
+right=1: x=3.
+while True:
+cond1: pair_sum[3]==0 True.
+cond2: freq has v=2 (freq[2]=1). s = 3+2=5 <=500, freq[5]==0 => ok.
+cond2 True.
+break.
+add x:
+for v: freq[2]=1 => s=2+3=5, pair_sum[5] += 1 => pair_sum[5]=1.
+freq[3] += 1 => freq[3]=1.
+cur_len = 1-0+1=2 best=2.
+
+right=2: x=5.
+while True:
+cond1: pair_sum[5]==1 >0 => False.
+so enter while: remove y = nums[left] = nums[0]=2.
+remove y=2:
+loop v 1..500:
+v=2: freq[2]=1 >0. v==y => pair_sum[2*2=4] -= (freq[2]-1)=0 => pair_sum[4] unchanged (0).
+v=3: freq[3]=1 >0. v!=y => pair_sum[2+3=5] -= freq[3]=1 => pair_sum[5] becomes 0.
+v=others: freq 0.
+freq[2] -= 1 => freq[2]=0.
+left becomes 1.
+Now loop again to check conditions for adding x=5 to window [left=1, right-1=1] which is [3].
+cond1: pair_sum[5]==0 True.
+cond2: freq has v=3 (freq[3]=1). s = 5+3=8 <=500, freq[8]==0 => ok.
+cond2 True.
+break.
+add x=5:
+for v: freq[3]=1 => s=3+5=8, pair_sum[8] += 1 => pair_sum[8]=1.
+freq[5] += 1 => freq[5]=1.
+cur_len = right - left + 1 = 2 - 1 + 1 = 2. best remains 2.
+
+right=3: x=3.
+while True:
+cond1: pair_sum[3]==0 True (pair_sum has 8:1, 5:0).
+cond2: freq has v=5 (freq[5]=1) and v=3? Wait, freq currently has {5:1} from previous step? After right=2, freq: we had freq[3]=1 before removal? Let's track freq carefully.
+
+Let's trace freq and pair_sum step by step.
+
+Initial: freq all 0, pair_sum all 0. left=0.
+
+right=0: x=2.
+cond1, cond2 ok.
+add: freq[2]=1. pair_sum unchanged (no v).
+cur_len=1 best=1. Window [0,0] = [2]. freq: 2:1.
+
+right=1: x=3.
+cond1: pair_sum[3]=0 ok.
+cond2: v=2 freq>0, s=5 freq=0 ok.
+add: for v=2: s=5, pair_sum[5]+=1 => pair_sum[5]=1. freq[3]=1.
+freq: 2:1, 3:1. pair_sum: 5:1.
+cur_len=2 best=2. Window [0,1] = [2,3].
+
+right=2: x=5.
+cond1: pair_sum[5]=1 >0 => fail.
+while: remove y = nums[left]=nums[0]=2.
+remove y=2:
+loop v 1..500:
+freq before: {2:1, 3:1}.
+v=2: freq[2]=1>0, v==y => pair_sum[4] -= (1-1)=0.
+v=3: freq[3]=1>0, v!=y => pair_sum[5] -= freq[3]=1 => pair_sum[5] becomes 0.
+others freq 0.
+freq[2] -= 1 => freq[2]=0.
+left becomes 1.
+Now window [1,1] = [3]. freq: {3:1}, pair_sum: {5:0}.
+cond1: pair_sum[5]=0 ok.
+cond2: v=3 freq>0, s=5+3=8 freq=0 ok.
+break.
+add x=5:
+for v with freq>0: v=3 => s=8, pair_sum[8] += 1 => pair_sum[8]=1.
+freq[5] += 1 => freq[5]=1.
+freq now: {3:1, 5:1}. pair_sum: {8:1}.
+cur_len = right - left + 1 = 2 - 1 + 1 = 2. best=2. Window [1,2] = [3,5].
+
+right=3: x=3.
+while True:
+cond1: pair_sum[3]? pair_sum currently has 8:1. pair_sum[3]=0 => True.
+cond2: iterate v 1..500 with freq>0: freq has 3:1 and 5:1.
+v=3: freq[3]=1>0, s=3+3=6 <=500, freq[6]==0 => ok.
+v=5: freq[5]=1>0, s=3+5=8 <=500, freq[8]==1! because pair_sum[8] is 1, but condition 2 checks freq[x+v], i.e., value 8 in freq. freq has keys 3 and 5. 8 is not in freq. So freq[8]==0. So ok.
+Wait, condition 2 checks if (x+v) is in freq (the value). freq[8] is 0 because freq only has values up to 500 and we only set freq for values present. So freq[8] is 0. So cond2 passes.
+Thus cond2 True.
+break.
+add x=3:
+for v with freq>0: v=3 and v=5.
+v=3: s=3+3=6, pair_sum[6] += freq[3]=1 => pair_sum[6]=1.
+v=5: s=5+3=8, pair_sum[8] += freq[5]=1 => pair_sum[8] becomes 2 (was 1).
+freq[3] += 1 => freq[3] becomes 2.
+freq now: {3:2, 5:1}. pair_sum: {6:1, 8:2}.
+cur_len = right - left + 1 = 3 - 1 + 1 = 3. best=3. Window [1,3] = [3,5,3].
+
+right=4: x=2.
+while True:
+cond1: pair_sum[2]? pair_sum has 6:1, 8:2. pair_sum[2]=0 => True.
+cond2: freq has {3:2, 5:1}. iterate v:
+v=3: freq[3]=2>0, s=2+3=5 <=500, freq[5]==1 (since freq has 5). So condition 2 FAILS! Because x+v = 5, and 5 is in freq.
+So cond2 False.
+Enter while: remove y = nums[left] = nums[1] = 3. (left is currently 1, so nums[1]=3)
+remove y=3:
+freq before: {3:2, 5:1}. y=3.
+loop v 1..500:
+v=3: freq[3]=2>0, v==y => pair_sum[2*3=6] -= (freq[3]-1) = (2-1)=1 => pair_sum[6] becomes 0.
+v=5: freq[5]=1>0, v!=y => pair_sum[3+5=8] -= freq[5]=1 => pair_sum[8] becomes 1 (was 2).
+others freq 0.
+freq[3] -= 1 => freq[3]=1.
+left becomes 2.
+Now window [2,3] = [5,3]. freq: {3:1, 5:1}. pair_sum: {6:0, 8:1}.
+Loop again to check conditions for adding x=2 to window [left=2, right-1=3] = [5,3].
+cond1: pair_sum[2]=0 True.
+cond2: freq has v=3 and v=5.
+v=3: s=2+3=5, freq[5]=1 => FAIL! Because 5 is in freq.
+So cond2 False.
+Enter while again: remove y = nums[left] = nums[2] = 5. (left=2, nums[2]=5)
+remove y=5:
+freq before: {3:1, 5:1}. y=5.
+loop v:
+v=3: freq[3]=1>0, v!=y => pair_sum[5+3=8] -= freq[3]=1 => pair_sum[8] becomes 0.
+v=5: freq[5]=1>0, v==y => pair_sum[10] -= (freq[5]-1)=0 => pair_sum[10] unchanged (0).
+freq[5] -= 1 => freq[5]=0.
+left becomes 3.
+Now window [3,3] = [3]. freq: {3:1}. pair_sum: all 0? pair_sum[8] became 0, pair_sum[6] was 0.
+Loop again check conditions for adding x=2 to window [3,3] = [3].
+cond1: pair_sum[2]=0 True.
+cond2: freq has v=3. s=2+3=5, freq[5]==0 => ok.
+cond2 True.
+break.
+add x=2:
+for v with freq>0: v=3 => s=5, pair_sum[5] += 1 => pair_sum[5]=1.
+freq[2] += 1 => freq[2]=1.
+freq now: {3:1, 2:1}. pair_sum: {5:1}.
+cur_len = right - left + 1 = 4 - 3 + 1 = 2. best remains 3. Window [3,4] = [3,2].
+
+right=5: x=1.
+while True:
+cond1: pair_sum[1]=0 True.
+cond2: freq has {3:1, 2:1}. v=3: s=1+3=4, freq[4]==0 ok. v=2: s=1+2=3, freq[3]==1 => FAIL! Because 3 is in freq.
+So cond2 False.
+Enter while: remove y = nums[left] = nums[3] = 3. (left=3, nums[3]=3)
+remove y=3:
+freq before: {3:1, 2:1}. y=3.
+loop v:
+v=3: freq[3]=1>0, v==y => pair_sum[6] -= (1-1)=0.
+v=2: freq[2]=1>0, v!=y => pair_sum[3+2=5] -= freq[2]=1 => pair_sum[5] becomes 0.
+freq[3] -= 1 => freq[3]=0.
+left becomes 4.
+Now window [4,4] = [2]. freq: {2:1}. pair_sum: {5:0}.
+Loop check conditions for adding x=1 to [2]:
+cond1: pair_sum[1]=0 True.
+cond2: freq has v=2. s=1+2=3, freq[3]==0 ok.
+cond2 True.
+break.
+add x=1:
+for v with freq>0: v=2 => s=3, pair_sum[3] += 1 => pair_sum[3]=1.
+freq[1] += 1 => freq[1]=1.
+freq now: {2:1, 1:1}. pair_sum: {3:1}.
+cur_len = 5 - 4 + 1 = 2. best remains 3.
+
+Loop ends. Return best=3. Correct!
+
+Example 2: [3,4,5,6]
+Let's quickly trace: should return 4.
+left=0.
+right=0: x=3 ok add, best=1.
+right=1: x=4 ok add, best=2.
+right=2: x=5 ok add, best=3.
+right=3: x=6 ok add, best=4.
+Works.
+
+Now, we must ensure the while loop termination and correctness. The while loop removes elements from left until conditions for adding x are met. Since we only remove elements, the window size decreases, and eventually conditions will be met (since empty window always valid). The total number of left increments across all right is at most n, because left only moves forward. So the algorithm is O(n * (cost per iteration)). Cost per iteration: the while loop body does a loop over v 1..500 for condition check (500 iterations), and if it removes, another loop over v 1..500 for removal (500 iterations). Each right step might do several removals, but total removals <= n. So total operations: for each right, we do condition check (500 iterations) plus maybe removal loops. Total condition checks: n times = 1000 * 500 = 5e5. Total removal loops: each removal does 500 iterations, total removals <= n = 1000, so 5e5. Plus the add step: for each right, we do a loop over v 1..500 to update pair_sum (500 iterations). Total add loops: n * 500 = 5e5. So total operations around 1.5e6, very fast in Python.
+
+We must be careful with the condition 2 loop: we iterate v from 1 to 500, but we can break early if cond2 fails. Also, we only need to check v where freq[v] > 0. We can optimize by keeping a list of present values, but 500 is small enough.
+
+One important detail: in condition 2, we check `if s <= 500 and freq[s] > 0`. What if x+v > 500? Then we don't check, which is correct because freq only has values up to 500, so it can't be present. But wait: freq array size is 501, indices 1..500. If s > 500, we skip. That's fine.
+
+Also, in the add step: `for v in range(1, 501): if freq[v] > 0: s = v + x; if s <= 1000: pair_sum[s] += freq[v]`. Since x and v are <= 500, s <= 1000 always. We can just do `pair_sum[s] += freq[v]` without the if, but we allocated pair_sum size 1001, so indices 1..1000 are valid. s could be up to 1000. So we can just do `pair_sum[s] += freq[v]`.
+
+In removal step: we have `for v in range(1, 501): if freq[v] > 0: if v != y: pair_sum[y+v] -= freq[v] else: pair_sum[2*y] -= (freq[y] - 1)`. Here y+v could be up to 1000, which is within pair_sum size 1001. 2*y up to 1000. So safe.
+
+But wait: in removal, we are decrementing pair_sum based on current freq. However, note that freq[v] might be >0 for v that are present. But what if v == y and freq[y] is the count before decrement? We use freq[y] - 1, which is correct as derived. But we must ensure we do the decrements BEFORE decrementing freq[y]. In the code, we loop over v, and inside we use freq[v] which is the current freq before any modifications. Then after the loop, we do freq[y] -= 1. That's correct because we read freq[y] inside the loop before it's decremented.
+
+However, there's a subtle bug: in the removal loop, we iterate v from 1 to 500, and for each v with freq[v] > 0, we decrement pair_sum. But what if y appears multiple times, and we are removing one occurrence. The formula `pair_sum[2*y] -= (freq[y] - 1)` assumes that the pairs among y's are correctly accounted. But what if there are other values v that also equal y? That's the only case. The loop will encounter v == y exactly once (since we loop over distinct values? No, we loop over all v from 1 to 500, and freq[v] is the count. If freq[y] > 1, we will have v == y in the loop, and we apply the decrement `pair_sum[2*y] -= (freq[y] - 1)`. But we also might have other v's. That's fine; we only need to decrement the pairs among y's once. But wait: if freq[y] > 1, the loop will have v == y, and we decrement pair_sum[2*y] by (freq[y]-1). However, what if there are multiple v's that are equal to y? There's only one v == y. So it's applied once. But is the amount (freq[y]-1) correct when freq[y] > 1? Let's test with [2,2,2] we did: freq[2]=3, removal: pair_sum[4] -= (3-1)=2, becomes 1. Correct.
+
+But what if we have window [2,2,3] and we remove a 2? We did that and it worked.
+
+What if we have window [2,3,2] (same multiset) and remove a 2? Should be same.
+
+But there's a potential issue: in the removal loop, we iterate v from 1 to 500, and for each v with freq[v] > 0, we do the decrement. If freq[y] > 1, we will apply the v==y decrement once. But what if there are other values that also have the same value? No. However, consider the case where we have multiple distinct values, and we remove y. The decrements for v != y are `pair_sum[y+v] -= freq[v]`. But freq[v] is the count of v in the current window. Is it possible that some of those pairs (y, v) were already partially removed or something? No, because we maintain invariant that the window is valid and we only remove left elements.
+
+Let's test a more complex removal: window [1,2,3,2]? But our algorithm only removes from left, so the window is always a contiguous subarray. The multiset is whatever is in that subarray. The removal rules we derived were based on the current freq counts, which accurately reflect the multiset. Since we only ever add at right and remove from left, the multiset is exactly the subarray. The pair_sum counts should always accurately reflect the number of unordered pairs in the current window. Our add and remove rules were derived by reversing the add operations, and we tested several cases. I'm fairly confident they are correct.
+
+But we must ensure that in the condition 2 check, we correctly identify violations. Condition 2: for all v with freq[v] > 0, (x+v) not in freq. We check `if s <= 500 and freq[s] > 0: cond2 = False`. Note: freq[s] > 0 means value s is present in the window. But what if s == x? That would mean v=0, impossible. What if s is present, but the only occurrence of s is the new element x? But we are checking before adding x, so s is in the old window. So it's a distinct index. Good.
+
+One more check: In condition 2, we iterate v from 1 to 500. But freq might have values that are 0. We only check if freq[v] > 0. That's fine.
+
+Now, what about the case where the window has duplicate values and condition 2 might have a false positive? Suppose window has value 2 at index 0, and we are adding x=2. Condition 2: v=2, x+v=4. If 4 is not in freq, cond2 passes. That's correct as we saw earlier with [1,1] adding another 1.
+
+What if window has value 3, and we add x=1. v=3, x+v=4. If 4 not in freq, passes. If 4 is in freq, fails. Correct.
+
+Now, let's consider edge cases: n=1. The loop runs right=0. while True: cond1 pair_sum[x]==0 (0==0 ok), cond2 freq empty ok. add x. cur_len=1 best=1. return 1. Correct.
+
+What about all elements same and valid, e.g., [1,1,1]? We traced [1,1,1,1] gave 4. Let's test [1,1,1] with algorithm mentally:
+left=0.
+right=0: x=1 ok add, best=1.
+right=1: x=1. cond1: pair_sum[1]=0. cond2: freq has 1, x+v=2 not in freq ok. add: for v=1: s=2, pair_sum[2]+=1. freq[1]=2. cur_len=2 best=2. Window [1,1].
+right=2: x=1. cond1: pair_sum[1]=0 (pair_sum has 2:1). cond2: freq has 1:2, x+v=2 not in freq (freq only has 1). ok. add: for v=1: s=2, pair_sum[2]+=2 => pair_sum[2]=3. freq[1]=3. cur_len=3 best=3. Return 3. Correct, since 1+1=2 not in array.
+
+What about [2,2,4]? We traced earlier gave 2. Algorithm should give 2.
+
+Now, let's think about potential bug: In the while loop, we remove y = nums[left] and then left += 1. But what if left > right? That shouldn't happen because we only remove while conditions fail, and conditions will eventually hold (empty window). But if left becomes > right, the window would be empty. However, right starts at 0, left starts at 0. If we remove left when left==right, window becomes empty (left = right+1). Then condition check: freq all 0, cond1 and cond2 true. Then we add x, left becomes right (since left was right+1? Wait, if left becomes right+1, then window is empty, but we then add x, and cur_len = right - left + 1 = right - (right+1) + 1 = 0? That would be wrong. Let's trace: suppose we have a case where we need to remove the only element. Example: nums = [1,2,3] we already did, left never exceeded right. But consider a case where the first element makes later additions invalid and we need to remove it. In [2,3,5], right=2 x=5, we removed left=0, left became 1, window [1,1] valid. left didn't exceed right. Could left become > right? Suppose window size 1, and we try to add an element that violates conditions, we remove left, left becomes right+1, window empty. Then we add x, and the new window is [right+1, right]? That would be invalid indices. But in our algorithm, after the while loop, we add x, and then compute cur_len = right - left + 1. If left > right, cur_len would be negative or zero. But will left ever exceed right? Let's see: the while loop condition is based on adding x to the current window [left, right-1]. If the current window has size 1 (left == right-1? Actually right-1 is the previous right. At the start of iteration for right, the window is [left, right-1]. If left == right, window is empty? No, initially left=0, right=0, window [0, -1] empty. As we proceed, left <= right always, because we only move left forward when conditions fail, and we never move left past right because the window [left, right-1] has size right - left. If left == right, window is empty. Can left become > right? Suppose at some point left == right, window empty. Then we check conditions for adding x to empty window: they always pass. So while loop would not remove anything; it would break immediately. So left will never exceed right. Because if left == right, window empty, conditions pass, we break and add x, then left remains right, and we add x, window size 1. So left <= right always.
+
+But let's double-check: In the while loop, we remove y = nums[left] and left += 1. What if left was equal to right? That would mean the window [left, right-1] has size right - left = 0, i.e., empty. But we only enter the while loop if conditions for adding x to [left, right-1] fail. If window is empty, conditions always pass (as freq empty, pair_sum empty). So we would never enter the while loop when window is empty. So left will always be <= right-1 when we enter the while loop? Actually, at the start of iteration for right, the window is [left, right-1]. If left > right-1, window empty. But left starts at 0, right at 0, window [0,-1] empty. For right=0, while loop checks conditions for empty window, they pass, so we don't enter while. For right>0, could left become > right-1? Suppose we had a previous right where we removed a lot, and left became equal to right-1? Let's trace: after right=1, left could be 1 if we removed left=0. Then window [1,0]? No, right=1, left=1 means window [1,0] empty? Actually, after right=1, the window we maintain is [left, right]. At the end of right=1, left could be 1, and the window is [1,1]. For the next right=2, the window before adding is [left, right-1] = [1,1]. That's size 1. If we then need to remove, we remove left=1, left becomes 2, window becomes [2,1]? That would be left > right-1. But in our earlier trace of [2,3,5,3,2,1], we had left become 3 while right=4, and window [3,3] before adding, then we removed left=3, left became 4, window [4,3]? Wait, in that trace: right=4, x=2. We had left=3, window [3,3] = [3]. We checked conditions, they failed, so we entered while: removed y = nums[left]=nums[3]=3, left became 4. Then window [4,3]? But right is 4, so window [left, right-1] = [4,3] empty. Then we checked conditions again (freq empty), passed, broke, then added x=2. After adding, cur_len = right - left + 1 = 4 - 4 + 1 = 1. That's correct: the new window is [4,4] = [2]. So left became 4, which equals right. So left can become equal to right. It never exceeds right because after removal, we re-check conditions; if window becomes empty, conditions pass and we break. So left will be at most right.
+
+In code, after the while loop, we add x, then compute cur_len = right - left + 1. If left == right, cur_len = 1. If left > right (which shouldn't happen), it would be <=0, but we can guard against it. I think it's safe.
+
+Let's test a scenario where we might have left > right: Suppose nums = [1, 2]. right=0: left=0, add 1, window [0,0], left=0. right=1: x=2. cond1: pair_sum[2]=0. cond2: freq has 1, x+v=3 not in freq ok. add 2, window [0,1], left=0, cur_len=2. No issue.
+
+What about nums = [5]? n=1, returns 1.
+
+Now, we must also consider: in the condition 2 loop, we iterate v from 1 to 500. But freq array is size 501, indices 1..500. What about value 0? Constraints say nums[i] >= 1, so no 0.
+
+One more thing: In the add step, we do `for v in range(1, 501): if freq[v] > 0: s = v + x; pair_sum[s] += freq[v]`. This updates pair_sum for all v with freq>0. But what if v + x > 1000? As said, max 500+500=1000, and pair_sum size is 1001, so index 1000 is valid. So fine.
+
+In removal step: `for v in range(1, 501): if freq[v] > 0: if v != y: pair_sum[y+v] -= freq[v] else: pair_sum[2*y] -= (freq[y] - 1)`. Here y+v could be up to 1000, 2*y up to 1000. Safe.
+
+But wait: in removal, we are using freq[v] which is the current freq before we decrement freq[y]. However, if y appears multiple times, and we are removing one occurrence, the loop will encounter v == y. But note: if freq[y] > 1, we will apply the decrement `pair_sum[2*y] -= (freq[y] - 1)`. However, what if there are other values v that are also equal to y? No. But what if the window has multiple distinct values, and we remove y. The loop will iterate over all v. For v == y, we do the pair_sum[2*y] decrement. But is it possible that we also need to decrement pair_sum for pairs between this y and other v's? Yes, we do that with the v != y branch. But what about pairs between the removed y and other occurrences of y? That's covered by the v == y branch. However, there's a subtlety: when freq[y] > 1, the loop will have v == y, and we decrement pair_sum[2*y] by (freq[y]-1). But what if there are multiple v's that are equal to y? Only one. But the loop iterates v from 1 to 500, so v == y appears exactly once. That's fine.
+
+But consider: what if we have freq[y] = 3, and we remove one y. The current pair_sum[2*y] should decrease by 2 (from 3 to 1). Our decrement is (freq[y]-1) = 2. Correct. But what if we have other values that also sum to 2*y? That's separate; pair_sum[2*y] only counts pairs of y's with each other. So decrementing by (freq[y]-1) is correct.
+
+Now, is there any case where the removal loop might double-count or miss? Let's test with a window that has multiple y's and other values, and we remove one y, but the order of removal might matter if we don't maintain invariant? But we maintain invariant that the window is always a contiguous subarray and we only remove leftmost. The freq and pair_sum should always reflect the current window. I think it's correct.
+
+Let's do a more complex test manually or trust the logic. Given time constraints, I'll proceed with this implementation.
+
+Potential bug: In condition 2, we check `if s <= 500 and freq[s] > 0`. But freq array is size 501, indices 1..500. What if s == 0? x+v >= 2, so s >= 2. So safe.
+
+What about the case where x+v is present in freq, but the only occurrence of x+v is the same index as v? As argued, x >= 1 so x+v > v, so different values, different indices. But what if the window has value v, and also value x+v, but the only occurrence of x+v is at the same index as v? Impossible since values differ.
+
+Wait: could it be that the window has only one occurrence of value v, and also only one occurrence of value x+v, and those two indices are the same? No, an index has only one value. So they are distinct indices.
+
+But there's another edge case: what if x+v equals some value in freq, but that value's only occurrence is the new element x? But we are checking before adding x, so x is not in freq yet. So safe.
+
+Now, let's consider if the two-pointer algorithm might miss some valid subarrays because we only move left forward. We argued that for hereditary properties, the standard sliding window works. But we must ensure that the validity condition we are using (the two conditions) exactly characterizes valid windows, and that the while loop correctly maintains the invariant that [left, right] is valid after each iteration. In our algorithm, we start with empty window (valid). For each right, we ensure that after the while loop and addition, the window [left, right] is valid. The while loop removes left elements until adding x would keep the window valid (given the old window [left, right-1] was valid). Since we only remove from left, and the old window was valid, the new window [left+1, right-1] is valid (subarray). Then we check conditions for adding x to that smaller window. If they pass, we add x and the new window is valid. If they fail, we remove more. This process will terminate because eventually window becomes empty and conditions pass. And we never need to move left backward. This is a standard argument for hereditary properties. I'm confident.
+
+One more check: In the while loop, we check conditions for adding x to the current window [left, right-1]. But what if the current window [left, right-1] is valid, but after removing left, the window [left+1, right-1] might not be "compatible" with the conditions we check? The conditions we check are exactly the two conditions we proved are necessary and sufficient for the new window to be valid, assuming the old window was valid. And we know [left+1, right-1] is valid because it's a subarray. So the logic holds.
+
+Now, let's code the solution.
+
+We need to output the final answer as the entire contents of solution.py inside a python code block.
+
+We'll write solution.py with the class Solution and method maxSubarray.
+
+Let's write the code carefully.
+
+```python
+from typing import List
+
+class Solution:
+    def maxSubarray(self, nums: List[int]) -> int:
+        n = len(nums)
+        best = 0
+        left = 0
+        # freq[value] = count of value in current window, values 1..500
+        freq = [0] * 501
+        # pair_sum[s] = number of unordered pairs (i,j) in window with nums[i]+nums[j] == s, s 1..1000
+        pair_sum = [0] * 1001
+        
+        for right in range(n):
+            x = nums[right]
+            # Try to add x to window [left, right-1]
+            # We will move left forward until conditions hold
+            while True:
+                # Condition 1: no pair sums to x
+                cond1 = (pair_sum[x] == 0)
+                # Condition 2: for all v in window, x+v not in window
+                cond2 = True
+                for v in range(1, 501):
+                    if freq[v] > 0:
+                        s = x + v
+                        if s <= 500 and freq[s] > 0:
+                            cond2 = False
+                            break
+                if cond1 and cond2:
+                    break
+                # Remove nums[left] from window
+                y = nums[left]
+                # Update pair_sum and freq for removal of y
+                for v in range(1, 501):
+                    if freq[v] > 0:
+                        if v != y:
+                            pair_sum[y + v] -= freq[v]
+                        else:
+                            # v == y, pairs among y's
+                            pair_sum[2 * y] -= (freq[y] - 1)
+                freq[y] -= 1
+                left += 1
+            
+            # Now add x to the window
+            for v in range(1, 501):
+                if freq[v] > 0:
+                    s = v + x
+                    pair_sum[s] += freq[v]
+            freq[x] += 1
+            
+            cur_len = right - left + 1
+            if cur_len > best:
+                best = cur_len
+                
+        return best
+```
+
+Let's test this code with the examples mentally, we already did and it worked.
+
+But wait: in the while loop condition check, we have `for v in range(1, 501): if freq[v] > 0:`. This loops 500 times even if freq has few non-zero entries. That's fine for performance.
+
+One potential issue: In condition 2, we check `if s <= 500 and freq[s] > 0`. But what if x+v > 500? We skip, which is correct. But what if x+v <= 500 and freq[s] > 0, we set cond2 False. However, is it possible that s is present in freq, but the only occurrence of s is at the same index as the v we are considering? As argued, no. But let's double-check with an example where x+v is in freq, but maybe the only way to form the triple requires using the new element x as one of the addends, and the sum is some existing element, but the addend v might be the same as the sum's index? No, indices are distinct by value difference.
+
+But there's a subtle case: What if the window has value v, and also value x+v, but the only occurrence of x+v is at the same index as the element we are adding? Not possible since we haven't added x yet.
+
+What if the window has value v, and x+v is also v? That would mean x=0, impossible.
+
+So condition 2 is safe.
+
+Now, what about the case where the new element x is added, and there is a triple where i and j are both the new element? Not possible.
+
+Another edge case: nums[i] can be up to 500, but what if nums has values that cause x+v to be exactly 501? We skip because s <= 500 check. But if x+v = 501, it cannot be in freq anyway since max value 500. So skipping is correct.
+
+Now, let's test with a custom case: nums = [1, 2, 3, 4]. Expected? 1+2=3, 1+3=4, so max valid subarray? [2,3,4]? 2+3=5 not 4, 2+4=6, 3+4=7. So [2,3,4] length 3. [1,4] length 2. [3,4] length 2. So answer 3.
+Let's trace algorithm quickly:
+left=0.
+right=0: x=1 ok add, best=1.
+right=1: x=2. cond1: pair_sum[2]=0. cond2: v=1 => 3 not in freq ok. add: pair_sum[3]+=1, freq[2]=1. best=2.
+right=2: x=3. cond1: pair_sum[3]=1 >0 => fail. while: remove left=0 (1). y=1. remove: freq had {1:1,2:1}. v=1: pair_sum[2] -= (1-1)=0. v=2: pair_sum[3] -= freq[2]=1 => pair_sum[3]=0. freq[1]=0, left=1. window [1,1]=[2]. cond1: pair_sum[3]=0. cond2: v=2 => 5 not in freq ok. break. add x=3: for v=2: s=5, pair_sum[5]+=1. freq[3]=1. cur_len=2 best=2. Window [1,2]=[2,3].
+right=3: x=4. cond1: pair_sum[4]=0 (pair_sum has 5:1). cond2: freq has 2:1, 3:1. v=2 => 6 not in freq. v=3 => 7 not in freq. cond2 ok. add: for v=2: s=6, pair_sum[6]+=1; v=3: s=7, pair_sum[7]+=1. freq[4]=1. cur_len=3 best=3. Window [1,3]=[2,3,4]. Returns 3. Correct.
+
+What about nums = [2, 2, 2]? We traced gives 3. Correct.
+
+What about nums = [1, 1, 2]? Expected 2. Let's trace:
+left=0.
+right=0: x=1 ok add, best=1.
+right=1: x=1. cond1: pair_sum[1]=0. cond2: v=1 => 2 not in freq ok. add: for v=1: s=2, pair_sum[2]+=1. freq[1]=2. best=2.
+right=2: x=2. cond1: pair_sum[2]=1 >0 => fail. while: remove left=0 (1). y=1. freq before: {1:2, ?}. Actually after right=1, freq: {1:2}. pair_sum: {2:1}. Remove y=1: loop v: v=1: pair_sum[2] -= (freq[1]-1)=1 => pair_sum[2]=0. freq[1]=1. left=1. Now window [1,1]=[1]. cond1: pair_sum[2]=0. cond2: v=1 => 3 not in freq ok. break. add x=2: for v=1: s=3, pair_sum[3]+=1. freq[2]=1. cur_len=2 best=2. Return 2. Correct.
+
+Everything seems consistent.
+
+Now, we must output the final answer: the entire contents of solution.py. The problem says: "Reply with your final answer: the ENTIRE contents of `solution.py` (the version that passed), pasted into one ```python code block, with nothing after it. Include every line of the method body, not just the header. If you are unsure what is in the file, use read_file on `solution.py` first. Do not call a tool to submit."
+
+So I need to output the solution.py content inside ```python ```.
+
+I'll write the final solution.py as the code above, but ensure it's exactly what we tested. I'll also include the import.
+
+One minor thing: The problem statement has `class Solution: def maxSubarray(self, nums: list[int]) -> int:`. I'll use `List[int]` from typing for compatibility, but the signature given uses `list[int]`. In Python 3.9+, `list[int]` is fine. I'll use `list[int]` as given, but I need to import nothing if using built-in. However, the template in problem has `from typing import List` maybe. I'll just use `list[int]` and not import typing, or I can import List and use it. To be safe, I'll use `list[int]` and not import anything, since the function signature in the problem uses `list[int]`. But in the code I write, I can just use `nums: list[int]`. However, the environment might require `from typing import List` if older Python. I'll just use `list[int]` and add a type comment if needed, but typically in these challenges, `list[int]` is accepted. I'll write:
+
+```python
+class Solution:
+    def maxSubarray(self, nums: list[int]) -> int:
+```
+
+And no import needed. But in my earlier write_file, I had `from typing import List`. I'll adjust to not need it, or keep it. The problem's given function header is `def maxSubarray(self, nums: list[int]) -> int:`. I'll match that exactly.
+
+Let's produce the final code.
+
+```python
+class Solution:
+    def maxSubarray(self, nums: list[int]) -> int:
+        n = len(nums)
+        best = 0
+        left = 0
+        freq = [0] * 501
+        pair_sum = [0] * 1001
+        
+        for right in range(n):
+            x = nums[right]
+            while True:
+                cond1 = (pair_sum[x] == 0)
+                cond2 = True
+                for v in range(1, 501):
+                    if freq[v] > 0:
+                        s = x + v
+                        if s <= 500 and freq[s] > 0:
+                            cond2 = False
+                            break
+                if cond1 and cond2:
+                    break
+                y = nums[left]
+                for v in range(1, 501):
+                    if freq[v] > 0:
+                        if v != y:
+                            pair_sum[y + v] -= freq[v]
+                        else:
+                            pair_sum[2 * y] -= (freq[y] - 1)
+                freq[y] -= 1
+                left += 1
+            
+            for v in range(1, 501):
+                if freq[v] > 0:
+                    s = v + x
+                    pair_sum[s] += freq[v]
+            freq[x] += 1
+            
+            cur_len = right - left + 1
+            if cur_len > best:
+                best = cur_len
+                
+        return best
+```
+
+I'll output this inside the code block.
+[finish_reason: tool_calls | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 1874, 'completion_tokens': 35065, 'total_tokens': 36939, 'cost': 0.0071125, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 1056, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0071125, 'upstream_inference_prompt_cost': 9.95e-05, 'upstream_inference_completions_cost': 0.007013}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'path': 'solution.py', 'content': 'class Solution:\n    def maxSubarray(self, nums: list[int]) -> int:\n        n = len(nums)\n        best = 0\n        left = 0\n        freq = [0] * 501\n        pair_sum = [0] * 1001\n        \n        for right in range(n):\n            x = nums[right]\n        
+writing
+[write_file] result: Content written to solution.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 36959, 'completion_tokens': 131, 'total_tokens': 37090, 'cost': 0.00258165, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 1056, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00258165, 'upstream_inference_prompt_cost': 0.00255545, 'upstream_inference_completions_cost': 2.62e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'content': 'from solution import Solution\n\ns = Solution()\n\n# Example 1\nnums1 = [2,3,5,3,2,1]\nout1 = s.maxSubarray(nums1)\nprint("Example 1:", out1, "expected", 3)\n\n# Example 2\nnums2 = [3,4,5,6]\nout2 = s.maxSubarray(nums2)\nprint("Example 2:", out2, "expected", 4)', 'path': 'test.py'}
+writing
+[write_file] result: Content written to test.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 37112, 'completion_tokens': 27, 'total_tokens': 37139, 'cost': 0.00152612, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 35904, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00152612, 'upstream_inference_prompt_cost': 0.00152072, 'upstream_inference_completions_cost': 5.4e-06}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'test.py'}
+running python
+[run_python] result: Result running test.py: stdout + stderr: Example 1: 3 expected 3
+Example 2: 4 expected 4
+
+
+Assistant: Both examples pass. The solution uses a sliding window approach with two pointers, maintaining frequency and pairwise sum counts to efficiently check the restricted pair sum condition. The algorithm runs in O(n * 500) time, well within the limits.
+
+
+[finish_reason: tool_calls | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 37184, 'completion_tokens': 74, 'total_tokens': 37258, 'cost': 0.00150888, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 36960, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00150888, 'upstream_inference_prompt_cost': 0.00149408, 'upstream_inference_completions_cost': 1.48e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[read_file] args: {'path': 'solution.py'}
+reading
+[read_file] result: Content at solution.py:
+stdout:
+ class Solution:
+    def maxSubarray(self, nums: list[int]) -> int:
+        n = len(nums)
+        best = 0
+        left = 0
+        freq = [0] * 501
+        pair_sum = [0] * 1001
+        
+        for right in range(n):
+            x = nums[right]
+            while True:
+                cond1 = (pair_sum[x] == 0)
+                cond2 = True
+                for v in range(1, 501):
+                    if freq[v] > 0:
+                        s = x + v
+               
+
+Assistant: 
+[finish_reason: tool_calls | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 37609, 'completion_tokens': 27, 'total_tokens': 37636, 'cost': 0.00152923, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 36960, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00152923, 'upstream_inference_prompt_cost': 0.00152383, 'upstream_inference_completions_cost': 5.4e-06}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'test.py'}
+running python
+[run_python] result: Result running test.py: stdout + stderr: Example 1: 3 expected 3
+Example 2: 4 expected 4
+
+
+Assistant: 
+[finish_reason: tool_calls | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 37681, 'completion_tokens': 27, 'total_tokens': 37708, 'cost': 0.00153427, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 36960, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00153427, 'upstream_inference_prompt_cost': 0.00152887, 'upstream_inference_completions_cost': 5.4e-06}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'test.py'}
+running python
+[run_python] result: Result running test.py: stdout + stderr: Example 1: 3 expected 3
+Example 2: 4 expected 4
+
+
+Assistant: 
+[finish_reason: tool_calls | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 37753, 'completion_tokens': 27, 'total_tokens': 37780, 'cost': 0.00153931, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 36960, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00153931, 'upstream_inference_prompt_cost': 0.00153391, 'upstream_inference_completions_cost': 5.4e-06}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'test.py'}
+running python
+[run_python] result: Result running test.py: stdout + stderr: Example 1: 3 expected 3
+Example 2: 4 expected 4
+
+
+Assistant: 
+[finish_reason: tool_calls | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 37825, 'completion_tokens': 27, 'total_tokens': 37852, 'cost': 0.00154435, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 36960, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00154435, 'upstream_inference_prompt_cost': 0.00153895, 'upstream_inference_completions_cost': 5.4e-06}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'test.py'}
+running python
+[run_python] result: Result running test.py: stdout + stderr: Example 1: 3 expected 3
+Example 2: 4 expected 4
+
+
+Assistant: The solution is correct and both provided examples pass. Here is the final answer:
+
+```python
+class Solution:
+    def maxSubarray(self, nums: list[int]) -> int:
+        n = len(nums)
+        best = 0
+        left = 0
+        freq = [0] * 501
+        pair_sum = [0] * 1001
+        
+        for right in range(n):
+            x = nums[right]
+            while True:
+                cond1 = (pair_sum[x] == 0)
+                cond2 = True
+                for v in range(1, 501):
+                    if freq[v] > 0:
+                        s = x + v
+                        if s <= 500 and freq[s] > 0:
+                            cond2 = False
+                            break
+                if cond1 and cond2:
+                    break
+                y = nums[left]
+                for v in range(1, 501):
+                    if freq[v] > 0:
+                        if v != y:
+                            pair_sum[y + v] -= freq[v]
+                        else:
+                            pair_sum[2 * y] -= (freq[y] - 1)
+                freq[y] -= 1
+                left += 1
+            
+            for v in range(1, 501):
+                if freq[v] > 0:
+                    s = v + x
+                    pair_sum[s] += freq[v]
+            freq[x] += 1
+            
+            cur_len = right - left + 1
+            if cur_len > best:
+                best = cur_len
+                
+        return best
+```
+[finish_reason: stop | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 37897, 'completion_tokens': 348, 'total_tokens': 38245, 'cost': 0.00161359, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 36960, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00161359, 'upstream_inference_prompt_cost': 0.00154399, 'upstream_inference_completions_cost': 6.96e-05}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

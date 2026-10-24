@@ -1,0 +1,1093 @@
+
+Assistant: ```python
+class Solution:
+    def maxValue(self, nums: list[int]) -> int:
+        n = len(nums)
+        # original alternating sum: even indices positive, odd indices negative
+        orig = 0
+        for i, v in enumerate(nums):
+            if i % 2 == 0:
+                orig += v
+            else:
+                orig -= v
+
+        # best gain we can achieve by exactly one left-rotation of a subarray [l..r] (l < r)
+        # We consider all possible (l, r).  The gain is the change in alternating sum.
+        # We will compute the maximum possible gain in O(n) using DP / prefix ideas.
+        #
+        # When we left-rotate nums[l..r] by one position:
+        #   the element originally at l moves to r,
+        #   and each element at i in (l, r] shifts left by one position (i -> i-1).
+        #
+        # The alternating sum change can be derived by looking at the parity of indices.
+        # We'll use the standard trick: split into even/odd positions.
+        #
+        # Let's define two arrays that capture "gain if we start a rotation at i
+        # and end it later", but it's easier to directly iterate over all
+        # (l, r) with the effect on the alternating sum.
+        #
+        # Effect on alternating sum when rotating [l, r]:
+        #   - The element at l (original sign s_l = +1 if l even else -1) moves to r.
+        #     Its new sign becomes +1 if r even else -1.
+        #   - For each i from l+1 to r, the element moves from index i to i-1,
+        #     flipping its sign (because index parity changes).
+        #     Contribution change for i:  -2 * (original sign of i) if we consider
+        #     the shift flipping the sign, but we must be careful with the overall
+        #     alternating sum formula.
+        #
+        # A cleaner way: write the alternating sum as sum_i (-1)^i * arr[i].
+        # After rotation, the new array b is:
+        #   b[0..l-1] = nums[0..l-1]
+        #   b[l..r-1] = nums[l+1..r]
+        #   b[r] = nums[l]
+        #   b[r+1..n-1] = nums[r+1..n-1]  (unchanged)
+        #
+        # The change in total sum = sum_{i=l}^{r} new_sign(i)*b[i] - old_sign(i)*nums[i].
+        # We can compute the delta for each possible (l, r) efficiently.
+        #
+        # Let's derive delta(l, r) directly.
+        # Old contribution of segment [l, r]:
+        #   S_old = sum_{i=l}^{r} (-1)^i * nums[i]
+        # New contribution:
+        #   new signs:
+        #     for i in [l, r-1]: the element originally at i+1 moves to i,
+        #                       its sign in the new array is (-1)^i.
+        #     for i = r: element originally at l moves to r, sign (-1)^r.
+        #   So S_new = (-1)^l * nums[l+1] + (-1)^(l+1) * nums[l+2] + ... + (-1)^(r-1) * nums[r] + (-1)^r * nums[l]
+        #
+        # Delta = S_new - S_old.
+        #
+        # We can rewrite S_new by pulling out signs.
+        # Let’s define for any index i a value a_i = nums[i] * (-1)^i (the term in the alternating sum).
+        # Then S_old = sum_{i=l}^{r} a_i.
+        #
+        # For S_new:
+        #   term for position l   : (-1)^l * nums[l+1]   = - a_{l+1}   (since a_{l+1} = (-1)^{l+1} * nums[l+1])
+        #   term for position l+1 : (-1)^(l+1) * nums[l+2] = - a_{l+2}
+        #   ...
+        #   term for position r-1 : (-1)^(r-1) * nums[r]   = - a_r
+        #   term for position r   : (-1)^r * nums[l]       =  a_l   (because a_l = (-1)^l * nums[l])
+        #
+        # Therefore:
+        #   S_new = - (a_{l+1} + a_{l+2} + ... + a_r) + a_l
+        #   S_old = a_l + a_{l+1} + ... + a_r
+        #
+        # Delta = S_new - S_old = (- sum_{i=l+1}^{r} a_i + a_l) - (a_l + sum_{i=l+1}^{r} a_i)
+        #        = -2 * sum_{i=l+1}^{r} a_i
+        #
+        # Wait, check: if l+1 > r (i.e., r = l), but we require l < r, so there is at least one element in (l, r].
+        # The formula delta = -2 * sum_{i=l+1}^{r} a_i seems to suggest that only the elements from l+1 to r contribute to the gain,
+        # and the element originally at l just moves to r but its net effect cancels out?
+        # Let's test with examples.
+        #
+        # Example 1: nums = [1,5,2], n=3.
+        # a = [1*1, 5*(-1), 2*1] = [1, -5, 2]
+        # orig = 1 -5 +2 = -2.
+        # Consider rotation l=0, r=1.
+        # delta = -2 * sum_{i=1}^{1} a_i = -2 * (-5) = 10.
+        # new pulse = -2 + 10 = 8? But expected output is 6.
+        # Something is off.
+        #
+        # Let's manually compute for l=0, r=1 on [1,5,2]:
+        # rotate [1,5] -> [5,1,2]. pulse = 5 -1 +2 = 6. delta = 6 - (-2) = 8.
+        # Our formula gave 10. So the formula is wrong.
+        #
+        # Let's recompute S_new and S_old carefully.
+        # a_i = nums[i] * (-1)^i.
+        # For nums=[1,5,2], i=0: a0=1; i=1: a1=-5; i=2: a2=2.
+        # l=0, r=1.
+        # S_old = a0 + a1 = 1 + (-5) = -4? But original pulse for whole array is -2.
+        # Wait, original pulse includes index 2 as well. Our S_old was only segment [l, r].
+        # The total alternating sum = sum_{i=0}^{n-1} a_i.
+        # When we rotate [l, r], only the signs of elements in [l, r] change relative to each other,
+        # but elements outside keep their original signs.
+        # So delta = (new total) - (old total) = (S_new_segment + sum outside) - (S_old_segment + sum outside)
+        #          = S_new_segment - S_old_segment.
+        # So we only need to compute the change within the segment.
+        #
+        # For l=0, r=1, segment is indices 0 and 1.
+        # S_old_seg = a0 + a1 = 1 -5 = -4.
+        # New array segment: b[0] = nums[1] = 5, b[1] = nums[0] = 1.
+        # New signs for these positions in the full array: b[0] at index 0 -> sign +1, b[1] at index 1 -> sign -1.
+        # So S_new_seg = 5 * (+1) + 1 * (-1) = 5 - 1 = 4.
+        # Delta = 4 - (-4) = 8. Correct!
+        #
+        # Now let's recompute my derived S_new.
+        # I had: S_new = - (a_{l+1} + ... + a_r) + a_l.
+        # For l=0, r=1: S_new = - (a_1) + a_0 = -(-5) + 1 = 5 + 1 = 6.
+        # But we just found S_new_seg = 4. So my derivation of S_new was flawed.
+        #
+        # Let's re-derive S_new.
+        # New array b:
+        # b[l]   = nums[l+1]
+        # b[l+1] = nums[l+2]
+        # ...
+        # b[r-1] = nums[r]
+        # b[r]   = nums[l]
+        #
+        # The sign of b[i] in the full alternating sum is (-1)^i.
+        # So S_new_seg = sum_{i=l}^{r} (-1)^i * b[i].
+        # = (-1)^l * nums[l+1] + (-1)^(l+1) * nums[l+2] + ... + (-1)^(r-1) * nums[r] + (-1)^r * nums[l].
+        #
+        # Express in terms of a_i = nums[i] * (-1)^i.
+        # Note that (-1)^i * nums[i] = a_i  =>  nums[i] = a_i * (-1)^i.
+        # Substitute:
+        #   (-1)^l * nums[l+1] = (-1)^l * a_{l+1} * (-1)^(l+1) = a_{l+1} * (-1)^(2l+1) = -a_{l+1}.
+        #   (-1)^(l+1) * nums[l+2] = (-1)^(l+1) * a_{l+2} * (-1)^(l+2) = a_{l+2} * (-1)^(2l+3) = -a_{l+2}.
+        #   ...
+        #   (-1)^(r-1) * nums[r] = -a_r.
+        #   (-1)^r * nums[l] = (-1)^r * a_l * (-1)^l = a_l * (-1)^(r+l).
+        #
+        # So S_new_seg = - (a_{l+1} + a_{l+2} + ... + a_r) + a_l * (-1)^(r+l).
+        #
+        # S_old_seg = a_l + a_{l+1} + ... + a_r.
+        #
+        # Delta = S_new_seg - S_old_seg
+        #       = [ - sum_{i=l+1}^{r} a_i + a_l * (-1)^{r+l} ] - [ a_l + sum_{i=l+1}^{r} a_i ]
+        #       = -2 * sum_{i=l+1}^{r} a_i + a_l * ( (-1)^{r+l} - 1 ).
+        #
+        # Let's test this formula.
+        # Example 1: l=0, r=1.
+        # a = [1, -5, 2].
+        # sum_{i=1}^{1} a_i = -5.
+        # a_l = a_0 = 1.
+        # (-1)^{r+l} = (-1)^{1+0} = -1.
+        # Delta = -2 * (-5) + 1 * (-1 - 1) = 10 + (-2) = 8. Matches!
+        #
+        # Example 2: nums = [6,4,3], rotate l=1, r=2.
+        # a = [6*1, 4*(-1), 3*1] = [6, -4, 3]. orig = 6 -4 +3 = 5.
+        # l=1, r=2.
+        # sum_{i=l+1}^{r} = sum_{i=3}^{2} ... empty sum = 0? Wait l+1 = 2, r = 2, so sum_{i=2}^{2} a_i = a_2 = 3.
+        # a_l = a_1 = -4.
+        # (-1)^{r+l} = (-1)^{2+1} = -1.
+        # Delta = -2 * 3 + (-4) * (-1 - 1) = -6 + (-4)*(-2) = -6 + 8 = 2.
+        # New pulse = 5 + 2 = 7. Matches example output!
+        #
+        # So the gain formula is:
+        #   delta(l, r) = -2 * S(l+1, r) + a_l * ( (-1)^{l+r} - 1 )
+        # where S(l+1, r) = sum_{i=l+1}^{r} a_i, and a_i = nums[i] * (-1)^i.
+        # If l+1 > r, the sum is 0, but we have l < r so l+1 <= r always.
+        #
+        # We need max over all 0 <= l < r < n of (orig + delta(l, r)).
+        # Since orig is constant, we need max delta(l, r).
+        #
+        # Let's simplify delta(l, r).
+        # Let parity(l, r) = (-1)^{l+r}. This is +1 if l+r even, -1 if l+r odd.
+        # Then delta = -2 * sum_{i=l+1}^{r} a_i + a_l * (parity - 1).
+        #
+        # Note that (parity - 1) is 0 if l+r even, and -2 if l+r odd.
+        # So:
+        #   if (l + r) % 2 == 0: delta = -2 * sum_{i=l+1}^{r} a_i.
+        #   if (l + r) % 2 == 1: delta = -2 * sum_{i=l+1}^{r} a_i - 2 * a_l = -2 * (a_l + sum_{i=l+1}^{r} a_i) = -2 * sum_{i=l}^{r} a_i.
+        #
+        # Wait, check:
+        #   if l+r odd: delta = -2 * sum_{i=l+1}^{r} a_i + a_l * (-1 - 1) = -2 * sum_{i=l+1}^{r} a_i - 2 a_l = -2 * sum_{i=l}^{r} a_i.
+        #   if l+r even: delta = -2 * sum_{i=l+1}^{r} a_i + a_l * (1 - 1) = -2 * sum_{i=l+1}^{r} a_i.
+        #
+        # So we have two cases:
+        # Case A: l + r is odd.  delta = -2 * (a_l + a_{l+1} + ... + a_r) = -2 * (prefix[r] - prefix[l-1]) (with appropriate bounds).
+        # Case B: l + r is even. delta = -2 * (a_{l+1} + ... + a_r) = -2 * (prefix[r] - prefix[l]).
+        #
+        # Let's verify with examples.
+        # Ex1: l=0, r=1. l+r=1 odd. delta = -2 * (a0 + a1) = -2*(1-5) = 8. Correct.
+        # Ex2: l=1, r=2. l+r=3 odd. delta = -2*(a1+a2) = -2*(-4+3) = 2. Correct.
+        # Let's test a case where l+r even.
+        # nums = [9,7] from example 3. n=2.
+        # a = [9*1, 7*(-1)] = [9, -7]. orig = 9-7=2.
+        # Possible rotations: only l=0, r=1. l+r=1 odd.
+        # delta = -2*(a0+a1) = -2*(9-7) = -4. new pulse = 2-4=-2.
+        # But example says max is 2 (no rotation). So best is orig=2. Our formula gives delta=-4 for the only rotation, so max is orig. Correct.
+        #
+        # Let's construct a case with l+r even.
+        # nums = [1, 2, 3]. n=3.
+        # a = [1, -2, 3]. orig = 1 -2 +3 = 2.
+        # Possible (l,r) with l<r:
+        # (0,1): l+r=1 odd. delta = -2*(a0+a1) = -2*(1-2) = 2. new=4.
+        # (0,2): l+r=2 even. delta = -2*(a1+a2) = -2*(-2+3) = -2. new=0.
+        # (1,2): l+r=3 odd. delta = -2*(a1+a2) = -2*(-2+3) = -2. new=0.
+        # Let's manually check (0,1): rotate [1,2] -> [2,1,3]. pulse = 2 -1 +3 = 4. Correct.
+        # (0,2): rotate [1,2,3] -> [2,3,1]. pulse = 2 -3 +1 = 0. Correct.
+        # (1,2): rotate [2,3] -> [1,3,2]. pulse = 1 -3 +2 = 0. Correct.
+        # Max is 4.
+        #
+        # So the problem reduces to:
+        # Given array a of length n, where a[i] = nums[i] * (-1)^i.
+        # Find maximum of:
+        #   1) orig (no rotation)
+        #   2) max over 0 <= l < r < n, (l+r) odd:  -2 * sum_{i=l}^{r} a_i
+        #   3) max over 0 <= l < r < n, (l+r) even: -2 * sum_{i=l+1}^{r} a_i
+        #
+        # Note that sum_{i=l+1}^{r} a_i for l < r is just sum over a non-empty subarray starting at l+1 and ending at r.
+        # And sum_{i=l}^{r} a_i is sum over subarray from l to r.
+        #
+        # Let P be prefix sum of a: P[k] = sum_{i=0}^{k-1} a_i, with P[0]=0.
+        # Then sum_{i=l}^{r} a_i = P[r+1] - P[l].
+        # sum_{i=l+1}^{r} a_i = P[r+1] - P[l+1].
+        #
+        # Case 2 (l+r odd): value = -2 * (P[r+1] - P[l]).
+        # Case 3 (l+r even): value = -2 * (P[r+1] - P[l+1]).
+        #
+        # We need to maximize these over valid l, r.
+        # Since -2 factor is constant, we can just maximize the inner expressions and then multiply by -2 at the end (remembering that we want maximum gain, and gain could be negative, but we can always choose no rotation giving 0 gain relative to orig? Wait, the problem says "at most one operation". So we can choose to do nothing, gaining 0 extra. So we take max(0, max_gain) + orig? Actually orig + max(0, max_delta). Since delta can be negative, we just take max over all possibilities including 0.
+        #
+        # Let's rewrite objectives:
+        # Maximize G1 = P[r+1] - P[l]  over 0 <= l < r < n, (l+r) odd.
+        # Maximize G2 = P[r+1] - P[l+1] over 0 <= l < r < n, (l+r) even.
+        # Then max_gain = -2 * max( max(G1), max(G2) )? Wait, we want to maximize delta = -2 * (something).
+        # If we maximize the something, and then multiply by -2, we get the minimum delta if something is positive, or maximum delta if something is negative.
+        # Better: we want to maximize delta directly.
+        # delta1 = -2 * (P[r+1] - P[l]) = 2 * (P[l] - P[r+1]).
+        # delta2 = -2 * (P[r+1] - P[l+1]) = 2 * (P[l+1] - P[r+1]).
+        #
+        # So we need:
+        # max_delta1 = 2 * max_{l<r, l+r odd} (P[l] - P[r+1]).
+        # max_delta2 = 2 * max_{l<r, l+r even} (P[l+1] - P[r+1]).
+        #
+        # And overall max gain = max(0, max_delta1, max_delta2).
+        # Then answer = orig + overall_max_gain.
+        #
+        # Now we need to compute these maxima efficiently in O(n).
+        # n up to 1e5, so O(n) or O(n log n) is fine.
+        #
+        # Let's analyze the constraints on l and r.
+        # l from 0 to n-2, r from l+1 to n-1.
+        # Condition on parity of l+r.
+        #
+        # For G1: maximize P[l] - P[r+1] with l < r and (l+r) odd.
+        # Note that r+1 ranges from l+2 to n.
+        # Let's change variable: j = r+1. Then j ranges from l+2 to n.
+        # Condition l + r odd => l + (j-1) odd => l + j odd => l and j have opposite parity.
+        # So we need max_{0 <= l < j-1 <= n-1, l+j odd} (P[l] - P[j]).
+        # Which is max_{0 <= l < j <= n, l+j odd} (P[l] - P[j]).
+        # (Since j = r+1, and r <= n-1 => j <= n. And l < r => l <= r-1 => l <= j-2 => l < j.)
+        #
+        # Similarly, for G2: maximize P[l+1] - P[r+1] with l < r and (l+r) even.
+        # Let i = l+1. Then i ranges from 1 to n-1 (since l >= 0, l < r <= n-1 => i <= n-1).
+        # r+1 = j ranges from i+1 to n? l < r => l+1 <= r => i <= r => j = r+1 >= i+1.
+        # Condition l+r even => (i-1) + r even => i + r odd? Wait: l+r even => (i-1)+r even => i+r odd.
+        # And j = r+1 => r = j-1. So i + j - 1 odd => i + j even.
+        # So we need max_{1 <= i < j <= n, i+j even} (P[i] - P[j]).
+        # (Here i = l+1, j = r+1. l < r => i-1 < r => i <= r => i < j since j = r+1.)
+        #
+        # So we have two subproblems:
+        # 1) Maximize P[l] - P[j] over 0 <= l < j <= n, l+j odd.
+        # 2) Maximize P[i] - P[j] over 1 <= i < j <= n, i+j even.
+        #
+        # Note that in problem 1, l can be 0, j can be up to n.
+        # In problem 2, i starts at 1, j up to n.
+        #
+        # Both are of the form: given array P of length n+1 (indices 0..n),
+        # find max P[x] - P[y] over pairs (x, y) with x < y and x+y has a specific parity (odd or even).
+        #
+        # We can solve each in O(n) by keeping track of minimum P values with appropriate parity seen so far.
+        #
+        # For problem 1: max_{x < y, x+y odd} (P[x] - P[y]).
+        # Since x+y odd means one is even, one is odd.
+        # So we can consider two cases: x even, y odd; or x odd, y even.
+        # But we also have x < y.
+        # We can iterate y from 1 to n, and keep track of the minimum P[x] for x < y with opposite parity to y.
+        # Specifically, for each y, we want min_{x < y, x parity != y parity} P[x].
+        # Then candidate = P[y]? Wait we want P[x] - P[y], so to maximize we want smallest P[x] for given y.
+        # So we maintain min_even and min_odd of P[x] for x seen so far (x < y).
+        # When at y:
+        #   if y is even, we can pair with x odd -> candidate = min_odd - P[y].
+        #   if y is odd, we can pair with x even -> candidate = min_even - P[y].
+        # We update min_odd/min_even with P[y] after processing y? But careful: x < y, so we should use minima from indices strictly less than y.
+        # Standard way: initialize min_even = P[0] (since index 0 is even), min_odd = infinity.
+        # Then for y from 1 to n:
+        #   compute candidate using current min_odd/min_even (these correspond to x < y).
+        #   then update min_even/min_odd with P[y] (so it becomes available for future y's).
+        # This works because we process y in increasing order.
+        #
+        # Let's test this logic.
+        # Problem 1: max_{x<y, x+y odd} (P[x] - P[y]).
+        # Initialize: min_even = P[0], min_odd = +inf. best1 = -inf.
+        # y=1: parity odd. candidate = min_even - P[1] (since x even). update min_odd = min(inf, P[1]) = P[1].
+        # y=2: parity even. candidate = min_odd - P[2]. update min_even = min(P[0], P[2]).
+        # y=3: parity odd. candidate = min_even - P[3]. update min_odd = min(P[1], P[3]).
+        # ...
+        # This correctly considers all x < y with opposite parity.
+        #
+        # Problem 2: max_{1 <= i < j <= n, i+j even} (P[i] - P[j]).
+        # i+j even means i and j have same parity.
+        # We need max_{i < j, i,j same parity} (P[i] - P[j]).
+        # Here i starts from 1 (since l >= 0 => i = l+1 >= 1).
+        # j goes up to n.
+        # We can iterate j from 2 to n (since i < j and i >= 1 => j >= 2).
+        # Keep track of minimum P[i] for i < j with same parity as j.
+        # Initialize: we have i=1 available. Parity of 1 is odd.
+        # So min_odd_i = P[1], min_even_i = +inf.
+        # best2 = -inf.
+        # For j from 2 to n:
+        #   if j parity odd: candidate = min_odd_i - P[j].
+        #   if j parity even: candidate = min_even_i - P[j].
+        #   update min_odd_i/min_even_i with P[j]? Wait, i must be < j. So after computing candidate for j, we can update the minima with P[j] for future j's.
+        # But careful: the condition is i < j, and i ranges from 1 to j-1.
+        # So we can initialize min_odd_i = P[1], min_even_i = inf.
+        # Then for j = 2 to n:
+        #   compute candidate using current minima (which are from i < j).
+        #   then update minima with P[j] (so it becomes available for j+1 and beyond).
+        # This works.
+        #
+        # Let's double check problem 2 constraints.
+        # Original: max_{1 <= i < j <= n, i+j even} (P[i] - P[j]).
+        # i = l+1, j = r+1.
+        # l < r => i-1 < r => i <= r => i < j (since j = r+1).
+        # i >= 1 because l >= 0.
+        # j <= n because r <= n-1 => j = r+1 <= n.
+        # So j ranges 2..n, i ranges 1..j-1.
+        # Parity i+j even => i and j same parity.
+        # Yes.
+        #
+        # Edge cases: n=1. Then no rotation possible (need l < r, but only one element). Answer = orig.
+        # Our formulas: n=1 => P length 2 (indices 0,1). Problem 1: y from 1 to 1. min_even = P[0]. y=1 odd => candidate = P[0] - P[1]. best1 = P[0]-P[1]. Problem 2: j from 2 to 1 => loop doesn't run, best2 = -inf. max_gain = max(0, -2*best1, -2*best2). But wait, for n=1, rotation impossible. Should we allow l<r? No. So we should just return orig. We can handle n=1 separately.
+        # For n>=2, the loops will correctly consider valid l,r.
+        #
+        # Let's trace example 1: nums=[1,5,2], n=3.
+        # a = [1, -5, 2].
+        # P[0]=0.
+        # P[1]=a0=1.
+        # P[2]=a0+a1=1-5=-4.
+        # P[3]=a0+a1+a2=1-5+2=-2.
+        # orig = -2.
+        # Problem 1: max_{x<y, x+y odd} (P[x]-P[y]).
+        # Initialize: min_even = P[0]=0, min_odd=inf. best1=-inf.
+        # y=1 (odd): candidate = min_even - P[1] = 0 - 1 = -1. best1 = max(-inf, -1) = -1. update min_odd = min(inf, P[1])=1.
+        # y=2 (even): candidate = min_odd - P[2] = 1 - (-4) = 5. best1 = max(-1, 5) = 5. update min_even = min(0, P[2])=min(0,-4)=-4.
+        # y=3 (odd): candidate = min_even - P[3] = -4 - (-2) = -2. best1 = max(5, -2) = 5. update min_odd = min(1, P[3])=min(1,-2)=-2.
+        # best1 = 5.
+        # Problem 2: max_{1<=i<j<=n, i+j even} (P[i]-P[j]).
+        # n=3. j from 2 to 3.
+        # Initialize: min_odd_i = P[1]=1, min_even_i = inf. best2=-inf.
+        # j=2 (even): candidate = min_even_i - P[2] = inf - (-4) = inf? We should ignore if min is inf. best2 remains -inf. update min_even_i = min(inf, P[2])=-4.
+        # j=3 (odd): candidate = min_odd_i - P[3] = 1 - (-2) = 3. best2 = max(-inf, 3) = 3. update min_odd_i = min(1, P[3])=min(1,-2)=-2.
+        # best2 = 3.
+        # Now max_gain candidates:
+        # delta1 = 2 * best1 = 2 * 5 = 10.
+        # delta2 = 2 * best2 = 2 * 3 = 6.
+        # max_gain = max(0, 10, 6) = 10.
+        # Answer = orig + max_gain = -2 + 10 = 8.
+        # But expected output for example 1 is 6!
+        # Something is wrong. We got 8 but expected 6.
+        # Let's debug example 1 manually.
+        # nums=[1,5,2]. orig = -2.
+        # Possible rotations:
+        # l=0, r=1: [5,1,2] pulse=6. gain=8.
+        # l=0, r=2: rotate [1,5,2] -> [5,2,1] pulse=5-2+1=4. gain=6.
+        # l=1, r=2: rotate [5,2] -> [2,5] => [1,2,5] pulse=1-2+5=4. gain=6.
+        # Max gain is 8 (from l=0,r=1). So max pulse = 6.
+        # Our computed max_gain was 10, giving 8. So we overcounted.
+        # Where is the error?
+        # Let's check the delta formulas again.
+        # We had:
+        # delta(l, r) = -2 * sum_{i=l+1}^{r} a_i if l+r even.
+        # delta(l, r) = -2 * sum_{i=l}^{r} a_i if l+r odd.
+        # And we set a_i = nums[i] * (-1)^i.
+        # P[k] = sum_{i=0}^{k-1} a_i.
+        # Case 1 (l+r odd): delta = -2 * (P[r+1] - P[l]).
+        # We maximized P[l] - P[r+1] over l<r, l+r odd.
+        # Let's test l=0, r=1 for example 1.
+        # l=0, r=1. l+r=1 odd.
+        # a = [1, -5, 2]. P = [0, 1, -4, -2].
+        # P[r+1] = P[2] = -4. P[l] = P[0] = 0.
+        # delta = -2 * (-4 - 0) = 8. Correct.
+        # Our Problem 1 maximized P[l] - P[r+1] = 0 - (-4) = 4. Then delta = -2 * ( - (P[l]-P[r+1])? Wait.
+        # delta = -2 * (P[r+1] - P[l]) = -2 * (-(P[l] - P[r+1])) = 2 * (P[l] - P[r+1]).
+        # So maximizing delta is equivalent to maximizing P[l] - P[r+1].
+        # We found best1 = 5. That means there is some pair (l, r+1) with P[l]-P[r+1]=5.
+        # Let's find which pair gave 5 in our Problem 1 trace.
+        # y=2 gave candidate 5. y=2 means r+1=2 => r=1.
+        # x < y with opposite parity: y=2 even, so x odd. x < 2 => x=1 (since x>=0). P[1]=1.
+        # So P[l] - P[r+1] = P[1] - P[2] = 1 - (-4) = 5.
+        # This corresponds to l=1, r=1? But l < r required! l=1, r=1 is invalid (l < r false).
+        # Ah! In Problem 1, we had condition x < y, but we also need l < r.
+        # Recall: x = l, y = r+1. Condition l < r => l <= r-1 => l < r+1 => x < y. That's satisfied.
+        # But we also need l and r such that l < r. If x=l, y=r+1, then l < r+1 is always true if l <= r. But we need strictly l < r.
+        # If l = r, then l < r is false. But l < r+1 is true.
+        # So we must enforce l <= r-1, i.e., x <= y-2, i.e., x < y-1, or x+1 <= y.
+        # In our Problem 1, we only enforced x < y. We missed the condition l < r which translates to x <= y-2 (since r = y-1, l = x, l < r => x < y-1 => x+1 <= y).
+        # Let's check: l < r => l <= r-1 => x <= y-2.
+        # So we need x + 1 <= y, or y - x >= 2.
+        #
+        # Similarly for Problem 2: i = l+1, j = r+1. l < r => i-1 < r => i <= r => i < j (since j=r+1). That's i <= j-1. But we also need l < r strictly. If l = r, then i = l+1 = r+1 = j, so i < j fails. If l = r-1, then i = r, j = r+1, i < j holds. So i < j is exactly l < r? Let's check: l < r => l+1 <= r => i <= r. j = r+1. So i <= r < r+1 = j => i < j. Conversely, if i < j, then l+1 < r+1 => l < r. So i < j is equivalent to l < r. Good. So Problem 2 condition i < j is exactly l < r. No extra constraint.
+        # But wait: in Problem 2, i ranges from 1 to n, j from i+1 to n. That's fine.
+        # Problem 1: x = l, y = r+1. x < y is l < r+1, which is always true if l <= r. But we need l < r, i.e., l <= r-1 => x <= y-2. So we need y - x >= 2.
+        # In our trace, the pair (x=1, y=2) gave P[1]-P[2]=5, but x=1, y=2 means l=1, r=1, which is invalid.
+        # So we must add the constraint y - x >= 2 in Problem 1.
+        #
+        # Let's re-evaluate Problem 1 with constraint y - x >= 2 (i.e., x <= y-2).
+        # We need max_{0 <= x < y <= n, x+y odd, y - x >= 2} (P[x] - P[y]).
+        # How to handle y - x >= 2 in the O(n) scan?
+        # We can delay the update of minima by one step, or keep track of minima from two steps ago.
+        # Standard technique: when at y, we want min P[x] for x < y-1 (i.e., x <= y-2) with opposite parity.
+        # So we can maintain min_even and min_odd for indices up to y-2.
+        # We can do this by updating the minima with P[y-1] after processing y? Let's think.
+        # We iterate y from 1 to n.
+        # At step y, the available x are those with x <= y-2.
+        # So before processing y, the minima should reflect indices 0 .. y-2.
+        # We can initialize minima with P[0] (since y starts at 1, y-2 = -1, but x>=0, so for y=1, no x satisfies x <= -1. So for y=1, candidate should be -inf or we skip).
+        # Let's adjust:
+        # We want for each y (from 2 to n, since y=1 has no valid x), the min P[x] for x in [0, y-2] with x parity != y parity.
+        # We can maintain min_even and min_odd as we go, but we need to ensure they only include indices <= y-2.
+        # One way: when we are at y, the minima currently hold indices up to y-2 if we update minima with P[y-1] at the end of iteration y-1? Let's simulate.
+        # Let's maintain min_even and min_odd for indices seen so far, but we will use them with a lag.
+        # Alternative: we can just iterate x from 0 to n-2, and for each x, consider y from x+2 to n with opposite parity. But that's O(n^2).
+        # Better: we can keep two arrays min_even_up_to[k] and min_odd_up_to[k], but that's O(n) space and time, fine.
+        # Or we can just adjust the scan:
+        # Initialize min_even = P[0], min_odd = inf. But these represent indices 0..? 
+        # Let's just maintain min_even and min_odd for all indices < y, but when computing candidate for y, we only consider x such that y - x >= 2.
+        # Since we process y increasing, we can update the minima with P[y-1] at the start of iteration y? Let's see.
+        # Suppose at the beginning of iteration y, min_even/min_odd contain minima from indices 0 .. y-2.
+        # Then we compute candidate using those.
+        # After computing candidate, we then add P[y-1] to the minima (so for next y+1, minima will include up to y-1, which is (y+1)-2).
+        # Let's test this lag scheme.
+        # y starts at 1? But for y=1, y-2 = -1, no x. So we can start y from 2.
+        # Initialize: before y=2, we need minima from indices 0 .. 0. So min_even = P[0], min_odd = inf.
+        # y=2: candidate using min_even/min_odd (which are from 0..0). y=2 even, so candidate = min_odd - P[2] (if min_odd not inf). But min_odd is inf, so candidate -inf. Then after y=2, we add P[1] to minima? Wait, we need minima for y=3 to be from 0..1. So after y=2, we should add P[1]. But y=2 is the first iteration, we haven't added P[1] yet. So we should add P[1] after processing y=2? Let's trace carefully.
+        # Let's define loop for y from 2 to n:
+        #   # at this point, min_even/min_odd contain minima from indices 0 .. y-2.
+        #   compute candidate for y.
+        #   # after candidate, we want to make P[y-1] available for future y's.
+        #   update min_even/min_odd with P[y-1].
+        # Let's test with example 1: P=[0,1,-4,-2], n=3.
+        # Initialize: before y=2, min_even = P[0]=0, min_odd = inf. (indices 0..0)
+        # y=2: candidate: y=2 even -> need min_odd. min_odd=inf -> candidate -inf (or skip). best1 remains -inf.
+        #   after candidate, add P[y-1] = P[1]=1. min_odd = min(inf, 1)=1. min_even stays 0.
+        #   Now minima represent indices 0..1? Actually we added P[1], so now we have P[0] and P[1]. For next y=3, y-2=1, so indices 0..1. Correct.
+        # y=3: candidate: y=3 odd -> need min_even. min_even=0. candidate = 0 - P[3] = 0 - (-2) = 2. best1 = max(-inf, 2) = 2.
+        #   after candidate, add P[y-1] = P[2] = -4. min_even = min(0, -4) = -4. min_odd stays 1.
+        #   Now minima represent indices 0..2. But loop ends since y goes to n=3.
+        # best1 = 2.
+        # Let's check valid pairs (x, y) with y-x>=2, x+y odd, 0<=x<y<=3.
+        # y=3: x can be 0 (since 3-0=3>=2, 0+3=3 odd). P[0]-P[3] = 0 - (-2) = 2. x=1: 3-1=2>=2, 1+3=4 even (not odd). So only (0,3) valid. Value 2. Matches best1=2.
+        # y=2: x can be ? y=2, y-x>=2 => x<=0. x=0: 2-0=2>=2, 0+2=2 even (not odd). So no valid pairs for y=2. Correct.
+        # So best1 = 2.
+        # Now Problem 2: we already had best2 = 3 from earlier trace, but let's re-verify constraints.
+        # Problem 2: max_{1 <= i < j <= n, i+j even} (P[i] - P[j]).
+        # For example 1, n=3. i from 1 to 2, j from i+1 to 3, i+j even.
+        # P = [0, 1, -4, -2].
+        # Possible (i,j):
+        # i=1 (odd): j must be odd => j=3. i+j=4 even. P[1]-P[3] = 1 - (-2) = 3.
+        # i=2 (even): j must be even => j? j<=3, even j: none (j=4 out of range). So only (1,3) valid. Value 3.
+        # Our earlier Problem 2 trace gave best2=3. And we didn't have the y-x>=2 issue there because i < j naturally enforced l < r. Let's double check if any invalid pair slipped in.
+        # Earlier trace: j from 2 to 3. j=2 even: candidate = min_even_i - P[2]. min_even_i initially inf, then updated with P[2]=-4. j=3 odd: candidate = min_odd_i - P[3]. min_odd_i initially P[1]=1, updated with P[3]=-2. This gave candidates for (i,j) = (1,3) and maybe others? j=2 even, candidate used min_even_i which was inf initially, so no candidate. Then updated min_even_i with P[2]. j=3 odd, candidate used min_odd_i=1. So only (1,3) considered. Correct.
+        # So Problem 2 best2 = 3 is correct.
+        # Now delta1 = 2 * best1 = 2 * 2 = 4.
+        # delta2 = 2 * best2 = 2 * 3 = 6.
+        # max_gain = max(0, 4, 6) = 6.
+        # Answer = orig + max_gain = -2 + 6 = 4? But expected output is 6!
+        # Wait, expected output for example 1 is 6. orig = -2. max_gain should be 8 to get 6.
+        # But we got max_gain = 6, answer = 4. Something still off.
+        # Let's recompute delta for the actual best rotation l=0,r=1.
+        # l=0, r=1. l+r=1 odd. delta = -2 * (P[r+1] - P[l]) = -2 * (P[2] - P[0]) = -2 * (-4 - 0) = 8.
+        # So delta = 8. Our max_gain should be at least 8.
+        # Why did we get max_gain 6?
+        # Let's check Problem 1 best1. We had best1 = 2, giving delta1 = 4.
+        # But we know there is a valid pair (l=0, r=1) giving P[l]-P[r+1] = P[0]-P[2] = 0 - (-4) = 4.
+        # Wait, P[l]-P[r+1] for l=0, r=1 is 4. Then delta = 2 * 4 = 8.
+        # But our Problem 1 best1 was 2. Why didn't we capture 4?
+        # Because we added constraint y - x >= 2.
+        # For l=0, r=1: x=l=0, y=r+1=2. y - x = 2. So y - x >= 2 is satisfied (equality).
+        # In our lag scheme for Problem 1, we had y starting from 2.
+        # y=2: candidate using min from 0..0. y=2 even, need min_odd. min_odd was inf. But x=0 is even, y=2 even, so x+y even, not odd! Wait, l+r odd condition: l=0, r=1 => l+r=1 odd. x+y = l + (r+1) = 0+2=2 even.
+        # Ah! The parity condition in Problem 1 was l+r odd.
+        # We transformed to x+y odd where x=l, y=r+1.
+        # l+r odd => l + (y-1) odd => l + y odd => x + y odd.
+        # So for l=0, r=1: x=0, y=2. x+y=2 even. But we need x+y odd!
+        # Let's recompute the parity transformation.
+        # Original: delta = -2 * sum_{i=l+1}^{r} a_i if l+r even, else -2 * sum_{i=l}^{r} a_i.
+        # We had:
+        #   if (l+r) % 2 == 1: delta = -2 * sum_{i=l}^{r} a_i.
+        #   if (l+r) % 2 == 0: delta = -2 * sum_{i=l+1}^{r} a_i.
+        # Let's re-verify this case split.
+        # Earlier we derived:
+        #   delta = -2 * sum_{i=l+1}^{r} a_i + a_l * ( (-1)^{l+r} - 1 ).
+        #   if l+r odd: (-1)^{l+r} = -1 => delta = -2 * sum_{i=l+1}^{r} a_i + a_l * (-2) = -2 * (a_l + sum_{i=l+1}^{r} a_i) = -2 * sum_{i=l}^{r} a_i.
+        #   if l+r even: (-1)^{l+r} = 1 => delta = -2 * sum_{i=l+1}^{r} a_i + a_l * 0 = -2 * sum_{i=l+1}^{r} a_i.
+        # This seems correct.
+        # Now, sum_{i=l}^{r} a_i = P[r+1] - P[l].
+        # sum_{i=l+1}^{r} a_i = P[r+1] - P[l+1].
+        # So:
+        #   Case odd (l+r odd): delta = -2 * (P[r+1] - P[l]) = 2 * (P[l] - P[r+1]).
+        #   Case even (l+r even): delta = -2 * (P[r+1] - P[l+1]) = 2 * (P[l+1] - P[r+1]).
+        #
+        # Now, we want to maximize delta.
+        # For Case odd: maximize 2 * (P[l] - P[r+1]) over 0 <= l < r < n, (l+r) odd.
+        # Let x = l, y = r+1. Then l < r => x < y-1 => x+1 <= y => y - x >= 1? Wait: l < r => l <= r-1 => x <= y-2 => y - x >= 2. Yes.
+        # Parity: (l+r) odd => l + (y-1) odd => l + y even? Let's check: l+r odd. r = y-1. So l + y - 1 odd => l + y even.
+        # Ah! Earlier I had x+y odd, but it's x+y even!
+        # Let's recompute carefully.
+        # l+r odd.
+        # r = y-1.
+        # l + r = l + y - 1 odd => l + y even.
+        # So condition is x + y even, not odd!
+        # Let's test with example: l=0, r=1. l+r=1 odd. x=0, y=2. x+y=2 even. Correct.
+        # So Case odd: maximize P[l] - P[r+1] over 0 <= l < r < n, l+r odd.
+        # => maximize P[x] - P[y] over 0 <= x < y-1 <= n-1, x+y even, y = r+1 <= n.
+        # => 0 <= x < y <= n, x+y even, and y - x >= 2 (since x < y-1).
+        #
+        # For Case even: maximize 2 * (P[l+1] - P[r+1]) over 0 <= l < r < n, l+r even.
+        # Let i = l+1, j = r+1. Then 1 <= i < j <= n.
+        # l+r even => (i-1) + r even => i + r odd? Wait: l+r even. r = j-1. So i-1 + j-1 even => i + j even.
+        # So condition: 1 <= i < j <= n, i+j even.
+        # And l < r => i-1 < j-1 => i < j. Already have i < j.
+        # So Case even: maximize P[i] - P[j] over 1 <= i < j <= n, i+j even.
+        #
+        # Let's re-evaluate Example 1 with these corrected parities.
+        # nums=[1,5,2], a=[1,-5,2], P=[0,1,-4,-2], orig=-2.
+        # Case odd (l+r odd): maximize P[x] - P[y] over 0 <= x < y <= n, x+y even, y - x >= 2.
+        # n=3. Possible (x,y):
+        # y=3: x can be 0 (3-0=3>=2, 0+3=3 odd? wait x+y even => 0+3=3 odd, not even). x=1: 3-1=2>=2, 1+3=4 even. P[1]-P[3] = 1 - (-2) = 3. x=2: 3-2=1 <2 invalid.
+        # y=2: x can be 0: 2-0=2>=2, 0+2=2 even. P[0]-P[2] = 0 - (-4) = 4. x=1: 2-1=1<2 invalid.
+        # y=1: x<1, y-x>=2 => x<=-1 invalid.
+        # So valid pairs: (0,2) value 4; (1,3) value 3.
+        # Max is 4. best1 = 4. delta1 = 2 * 4 = 8. Correct!
+        # Case even (l+r even): maximize P[i] - P[j] over 1 <= i < j <= n, i+j even.
+        # n=3. i from 1 to 2, j from i+1 to 3, i+j even.
+        # i=1 (odd): j odd => j=3. i+j=4 even. P[1]-P[3] = 1 - (-2) = 3.
+        # i=2 (even): j even => j? j<=3, even j: none (j=4 out). So only (1,3) value 3. best2 = 3. delta2 = 2 * 3 = 6.
+        # max_gain = max(0, 8, 6) = 8. Answer = orig + 8 = -2 + 8 = 6. Matches example 1!
+        #
+        # Great! So the corrected conditions are:
+        # Case 1 (l+r odd): maximize P[x] - P[y] over 0 <= x < y <= n, x+y even, y - x >= 2.
+        # Case 2 (l+r even): maximize P[i] - P[j] over 1 <= i < j <= n, i+j even.
+        #
+        # Now we need O(n) algorithms for these two maximizations.
+        #
+        # Let's design Algorithm for Case 1:
+        # Maximize P[x] - P[y] subject to:
+        #   0 <= x < y <= n
+        #   x + y even
+        #   y - x >= 2  (i.e., x <= y-2)
+        #
+        # We can iterate y from 2 to n (since y-x>=2 and x>=0 => y>=2).
+        # For each y, we need min P[x] for x in [0, y-2] with x parity such that x+y even => x and y have same parity (since even sum => same parity).
+        # So for a given y, we want min P[x] among x <= y-2 with x % 2 == y % 2.
+        # Then candidate = min_P - P[y]? Wait we want to maximize P[x] - P[y]. To maximize, we want the largest P[x], not minimum!
+        # Oh! I've been minimizing P[x] but we want to maximize P[x] - P[y]. So we need max P[x] for x with given parity and x <= y-2.
+        # Let's check: we want max (P[x] - P[y]). For fixed y, we want max P[x] over valid x.
+        # So we need to maintain the maximum P[x] seen so far with the required parity, restricted to x <= y-2.
+        #
+        # Let's re-trace Example 1 Case 1 with max instead of min.
+        # P = [0, 1, -4, -2]. n=3.
+        # y from 2 to 3.
+        # We need max P[x] for x <= y-2, x parity == y parity.
+        # Initialize: before y=2, x can be 0 (since y-2=0). x parity: y=2 even, so x even. max P[x] for x<=0 even is P[0]=0.
+        # y=2: candidate = max_P - P[2] = 0 - (-4) = 4. best1 = 4.
+        #   After y=2, we need to make x=1 available for future y? For y=3, y-2=1. So we should add P[1] to our structures after processing y=2.
+        #   So after y=2, update max_P for parity of x=1 (odd). max_odd = max(-inf, P[1])=1. max_even stays 0.
+        # y=3: y=3 odd. y-2=1. Valid x <=1 with odd parity: x=1. max_P = max_odd = 1. candidate = 1 - P[3] = 1 - (-2) = 3. best1 = max(4, 3) = 4.
+        #   After y=3, add P[2]? y=3, y-2=1, next y would be 4, but n=3 so stop.
+        # best1 = 4. Correct.
+        #
+        # So Algorithm Case 1:
+        #   Initialize max_even = P[0] (since x=0 is even and will be available for y=2? Wait, for y=2, x<=0, so only x=0. So we can start with max_even = P[0], max_odd = -inf.
+        #   But we must be careful: for y=2, we use the maxima from x <= 0. So before loop y=2, max_even should be P[0], max_odd = -inf.
+        #   Loop y from 2 to n:
+        #       if y % 2 == 0: candidate = max_even - P[y]  (since x even)
+        #       else: candidate = max_odd - P[y]  (since x odd)
+        #       best1 = max(best1, candidate)
+        #       # after processing y, we need to make P[y-1] available for future y's (since next y+1 will have y+1-2 = y-1 available).
+        #       update max_even/min? with P[y-1] based on its parity.
+        #   Wait, we need to ensure that when we update with P[y-1], it becomes available for y+1, where the constraint is x <= (y+1)-2 = y-1. So yes, after processing y, we add P[y-1].
+        #   But what about the initial state? Before y=2, we have x <= 0. So we should have max_even = P[0], max_odd = -inf.
+        #   Let's test with another example to ensure the lag is correct.
+        #   Suppose n=4. P indices 0..4.
+        #   y=2: use x<=0. max_even=P[0], max_odd=-inf. candidate for y=2. then add P[1].
+        #   y=3: use x<=1. max_even should be max(P[0], P[1]? but parity: y=3 odd, so we need x odd. So we need max_odd from {P[1]}. We added P[1] after y=2, so max_odd = P[1]. max_even still P[0] (but not needed for y=3). candidate for y=3. then add P[2].
+        #   y=4: use x<=2. y=4 even, need x even. max_even should be max(P[0], P[2]). We added P[2] after y=3, so max_even = max(P[0], P[2]). candidate for y=4. then add P[3].
+        #   This seems perfect. The lag of adding P[y-1] after processing y ensures that for the next y+1, the available x are exactly 0..(y+1)-2 = y-1, which includes the newly added P[y-1] and all previous.
+        #   Edge case: y=2, we add P[1]. What if n=2? y goes from 2 to 2. Loop runs once. After loop we don't care.
+        #   What if n=1? No rotation possible, handle separately.
+        #
+        # Algorithm Case 2:
+        # Maximize P[i] - P[j] over 1 <= i < j <= n, i+j even.
+        # i and j same parity.
+        # We can iterate j from 2 to n (since i < j and i >= 1 => j >= 2).
+        # For each j, we need max P[i] for i in [1, j-1] with i parity == j parity.
+        # Then candidate = max_P - P[j]. Maximize over j.
+        # We can maintain max_even and max_odd for i seen so far (i from 1 to j-1).
+        # Initialize: before j=2, i can be 1. i=1 is odd. So max_odd = P[1], max_even = -inf.
+        # Loop j from 2 to n:
+        #   if j % 2 == 0: candidate = max_even - P[j] (since i even)
+        #   else: candidate = max_odd - P[j] (since i odd)
+        #   best2 = max(best2, candidate)
+        #   after candidate, we need to make P[j] available for future j's? Wait, i ranges up to j-1. For next j+1, i can be up to j. So after processing j, we should add P[j] to the maxima.
+        #   Update max_even/min? with P[j] based on its parity.
+        # Let's test with Example 1: n=3. P=[0,1,-4,-2].
+        # Initialize: max_odd = P[1]=1, max_even = -inf. best2=-inf.
+        # j=2 (even): candidate = max_even - P[2] = -inf - (-4) = -inf (skip). best2 remains -inf.
+        #   after j=2, add P[2]=-4. max_even = max(-inf, -4) = -4. max_odd stays 1.
+        # j=3 (odd): candidate = max_odd - P[3] = 1 - (-2) = 3. best2 = 3.
+        #   after j=3, add P[3]=-2. max_odd = max(1, -2) = 1. max_even stays -4.
+        # best2 = 3. Correct.
+        # Test with another case: n=4, maybe.
+        # Let's test a manual case: nums = [1,2,3,4] maybe? But we can trust the logic.
+        # One detail: in Case 2, i starts at 1. What if n=2? j from 2 to 2. Loop runs once. Initialize max_odd = P[1], max_even = -inf. j=2 even: candidate = max_even - P[2] = -inf. best2 = -inf. Then add P[2]. That's fine, no valid pairs if n=2? For n=2, possible rotations: l=0,r=1. l+r=1 odd, so Case 1 applies. Case 2 should give no gain or -inf. So max_gain will only consider Case 1 and 0. Correct.
+        #
+        # Now we have both algorithms. Let's summarize the full solution.
+        #
+        # Steps:
+        # 1. If n == 1: return nums[0] (since no rotation possible, pulse = nums[0]).
+        # 2. Compute orig = alternating sum of nums.
+        # 3. Compute array a of length n: a[i] = nums[i] * (-1)^i.
+        # 4. Compute prefix sums P of length n+1: P[0]=0, P[k] = sum_{i=0}^{k-1} a_i for k=1..n.
+        # 5. Compute best1 (Case 1: l+r odd):
+        #    - Initialize max_even = P[0], max_odd = -inf (we can use a very small number, e.g., -10**18).
+        #    - best1 = -inf.
+        #    - For y from 2 to n:
+        #        if y % 2 == 0: candidate = max_even - P[y]
+        #        else: candidate = max_odd - P[y]
+        #        best1 = max(best1, candidate)
+        #        # update maxima with P[y-1]
+        #        if (y-1) % 2 == 0: max_even = max(max_even, P[y-1])
+        #        else: max_odd = max(max_odd, P[y-1])
+        # 6. Compute best2 (Case 2: l+r even):
+        #    - Initialize max_even = -inf, max_odd = P[1] (since i starts at 1, which is odd).
+        #    - best2 = -inf.
+        #    - For j from 2 to n:
+        #        if j % 2 == 0: candidate = max_even - P[j]
+        #        else: candidate = max_odd - P[j]
+        #        best2 = max(best2, candidate)
+        #        # update maxima with P[j]
+        #        if j % 2 == 0: max_even = max(max_even, P[j])
+        #        else: max_odd = max(max_odd, P[j])
+        # 7. Compute delta1 = 2 * best1 if best1 > -inf else -inf (but best1 should be valid for n>=2).
+        #    delta2 = 2 * best2 if best2 > -inf else -inf.
+        # 8. max_gain = max(0, delta1, delta2).
+        # 9. return orig + max_gain.
+        #
+        # Let's test with Example 2: nums = [6,4,3], n=3.
+        # Expected output: 7. orig = 6 - 4 + 3 = 5.
+        # a = [6*1, 4*(-1), 3*1] = [6, -4, 3].
+        # P = [0, 6, 6-4=2, 2+3=5]. P = [0, 6, 2, 5].
+        # Case 1 (l+r odd): maximize P[x]-P[y] x+y even, y-x>=2.
+        # n=3. y from 2 to 3.
+        # Initialize: max_even = P[0]=0, max_odd = -inf. best1=-inf.
+        # y=2 (even): candidate = max_even - P[2] = 0 - 2 = -2. best1 = -2.
+        #   add P[y-1] = P[1]=6. y-1=1 odd => max_odd = max(-inf, 6)=6. max_even stays 0.
+        # y=3 (odd): candidate = max_odd - P[3] = 6 - 5 = 1. best1 = max(-2, 1) = 1.
+        #   add P[y-1] = P[2]=2. y-1=2 even => max_even = max(0, 2)=2. max_odd stays 6.
+        # best1 = 1. delta1 = 2 * 1 = 2.
+        # Case 2 (l+r even): maximize P[i]-P[j] i+j even, 1<=i<j<=n.
+        # Initialize: max_odd = P[1]=6, max_even = -inf. best2=-inf.
+        # j=2 (even): candidate = max_even - P[2] = -inf - 2 = -inf. best2=-inf.
+        #   add P[2]=2. j=2 even => max_even = max(-inf, 2)=2. max_odd stays 6.
+        # j=3 (odd): candidate = max_odd - P[3] = 6 - 5 = 1. best2 = 1.
+        #   add P[3]=5. j=3 odd => max_odd = max(6, 5)=6. max_even stays 2.
+        # best2 = 1. delta2 = 2 * 1 = 2.
+        # max_gain = max(0, 2, 2) = 2.
+        # Answer = orig + 2 = 5 + 2 = 7. Matches example 2!
+        #
+        # Example 3: nums = [9,7], n=2.
+        # Expected output: 2. orig = 9 - 7 = 2.
+        # a = [9*1, 7*(-1)] = [9, -7].
+        # P = [0, 9, 9-7=2]. P = [0, 9, 2].
+        # n=2.
+        # Case 1: y from 2 to 2.
+        # Initialize: max_even = P[0]=0, max_odd = -inf. best1=-inf.
+        # y=2 (even): candidate = max_even - P[2] = 0 - 2 = -2. best1 = -2.
+        #   add P[1]=9. max_odd = max(-inf, 9)=9. max_even=0.
+        # best1 = -2. delta1 = -4.
+        # Case 2: j from 2 to 2.
+        # Initialize: max_odd = P[1]=9, max_even = -inf. best2=-inf.
+        # j=2 (even): candidate = max_even - P[2] = -inf - 2 = -inf. best2=-inf.
+        #   add P[2]=2. max_even = max(-inf, 2)=2. max_odd=9.
+        # best2 = -inf. delta2 = -inf (or we can treat as -large).
+        # max_gain = max(0, -4, -inf) = 0.
+        # Answer = orig + 0 = 2. Matches example 3!
+        #
+        # Let's test a custom case to ensure no off-by-one errors.
+        # nums = [1, 2, 3] we did earlier. Expected max 4.
+        # nums=[1,2,3], n=3. orig = 1 -2 +3 = 2.
+        # a = [1, -2, 3]. P = [0, 1, -1, 2]. (P[0]=0, P[1]=1, P[2]=1-2=-1, P[3]=-1+3=2)
+        # Case 1: y from 2 to 3.
+        # Init: max_even=0, max_odd=-inf. best1=-inf.
+        # y=2 (even): candidate = 0 - P[2] = 0 - (-1) = 1. best1=1.
+        #   add P[1]=1. y-1=1 odd => max_odd = max(-inf, 1)=1. max_even=0.
+        # y=3 (odd): candidate = max_odd - P[3] = 1 - 2 = -1. best1 = max(1, -1)=1.
+        #   add P[2]=-1. y-1=2 even => max_even = max(0, -1)=0. max_odd=1.
+        # best1 = 1. delta1 = 2.
+        # Case 2: j from 2 to 3.
+        # Init: max_odd = P[1]=1, max_even=-inf. best2=-inf.
+        # j=2 (even): candidate = max_even - P[2] = -inf - (-1) = -inf. best2=-inf.
+        #   add P[2]=-1. j=2 even => max_even = max(-inf, -1)=-1. max_odd=1.
+        # j=3 (odd): candidate = max_odd - P[3] = 1 - 2 = -1. best2 = -1.
+        #   add P[3]=2. j=3 odd => max_odd = max(1, 2)=2. max_even=-1.
+        # best2 = -1. delta2 = -2.
+        # max_gain = max(0, 2, -2) = 2.
+        # Answer = orig + 2 = 4. Matches manual max we found earlier (rotate [1,2] -> [2,1,3] pulse 4).
+        #
+        # Another custom case: nums = [3, 1, 2] maybe?
+        # Let's just verify the logic holds.
+        # Edge case: n=2 we already did.
+        # What if all numbers negative? The formulas should still work because we are just doing arithmetic.
+        # One thing: in Case 1, we initialize max_even = P[0]. P[0] is always 0. That's fine.
+        # In Case 2, we initialize max_odd = P[1]. P[1] = a_0 = nums[0] * 1 = nums[0]. That's fine.
+        # We use -inf for initialization. In Python, we can use -10**18 or float('-inf'). Since nums[i] up to 1e9, n up to 1e5, prefix sums can be up to 1e14, so -10**18 is safe.
+        # We must be careful with -inf arithmetic: if we do max_even - P[j] and max_even is -inf, we get -inf. That's fine as long as we only consider valid candidates. We can just initialize best1, best2 to a very small number, and at the end take max with 0.
+        # But we must ensure we don't accidentally use an invalid candidate. Since we only update best after checking candidate, and we initialize best to -inf, it's fine. At the end, max_gain = max(0, 2*best1, 2*best2). If best1 or best2 remain -inf, 2*best1 will be -inf, max with 0 will be 0. So safe.
+        #
+        # Let's double check the Case 1 loop updates.
+        # We had: for y from 2 to n:
+        #   candidate = (max_even if y even else max_odd) - P[y]
+        #   best1 = max(best1, candidate)
+        #   # update with P[y-1]
+        #   if (y-1) % 2 == 0: max_even = max(max_even, P[y-1])
+        #   else: max_odd = max(max_odd, P[y-1])
+        # Is the order of update correct? We update after computing candidate for y. So for y=2, we use initial max_even (which is P[0]), compute candidate, then add P[1]. For y=3, we use max_even/min which now include P[0] and P[1] with correct parities. That matches our earlier manual trace.
+        # But wait: in the manual trace for Example 1 Case 1, we had y=2 candidate using max_even=0 (P[0]), then added P[1]. y=3 candidate using max_odd=1 (P[1]), then added P[2]. That worked.
+        # What about the condition y - x >= 2? We ensured it by only considering x <= y-2. Our initialization max_even = P[0] before y=2 means for y=2, x can only be 0 (since y-2=0). After y=2, we add P[1], so for y=3, x can be 0 or 1 (y-2=1). This exactly enforces x <= y-2. Good.
+        # For Case 2: we initialize max_odd = P[1] before j=2. For j=2, i can only be 1 (since i < j and i >= 1). After j=2, we add P[2], so for j=3, i can be 1 or 2. This enforces i < j and i >= 1. Good.
+        #
+        # One subtle point: In Case 1, the condition was x+y even, y-x >= 2.
+        # Our algorithm uses: for y, we take max over x with x parity == y parity (since x+y even => same parity) and x <= y-2 (enforced by lag).
+        # But wait: x and y same parity is exactly x+y even. Yes.
+        # In Case 2, i+j even => i and j same parity. Our algorithm uses same parity. Good.
+        #
+        # Let's test another case manually to be absolutely sure.
+        # nums = [2, 5, 1, 4] n=4.
+        # Compute orig: 2 - 5 + 1 - 4 = -6.
+        # a = [2*1, 5*(-1), 1*1, 4*(-1)] = [2, -5, 1, -4].
+        # P = [0, 2, 2-5=-3, -3+1=-2, -2-4=-6]. P = [0, 2, -3, -2, -6].
+        # Possible rotations? Let's enumerate all (l,r) with l<r:
+        # (0,1): rotate [2,5] -> [5,2,1,4] pulse = 5 -2 +1 -4 = 0. gain = 6.
+        # (0,2): rotate [2,5,1] -> [5,1,2,4] pulse = 5 -1 +2 -4 = 2. gain = 8.
+        # (0,3): rotate [2,5,1,4] -> [5,1,4,2] pulse = 5 -1 +4 -2 = 6. gain = 12.
+        # (1,2): rotate [5,1] -> [1,5,2,4] pulse = 1 -5 +2 -4 = -6. gain = 0.
+        # (1,3): rotate [5,1,4] -> [1,4,5,2] pulse = 1 -4 +5 -2 = 0. gain = 6.
+        # (2,3): rotate [1,4] -> [4,1,5,2] pulse = 4 -1 +5 -2 = 6. gain = 12.
+        # Max gain = 12 (from (0,3) or (2,3)). Max pulse = -6 + 12 = 6.
+        # Let's run our algorithm on this.
+        # n=4. P = [0, 2, -3, -2, -6].
+        # Case 1 (l+r odd): y from 2 to 4.
+        # Init: max_even = P[0]=0, max_odd = -inf. best1=-inf.
+        # y=2 (even): candidate = max_even - P[2] = 0 - (-3) = 3. best1=3.
+        #   add P[y-1]=P[1]=2. y-1=1 odd => max_odd = max(-inf, 2)=2. max_even=0.
+        # y=3 (odd): candidate = max_odd - P[3] = 2 - (-2) = 4. best1 = max(3,4)=4.
+        #   add P[y-1]=P[2]=-3. y-1=2 even => max_even = max(0, -3)=0. max_odd=2.
+        # y=4 (even): candidate = max_even - P[4] = 0 - (-6) = 6. best1 = max(4,6)=6.
+        #   add P[y-1]=P[3]=-2. y-1=3 odd => max_odd = max(2, -2)=2. max_even=0.
+        # best1 = 6. delta1 = 12.
+        # Case 2 (l+r even): j from 2 to 4.
+        # Init: max_odd = P[1]=2, max_even = -inf. best2=-inf.
+        # j=2 (even): candidate = max_even - P[2] = -inf - (-3) = -inf. best2=-inf.
+        #   add P[2]=-3. j=2 even => max_even = max(-inf, -3)=-3. max_odd=2.
+        # j=3 (odd): candidate = max_odd - P[3] = 2 - (-2) = 4. best2 = 4.
+        #   add P[3]=-2. j=3 odd => max_odd = max(2, -2)=2. max_even=-3.
+        # j=4 (even): candidate = max_even - P[4] = -3 - (-6) = 3. best2 = max(4,3)=4.
+        #   add P[4]=-6. j=4 even => max_even = max(-3, -6)=-3. max_odd=2.
+        # best2 = 4. delta2 = 8.
+        # max_gain = max(0, 12, 8) = 12.
+        # Answer = orig + 12 = -6 + 12 = 6. Matches manual max pulse 6!
+        # The rotations giving gain 12 were (0,3) and (2,3). Our algorithm found best1=6 giving delta1=12. Which pair gave best1=6? y=4 even, candidate = max_even - P[4] = 0 - (-6) = 6. max_even=0 means x=0 (since y=4, y-2=2, but max_even only had P[0]=0 and we added P[2]=-3 and P[?]... Actually max_even remained 0 throughout, meaning the best x with even parity and x<=y-2 was x=0. So l=x=0, r=y-1=3. That's rotation (0,3). Correct.
+        #
+        # Everything seems consistent.
+        #
+        # Now we can write the Python code.
+        # We need to handle n=1 separately.
+        # Let's outline the code structure:
+        # class Solution:
+        #     def maxValue(self, nums: list[int]) -> int:
+        #         n = len(nums)
+        #         if n == 1:
+        #             return nums[0]
+        #         # compute orig
+        #         orig = 0
+        #         for i, v in enumerate(nums):
+        #             if i % 2 == 0:
+        #                 orig += v
+        #             else:
+        #                 orig -= v
+        #         # compute a and P
+        #         a = [0]*n
+        #         for i, v in enumerate(nums):
+        #             if i % 2 == 0:
+        #                 a[i] = v
+        #             else:
+        #                 a[i] = -v
+        #         P = [0]*(n+1)
+        #         for i in range(1, n+1):
+        #             P[i] = P[i-1] + a[i-1]
+        #         
+        #         # Case 1: l+r odd
+        #         NEG_INF = -10**18
+        #         max_even = P[0]  # which is 0
+        #         max_odd = NEG_INF
+        #         best1 = NEG_INF
+        #         for y in range(2, n+1):
+        #             if y % 2 == 0:
+        #                 candidate = max_even - P[y]
+        #             else:
+        #                 candidate = max_odd - P[y]
+        #             if candidate > best1:
+        #                 best1 = candidate
+        #             # update with P[y-1]
+        #             if (y-1) % 2 == 0:
+        #                 if P[y-1] > max_even:
+        #                     max_even = P[y-1]
+        #             else:
+        #                 if P[y-1] > max_odd:
+        #                     max_odd = P[y-1]
+        #         
+        #         # Case 2: l+r even
+        #         max_even2 = NEG_INF
+        #         max_odd2 = P[1]  # index 1 is odd
+        #         best2 = NEG_INF
+        #         for j in range(2, n+1):
+        #             if j % 2 == 0:
+        #                 candidate = max_even2 - P[j]
+        #             else:
+        #                 candidate = max_odd2 - P[j]
+        #             if candidate > best2:
+        #                 best2 = candidate
+        #             # update with P[j]
+        #             if j % 2 == 0:
+        #                 if P[j] > max_even2:
+        #                     max_even2 = P[j]
+        #             else:
+        #                 if P[j] > max_odd2:
+ #                     max_odd2 = P[j]
+        #         
+        #         delta1 = 2 * best1 if best1 > NEG_INF//2 else NEG_INF
+        #         delta2 = 2 * best2 if best2 > NEG_INF//2 else NEG_INF
+        #         max_gain = max(0, delta1, delta2)
+        #         return orig + max_gain
+        #
+        # Let's double check the Case 2 initialization: max_odd2 = P[1]. What if n=2? j from 2 to 2. Loop runs. max_odd2 = P[1] is valid. max_even2 = NEG_INF. j=2 even: candidate = NEG_INF - P[2] = NEG_INF. best2 remains NEG_INF. Then update with P[2]. That's fine.
+        # What if n=1? We already returned early.
+        # One potential issue: in Case 1, we initialize max_even = P[0] = 0. But what if the best x is not 0? We will update max_even with other even x's as we go. Starting with 0 is correct because x=0 is always available for y=2 (since y-2=0). For larger y, we add more x's. So starting with P[0] is correct.
+        # In Case 2, we initialize max_odd2 = P[1]. i starts at 1, which is the smallest valid i. For j=2, i can only be 1. So starting with P[1] is correct.
+        #
+        # Let's test with n=2 again using code mental trace.
+        # nums=[9,7], n=2. orig=2.
+        # a=[9,-7]. P=[0,9,2].
+        # Case 1: y from 2 to 2.
+        # max_even=0, max_odd=NEG_INF, best1=NEG_INF.
+        # y=2 even: candidate = 0 - P[2] = 0 - 2 = -2. best1 = -2.
+        #   update with P[y-1]=P[1]=9. y-1=1 odd => max_odd = max(NEG_INF, 9)=9.
+        # best1 = -2. delta1 = -4.
+        # Case 2: j from 2 to 2.
+        # max_even2=NEG_INF, max_odd2=P[1]=9, best2=NEG_INF.
+        # j=2 even: candidate = NEG_INF - P[2] = NEG_INF. best2=NEG_INF.
+        #   update with P[2]=2. j=2 even => max_even2 = max(NEG_INF, 2)=2.
+        # best2=NEG_INF. delta2 = NEG_INF (or we can just use NEG_INF).
+        # max_gain = max(0, -4, NEG_INF) = 0.
+        # return 2+0=2. Correct.
+        #
+        # What about a case where best1 or best2 might be the only valid option and we need to ensure we don't miss it due to -inf handling.
+        # Since we take max with 0 at the end, and orig is always valid (no rotation), it's safe.
+        # One minor thing: in Case 1 loop, we do `if candidate > best1: best1 = candidate`. If best1 starts as NEG_INF, first candidate will update it. Good.
+        # In Case 2 loop, similarly.
+        # We should also consider that best1 or best2 might remain NEG_INF if no valid pairs exist (though for n>=2, there should be at least one pair? Let's check: n=2, Case 1 has y=2, x=0 valid. Case 2 has j=2, but i must be < j and i>=1, and i+j even. For n=2, i=1, j=2 => i+j=3 odd, so no valid pair. So best2 remains NEG_INF. That's fine, delta2 will be NEG_INF, max with 0 will ignore it.)
+        #
+        # Let's ensure the prefix sum P is correctly computed.
+        # P[0] = 0.
+        # For k from 1 to n: P[k] = P[k-1] + a[k-1].
+        # a[i] = nums[i] * (-1)^i.
+        # i=0: (-1)^0 = 1 => a[0] = nums[0].
+        # i=1: (-1)^1 = -1 => a[1] = -nums[1].
+        # i=2: a[2] = nums[2].
+        # etc.
+        # This matches our earlier definition.
+        #
+        # Let's test with example where rotation is not beneficial and we take 0 gain.
+        # Example 3 already did.
+        # Another test: nums = [5, 5, 5, 5] n=4.
+        # orig = 5 -5 +5 -5 = 0.
+        # a = [5, -5, 5, -5]. P = [0, 5, 0, 5, 0].
+        # Case 1: y from 2 to 4.
+        # max_even=0, max_odd=NEG_INF, best1=NEG_INF.
+        # y=2 even: cand = 0 - P[2] = 0 - 0 = 0. best1=0.
+        #   add P[1]=5. y-1=1 odd => max_odd=5.
+        # y=3 odd: cand = max_odd - P[3] = 5 - 5 = 0. best1=max(0,0)=0.
+        #   add P[2]=0. y-1=2 even => max_even = max(0, 0)=0.
+        # y=4 even: cand = max_even - P[4] = 0 - 0 = 0. best1=0.
+        #   add P[3]=5. y-1=3 odd => max_odd = max(5, 5)=5.
+        # best1=0. delta1=0.
+        # Case 2: j from 2 to 4.
+        # max_odd2=P[1]=5, max_even2=NEG_INF, best2=NEG_INF.
+        # j=2 even: cand = NEG_INF - P[2] = NEG_INF. best2=NEG_INF.
+        #   add P[2]=0. j=2 even => max_even2=0.
+        # j=3 odd: cand = max_odd2 - P[3] = 5 - 5 = 0. best2=0.
+        #   add P[3]=5. j=3 odd => max_odd2 = max(5, 5)=5.
+        # j=4 even: cand = max_even2 - P[4] = 0 - 0 = 0. best2=max(0,0)=0.
+        # best2=0. delta2=0.
+        # max_gain = max(0,0,0)=0. Answer = 0. Correct, no rotation improves.
+        #
+        # Everything looks solid.
+        #
+        # Now, we must output the exact code format requested.
+        # The problem says: "output your answer as one Python code block. The code block must contain the full `class Solution` with the exact method header given in the problem."
+        # The method header is: `def maxValue(self, nums: list[int]) -> int:`
+        # We'll provide the class Solution with that method.
+        #
+        # Let's write the final code with comments for clarity, but the problem doesn't require comments, just the code. We'll include necessary imports? None needed.
+        # We'll use a large negative constant for -inf, or use `float('-inf')`. Since we are dealing with integers and comparisons, `float('-inf')` works but mixing int and float might be okay in Python, but to be safe with large numbers, we can use a very small integer like `-10**18`. The constraints: n up to 1e5, nums[i] up to 1e9, so prefix sums up to 1e14. -10**18 is sufficiently small.
+        # I'll use `NEG_INF = -10**18`.
+        #
+        # One final check: In Case 1, the loop `for y in range(2, n+1):` covers y from 2 to n inclusive. This is correct because y = r+1, and r can be up to n-1, so y up to n. And y minimum is 2 because l < r and l >= 0 => r >= 1 => y = r+1 >= 2.
+        # In Case 2, `for j in range(2, n+1):` similarly j = r+1 from 2 to n.
+        #
+        # Let's also verify the Case 2 initialization `max_odd2 = P[1]`. P[1] = a[0] = nums[0]. This is correct because i starts at 1 (since l >= 0 => i = l+1 >= 1). And j starts at 2. For j=2, the only possible i is 1. So we need max_odd2 to be P[1] initially. If we started j from 1, it would be different, but we start from 2.
+        #
+        # What if n=2? Case 2 loop runs for j=2. max_odd2 = P[1] is set. j=2 even: candidate = max_even2 - P[2] = NEG_INF - P[2] = NEG_INF. best2 stays NEG_INF. Then we update max_even2 with P[2]. That's fine.
+        #
+        # Is there any case where best1 or best2 could be correctly computed but we miss it because of the -inf initialization? No, because we only update best after computing candidate, and if candidate is NEG_INF, best remains NEG_INF, which is fine.
+        #
+        # Let's consider if we need to handle the case where no rotation is performed. We take max with 0, so orig is always an option.
+        #
+        # I think the solution is complete.
+        #
+        # One small optimization/cleanup: we can compute P more directly without storing a separately, but it's fine.
+        #
+        # Final code:
+
+```python
+class Solution:
+    def maxValue(self, nums: list[int]) -> int:
+        n = len(nums)
+        if n == 1:
+            return nums[0]
+        
+        # compute original alternating sum
+        orig = 0
+        for i, v in enumerate(nums):
+            if i % 2 == 0:
+                orig += v
+            else:
+                orig -= v
+        
+        # a[i] = nums[i] * (-1)^i
+        # P[k] = sum_{i=0}^{k-1} a[i], P[0] = 0
+        P = [0] * (n + 1)
+        for i in range(n):
+            if i % 2 == 0:
+                P[i+1] = P[i] + nums[i]
+            else:
+                P[i+1] = P[i] - nums[i]
+        
+        NEG_INF = -10**18
+        
+        # Case 1: l + r is odd
+        # We maximize P[x] - P[y] over 0 <= x < y <= n, x+y even, y - x >= 2
+        # y ranges from 2 to n
+        max_even = P[0]  # x=0 is even, always available for y=2
+        max_odd = NEG_INF
+        best1 = NEG_INF
+        for y in range(2, n + 1):
+            if y % 2 == 0:
+                candidate = max_even - P[y]
+            else:
+                candidate = max_odd - P[y]
+            if candidate > best1:
+                best1 = candidate
+            # make P[y-1] available for future y's (x <= (y+1)-2 = y-1)
+            if (y - 1) % 2 == 0:
+                if P[y-1] > max_even:
+                    max_even = P[y-1]
+            else:
+                if P[y-1] > max_odd:
+                    max_odd = P[y-1]
+        
+        # Case 2: l + r is even
+        # We maximize P[i] - P[j] over 1 <= i < j <= n, i+j even
+        # j ranges from 2 to n
+        max_even2 = NEG_INF
+        max_odd2 = P[1]  # i=1 is odd, smallest valid i
+        best2 = NEG_INF
+        for j in range(2, n + 1):
+            if j % 2 == 0:
+                candidate = max_even2 - P[j]
+            else:
+                candidate = max_odd2 - P[j]
+            if candidate > best2:
+                best2 = candidate
+            # make P[j] available for future j's (i <= j)
+            if j % 2 == 0:
+                if P[j] > max_even2:
+                    max_even2 = P[j]
+            else:
+                if P[j] > max_odd2:
+                    max_odd2 = P[j]
+        
+        delta1 = 2 * best1 if best1 > NEG_INF // 2 else NEG_INF
+        delta2 = 2 * best2 if best2 > NEG_INF // 2 else NEG_INF
+        max_gain = max(0, delta1, delta2)
+        
+        return orig + max_gain
+``````python
+class Solution:
+    def maxValue(self, nums: list[int]) -> int:
+        n = len(nums)
+        if n == 1:
+            return nums[0]
+        
+        # compute original alternating sum: even indices positive, odd negative
+        orig = 0
+        for i, v in enumerate(nums):
+            if i % 2 == 0:
+                orig += v
+            else:
+                orig -= v
+        
+        # P[k] = sum_{i=0}^{k-1} a[i] with a[i] = nums[i] * (-1)^i
+        # P[0] = 0
+        P = [0] * (n + 1)
+        for i in range(n):
+            if i % 2 == 0:
+                P[i+1] = P[i] + nums[i]
+            else:
+                P[i+1] = P[i] - nums[i]
+        
+        NEG_INF = -10**18
+        
+        # Case 1: l + r is odd
+        # We maximize P[x] - P[y] over 0 <= x < y <= n, x+y even, y - x >= 2
+        # y ranges from 2 to n (since y = r+1, r >= 1)
+        max_even = P[0]          # x = 0 is even, always available for y = 2
+        max_odd = NEG_INF
+        best1 = NEG_INF
+        for y in range(2, n + 1):
+            if y % 2 == 0:
+                candidate = max_even - P[y]
+            else:
+                candidate = max_odd - P[y]
+            if candidate > best1:
+                best1 = candidate
+            # make P[y-1] available for the next y (x <= (y+1)-2 = y-1)
+            if (y - 1) % 2 == 0:
+                if P[y-1] > max_even:
+                    max_even = P[y-1]
+            else:
+                if P[y-1] > max_odd:
+                    max_odd = P[y-1]
+        
+        # Case 2: l + r is even
+        # We maximize P[i] - P[j] over 1 <= i < j <= n, i+j even
+        # j ranges from 2 to n (j = r+1, r >= 1)
+        max_even2 = NEG_INF
+        max_odd2 = P[1]        # i = 1 is odd, the smallest valid i
+        best2 = NEG_INF
+        for j in range(2, n + 1):
+            if j % 2 == 0:
+                candidate = max_even2 - P[j]
+            else:
+                candidate = max_odd2 - P[j]
+            if candidate > best2:
+                best2 = candidate
+            # make P[j] available for future j (i <= j)
+            if j % 2 == 0:
+                if P[j] > max_even2:
+                    max_even2 = P[j]
+            else:
+                if P[j] > max_odd2:
+                    max_odd2 = P[j]
+        
+        delta1 = 2 * best1 if best1 > NEG_INF // 2 else NEG_INF
+        delta2 = 2 * best2 if best2 > NEG_INF // 2 else NEG_INF
+        max_gain = max(0, delta1, delta2)
+        
+        return orig + max_gain
+```
+[finish_reason: stop | provider: CoreWeave | reasoning chars: 0 | usage: {'prompt_tokens': 611, 'completion_tokens': 24172, 'total_tokens': 24783, 'cost': 0.00487717, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00487717, 'upstream_inference_prompt_cost': 4.277e-05, 'upstream_inference_completions_cost': 0.0048344}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

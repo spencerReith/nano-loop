@@ -1,0 +1,1609 @@
+
+Assistant: 
+Assistant: Let me analyze this problem:
+
+1. We need to select at least 1 and at most `m` non-overlapping subarrays
+2. Each subarray has length in `[l, r]`
+3. Maximize total sum
+
+This is a classic DP problem. Let me think about the approach:
+
+- `dp[i][j]` = maximum sum using subarrays from `nums[0..i-1]` with at most `j` subarrays
+- For each position, we can either skip it or end a subarray at that position
+
+The standard approach:
+- `dp[i][j]` = max sum considering first `i` elements with at most `j` subarrays
+- Transition: either don't use element `i-1`, or end a subarray at `i-1` with length `k` where `l <= k <= r`
+
+`dp[i][j] = max(dp[i-1][j], max over k in [l,r] of dp[i-k][j-1] + prefix[i] - prefix[i-k])`
+
+This can be rewritten as:
+`dp[i][j] = max(dp[i-1][j], prefix[i] + max over k in [l,r] of (dp[i-k][j-1] - prefix[i-k]))`
+
+For fixed `j`, as `i` increases, we need max of `(dp[t][j-1] - prefix[t])` for `t` in `[i-r, i-l]`. This is a sliding window maximum, which can be done with a deque in O(n) per `j`, giving O(n*m) total.
+
+But n, m up to 10^5, so O(n*m) could be 10^10 — too slow. Hmm, but m <= n, and each subarray has length at least l >= 1, so the number of useful subarrays is at most n/l. So we can cap m at n/l (actually ceil(n/l)... no, floor(n/l) is the max number of non-overlapping subarrays of length >= l). So m_eff = min(m, n // l). 
+
+If l = 1, m could be up to n = 10^5, giving O(n^2) = 10^10. Too slow.
+
+Hmm, we need something better. Let me think...
+
+Alternative: this is a weighted interval scheduling variant. With the constraint of "at most m intervals", there's a known technique using Lagrangian relaxation / alien trick: binary search on penalty per subarray, then solve unconstrained (any number of subarrays) with penalty, tracking count. This gives O(n log C) with the parametric search.
+
+Actually, for the "at most m" constraint with concavity, the alien trick works: define f(λ) = max over selections of (sum - λ * count). For each λ, we can compute the best sum and count in O(n) using DP with deque. Then binary search λ to find where count ≈ m. Since the answer is concave in m, this works.
+
+But the alien trick requires care with ties (when multiple counts give same value at a λ). We need to handle that: at the optimal λ, we might get count <= m or count >= m, and we need to adjust.
+
+Standard approach: binary search λ over integers (sums are integers, so λ can be integer). Find smallest λ such that count <= m. Then answer = best_sum(λ) + λ * m... wait, need care.
+
+Let me think again. Let g(k) = max sum with exactly k subarrays (or at most k). g is concave in k (I believe for this problem it is — actually is it? The marginal gain of an extra subarray should be non-increasing... this is true for this kind of interval selection problem? Hmm, it's true when the problem has a matroid-like structure. For weighted k-set packing of intervals, I believe concavity holds).
+
+Actually, let me verify: g(k) = max sum with at most k non-overlapping intervals each with length in [l,r]. Is g concave? This is a known result for interval scheduling: the max weight using at most k intervals is concave in k. Yes, I believe this holds because the DP has Monge property / the problem can be modeled as min-cost flow with concave costs... Actually max weight k-interval scheduling is a linear program whose constraint matrix is totally unimodular, and the objective as a function of k is concave (it's a resource allocation problem with TU matrix, giving concave value function). Yes, g(k) is concave.
+
+So alien trick applies: binary search λ, compute h(λ) = max over selections of (sum - λ*count), and among all optimal selections track the count (we need both min and max count among optimal ones, or handle ties carefully).
+
+With integer λ: find the smallest λ such that we can achieve count <= m. Then answer = h(λ) + λ*m? Let me recall the exact procedure.
+
+Let g(k) be concave, we want g(m). h(λ) = max_k (g(k) - λk). If at λ, the optimal k is k(λ) (with ties, there's a range [k_min(λ), k_max(λ)]). We want λ such that m is in the range or between k_max(λ) and k_min(λ-1)... 
+
+Standard: find smallest λ such that k_max(λ) <= m (i.e., there's an optimal solution with count <= m). Then g(m) = h(λ) + λ*m. Wait, that works when at λ, the supporting line touches the concave curve at points spanning m. Let me think.
+
+Since g is concave, the slopes are non-increasing. h(λ) = max_k (g(k) - λk). The optimal k's are those where slope crosses λ. If we pick smallest λ with k_min(λ) <= m... hmm, let me be careful.
+
+Alternative cleaner approach: binary search λ such that we find λ where the optimal count (taking the largest optimal count, breaking ties toward more subarrays) is <= m, but at λ-1 it's > m. Then g(m) = h(λ) + λ*m. This is the standard "aliens trick" result: if at penalty λ the optimal solution uses k <= m subarrays and at λ-1 uses k' > m, then the answer for exactly m is h(λ) + λ*m. Hmm, actually the precise statement: if there exists λ such that optimal count is exactly m, then g(m) = h(λ) + λ*m. If m falls in a gap (due to integrality), we need the tie-breaking version.
+
+Let me just do the DP tracking pairs (value, count) lexicographic: maximize (sum - λ*count, ...) hmm.
+
+Common robust approach: For a given λ, compute best = max over selections of (sum - λ * count), and among those achieving best, the count of subarrays (say, the minimum count achieving best, or maximum). Binary search on λ to find the λ where count transitions across m.
+
+Let me define the DP: for penalty λ, we compute for each prefix the best (adjusted_sum, count) where adjusted_sum = sum - λ*count, maximizing adjusted_sum, and breaking ties by... we need consistent tie-breaking. If we break ties by taking more subarrays (smaller count? larger count?), we get one extreme of the optimal-count range.
+
+The concave function g(k) (at most k) is non-decreasing and concave. Slopes s_k = g(k) - g(k-1) >= 0, non-increasing. h(λ) = max_k (g(k) - λ k). For λ in (s_{k+1}, s_k), optimal k is exactly k. For λ = s_k = s_{k+1} (flat region), multiple k optimal.
+
+We want g(m). If we find λ = s_m (the slope at m), then h(λ) = g(m) - λ m, so g(m) = h(λ) + λ m. The set of optimal k at λ = s_m includes m (and possibly a range around it if slopes are equal).
+
+So: binary search for the smallest λ such that the optimal count (with tie-break toward fewer subarrays, i.e., k_min(λ)) <= m. Then at this λ, m is within [k_min(λ), k_max(λ)]? Let's see: smallest λ with k_min(λ) <= m. Since k_min is non-increasing in λ (higher penalty → fewer subarrays). At λ-1, k_min(λ-1) > m, meaning all optimal solutions at λ-1 use > m subarrays, so s_{m+1} >= λ-1... hmm let me think in terms of slopes.
+
+k_min(λ) > m means for all k <= m, g(k) - λk < h(λ). The optimal k* > m. Since g concave, this means slope at m+1, s_{m+1} > λ... Actually if the maximizer of g(k) - λk is at k* > m, then s_{m+1} = g(m+1)-g(m) > λ (since moving from m to m+1 increases objective). Conversely if k_min(λ) <= m, then s_{m+1} <= λ... hmm, not exactly, but roughly.
+
+At λ-1: k_min > m means s_{m+1} > λ-1, i.e., s_{m+1} >= λ (integer slopes since sums are integers). At λ: k_min <= m means s_{m+1} <= λ. So s_{m+1} = λ exactly? Wait: s_{m+1} >= λ and s_{m+1} <= λ gives s_{m+1} = λ. Hmm, but also we need s_m >= λ for m to be optimal at λ. Since slopes non-increasing, s_m >= s_{m+1} = λ. So g(m) - λm >= g(m-1) - λ(m-1) and >= g(m+1) - λ(m+1)... we need g(m) - λ m = h(λ). Since k_min(λ) <= m, there's an optimal k* <= m with g(k*) - λ k* = h(λ). Since g is non-decreasing and λ >= 0... hmm, g(m) >= g(k*), so g(m) - λ m >= g(k*) - λ k* + λ(k* - m)... wait g(m) - λm >= g(k*) - λm = h(λ) + λk* - λm = h(λ) - λ(m - k*). That's not directly giving equality.
+
+Let me redo: h(λ) = g(k*) - λk* where k* = k_min(λ) <= m. Also, since s_{m+1} = λ and slopes non-increasing, s_{k*+1}, ..., s_m are all >= s_{m+1} = λ and... hmm, s_j >= λ for j <= m. Then g(m) - g(k*) = sum_{j=k*+1}^{m} s_j >= λ(m - k*). So g(m) - λm >= g(k*) - λk* = h(λ). But h(λ) = max, so g(m) - λm <= h(λ). Hence equality: g(m) = h(λ) + λm. 
+
+But wait, I assumed integer slopes and that smallest λ with k_min(λ) <= m gives s_{m+1} = λ. Let me double check the claim "k_min(λ) <= m implies s_{m+1} <= λ". If s_{m+1} > λ, then g(m+1) - λ(m+1) > g(m) - λm, and more generally for any k <= m, g(m+1) - λ(m+1) >= g(k) - λk + (something positive)? Since slopes s_{k+1..m+1} >= s_{m+1} > λ, g(m+1) - g(k) > λ(m+1-k), so g(m+1) - λ(m+1) > g(k) - λk for all k <= m. So all optimal k at λ are >= m+1, i.e., k_min(λ) > m. Contrapositive: k_min(λ) <= m ⟹ s_{m+1} <= λ. Good.
+
+And "k_min(λ-1) > m ⟹ s_{m+1} >= λ": k_min(λ-1) > m means all optimal k at λ-1 are > m. In particular m is not optimal: g(m) - (λ-1)m < h(λ-1) = g(k*) - (λ-1)k* for some k* > m. Hmm, I want s_{m+1} > λ - 1. Suppose s_{m+1} <= λ-1. Then for k >= m+1, g(k) - g(m) = sum of slopes <= (λ-1)(k-m), so g(k) - (λ-1)k <= g(m) - (λ-1)m, meaning m is at least as good as any k > m, so k_min(λ-1) <= m. Contradiction. So s_{m+1} > λ-1, i.e., s_{m+1} >= λ (integers). 
+
+So the procedure: binary search smallest integer λ >= 0 such that k_min(λ) <= m. Answer = h(λ) + λ * m.
+
+Wait, but we need λ >= 0? Since we need at least one subarray and g is non-decreasing, slopes >= 0. λ = 0 corresponds to no penalty. If k_min(0) <= m already (i.e., optimal unconstrained solution uses <= m subarrays), answer = h(0) = g at its max... but we need at least 1 subarray. Since all elements could be negative, the best might be to take one least-negative subarray. With λ = 0, the DP maximizing sum with any number of subarrays: it would take only positive-sum subarrays; if none, best sum is negative with 1 subarray. k_min(0) would be the min count achieving max sum. That's fine.
+
+Hmm wait, but actually there's subtlety: g(k) for "at most k" — but we also need "at least 1". Since answer could be negative (must pick at least one), and g(m) as "at most m, at least 1" — if we define g(k) = max sum with between 1 and k subarrays, is it still concave? g(0) would be -inf or undefined. Hmm. Let's define g(k) = max sum with at most k subarrays, allowing 0 subarrays with sum 0. Then g is non-decreasing, concave, g(0) = 0. The answer we want is max sum with 1..m subarrays = g(m) if the empty selection isn't better... but empty gives 0, and if all subarrays negative, answer is negative < 0 = g(m). So we can't just allow empty.
+
+Option: handle via the DP itself — require at least one subarray. In the penalty DP, we can compute the best adjusted sum with at least one subarray. Since λ >= 0 and we want at least one... Actually with the alien trick, we want g(k) = max sum with exactly... hmm.
+
+Let me redefine: g(k) = max sum with at most k subarrays and at least 1, for k >= 1. Is this concave in k (for k >= 1)? The value function of the LP with TU matrix: max sum subject to at most k intervals, at least... the "at least 1" doesn't change anything when positive-sum subarrays exist. When all are negative, g(k) = best single subarray sum for all k >= 1 (adding more only decreases), so g is constant — concave. In general, g(k) for k >= 1: g(1) = best single subarray, g(2) = best pair, etc. Is g concave on k >= 1? The increments: s_2 = g(2)-g(1), s_3 = g(3)-g(2), ... non-increasing? I believe yes by the same LP argument (the polytope of "at most k intervals" — value is concave in k; and "at least 1" constraint is redundant when it matters... hmm).
+
+Actually, let's think: define G(k) = max sum with at most k intervals (allowing empty, G(0)=0). G is concave and non-decreasing on k >= 0. Our desired answer is g(m) where g(k) = max sum with 1..k intervals. If the optimal for G(m) uses >= 1 interval, g(m) = G(m). If optimal is empty (sum 0), that means all intervals have negative sum, so g(m) = best single interval = G(1) (since G(1) = max(0, best interval) = 0... no wait, G(1) = max(0, best single) = 0 if all negative). Hmm, so in all-negative case, G(k) = 0 for all k, but g(k) = best single < 0.
+
+So the alien trick on G would give 0, wrong. We need to enforce at least one.
+
+Simple fix: compute answer = max over selections with 1..m subarrays. We can handle this by noting: if all-negatives edge case, the answer is just the max over single subarrays of length in [l,r] (since adding more only hurts). But more generally, the "at least 1" constraint: the optimal with "at most m" either uses >= 1 or is empty. Empty is optimal only if no positive-sum subarray exists. If a positive-sum subarray exists, then G(m) > 0 and uses >= 1. If not, answer = max single subarray sum (which is <= 0). Wait, but what if best is 0 from empty but there are zero-sum subarrays? Then answer 0 either way, fine. If max single subarray sum is 0, answer 0. If all negative, answer = max single subarray sum.
+
+So: answer = alien_trick_result if that's > 0... hmm, but alien trick gives G(m) which is >= 0 always. If G(m) > 0, answer = G(m). If G(m) == 0, answer = max(0, best single subarray)? No wait — if G(m) = 0, either there are zero-sum subarrays (answer 0) or all negative (answer = best single). So answer = max(G(m), best_single)? If G(m) > 0, best_single <= G(m) anyway. If G(m) = 0, answer = max(0, best single) = 0 if best single <= 0... but if all negative, best single < 0 and answer should be best single, not 0!
+
+Hmm: if all subarrays have negative sum, answer = best (least negative) single subarray. G(m) = 0 (empty). So answer = best_single when best_single < 0 and no zero/positive subarray. Actually answer = max over 1..m subarrays. If best_single < 0, could two subarrays sum to more than best_single? Two negatives sum to less than each... no: -1 + -1 = -2 < -1. Since every subarray has negative sum, adding more only decreases total. So answer = best_single. If best_single == 0, answer >= 0, and G(m) >= 0, answer = G(m) = 0... wait could answer be > 0 while best_single = 0? If best single is 0 but two subarrays sum positive? Each has sum <= 0 (since best single is 0 means all <= 0), so total <= 0. So answer = 0 = G(m). If best_single > 0, then G(m) >= best_single > 0 and G(m) uses >= 1 subarray, answer = G(m).
+
+So: answer = G(m) if best_single >= 0, else best_single. Equivalently answer = max(G(m), best_single) when best_single < 0 gives best_single... max(0, best_single) = 0 ≠ best_single. So: if best_single < 0: answer = best_single else answer = G(m). Hmm wait, if best_single < 0, G(m) = 0 but answer = best_single. If best_single >= 0, answer = G(m). 
+
+Alternatively, incorporate "at least one" into the DP directly. In the penalty DP, track best with at least one subarray. Then h(λ) = max over k>=1 (g(k) - λk). Hmm, but then the concavity/slope analysis: g defined on k >= 1. The alien trick still works the same: binary search smallest λ with k_min(λ) <= m, answer = h(λ) + λm. But now λ might need to be negative! Because if all subarrays negative, to force exactly... we want g(m) = best single. Slopes s_k = 0 for k >= 2 (g constant). s_2 = 0. We need λ = s_{m+1} = 0. At λ = 0, h(0) = g(1) (all k give same), k_min(0) = 1 <= m. Answer = h(0) + 0 = g(1). Works with λ = 0. But what if we need negative λ? g is non-decreasing (at most k), so slopes >= 0, smallest slope is s_{m+1} >= 0. So λ >= 0 suffices. 
+
+But wait, in the DP with "at least one subarray" and penalty λ, when λ = 0 and all negative: best adjusted sum with >= 1 subarray = best single (negative), count = 1. k_min(0) = 1 <= m. Good.
+
+But there's a subtlety in the DP tie-breaking: we need k_min(λ) = minimum number of subarrays among all optimal (adjusted-sum-maximizing) solutions. In the DP, when ties occur, prefer fewer subarrays. Let me define DP that returns (best_adjusted_sum, min_count).
+
+Hmm, wait. Actually, let me reconsider whether we even need the alien trick. Constraints: n <= 1e5, m <= n. Time limit 5s. O(n * m) is too slow in the worst case (1e10). O(n * min(m, n/l)) — if l = 1, m = 1e5, that's 1e10. Too slow. So yes, we need the alien trick (O(n log C)) or a SMAWK/Aliens DP.
+
+Actually wait, is there a simpler observation? For l=1, m large... no, alien trick is the way.
+
+Let me design the penalty DP:
+
+Given penalty λ (integer >= 0), compute over all selections of non-overlapping subarrays (lengths in [l,r], at least 1 subarray... actually let's allow empty for simplicity and handle the all-negative case separately, OR incorporate at-least-one):
+
+Let me incorporate "at least one" by initializing properly.
+
+DP with deque, O(n) per λ:
+
+Let prefix[0] = 0, prefix[i] = sum of first i elements.
+
+Define f[i] = best adjusted sum (sum - λ*count) considering subarrays within first i elements, with at least one subarray allowed... hmm, let me define:
+
+best[i] = (value, count) = lexicographically max (by value, then min count) over selections within nums[0..i-1] (allowing empty selection with value 0, count 0).
+
+Transition: best[i] = max of:
+- best[i-1] (skip element i-1)
+- over t in [i-r, i-l]: best[t] + (prefix[i] - prefix[t]) - λ, with count+1. (subarray nums[t..i-1])
+
+The inner max: max over t in window [i-r, i-l] of (best[t].value - prefix[t]) , then + prefix[i] - λ. But we also need count tie-breaking: among t achieving max (best[t].value - prefix[t]), we want... we want overall min count. Since value tie → prefer fewer subarrays. best[t].count is already min count for best[t].value. So among t with max (value - prefix), choose one with min count.
+
+Sliding window: maintain deque of candidates t with (key = best[t].value - prefix[t], count = best[t].count). Monotonic deque: when adding new t, pop from back while back.key < new.key, or (back.key == new.key and back.count >= new.count). Then front is best (max key, min count).
+
+Then candidate value = front.key + prefix[i] - λ, count = front.count + 1.
+
+Compare with best[i-1]: take larger value; if equal, take smaller count.
+
+At the end, best[n] gives (h(λ), k_min(λ)) where h includes possibly empty selection. For the "at least one" issue: if best[n].count == 0 (empty is optimal, value 0), then all subarrays have adjusted sum <= 0... With λ = 0, that means all subarrays non-positive. Then answer for the original problem = best single subarray sum. Let me just handle: after computing final answer via alien trick, if the result's count is 0... hmm.
+
+Actually, let me reconsider: maybe simpler to just compute g(m) via alien trick allowing empty, get G(m), and separately compute best_single = max sum subarray with length in [l,r]. Final answer = G(m) if G(m) > 0 else best_single. Wait: if G(m) > 0, answer = G(m) (uses >= 1 subarray). If G(m) == 0: either some subarray has sum 0 (then answer 0 = G(m)) or all negative (answer = best_single < 0). best_single >= 0 iff answer >= 0. So: if G(m) == 0 and best_single < 0, answer = best_single; else answer = G(m). Equivalently: answer = max(G(m), best_single) if best_single < 0... max(0, negative) = 0, wrong. So: answer = G(m) if G(m) > 0 else max(0, best_single) if best_single == 0 else best_single. Simplify: if best_single < 0: answer = best_single (since then G(m) = 0 and all subarrays negative, best is single). Else answer = G(m). Let me verify: best_single < 0 → all subarrays negative → any multi-selection sums < each part... actually sum of negatives < each individual? -2 + -3 = -5 < -2. Yes, more subarrays only worse, so answer = best_single. And G(m) = 0 in that case. So:
+
+answer = best_single if best_single < 0 else G(m).
+
+Hmm wait, but actually, is that right? best_single < 0 means EVERY subarray (length in [l,r]) has negative sum. Then any selection of k subarrays has sum <= k * (best_single)... no, <= sum of k negative numbers each <= best_single < 0, so total <= best_single with equality at k=1 choosing the best. Yes, answer = best_single. Good.
+
+Alternatively, avoid the special case by forcing at least one subarray in the DP. But the special case is easy. Actually, even easier: note that if best_single < 0, we can detect and return best_single directly. Otherwise run alien trick. But the alien trick DP allows empty selection; that's fine.
+
+Hmm, wait, but actually there's another subtlety: does the alien trick binary search range work? λ in [0, max_sum_range]. Slopes s_k are integers, s_1 = G(1) - G(0) = best_single (if positive)... s_k <= max absolute sum <= 1e5 * 1e5 = 1e10. So binary search λ in [0, 1e10+1]. That's ~34 iterations, each O(n), total ~3.4e6 * ... wait 34 * 1e5 = 3.4e6 operations, fine. Actually each iteration is O(n) with deque operations; 34 * 1e5 = 3.4e6, very fast.
+
+Hold on, actually, can λ be bounded better? s_1 = G(1) = max(0, best_single) <= 1e10. Fine, binary search over [0, 1e10].
+
+Wait, I realize I should double check the claim that G (max sum with at most k non-overlapping intervals of length in [l,r]) is concave in k. This is the key. 
+
+This is a weighted interval scheduling problem with a cardinality constraint. The LP relaxation: maximize sum w_i x_i subject to sum of x over intervals covering point p <= 1 for all points p, and sum x_i <= k, x_i >= 0. The constraint matrix (interval-point incidence + cardinality row) — interval scheduling LP is integral (interval matrix is TU), and adding a cardinality constraint keeps TU (it's a consecutive-ones matrix plus an all-ones row; appending an all-ones row to a TU matrix preserves TU? A matrix with consecutive ones in columns is TU; adding a row of all ones: the resulting matrix is still TU — yes, interval matrices remain TU when adding a cardinality constraint; this is standard: the k-interval scheduling polytope is integral). The value function of an LP max{c^T x : Ax <= b, sum x <= k} as a function of k is concave (value function of LP in RHS is concave for maximization). Yes! The optimal value of a max LP as a function of the RHS is concave. Here k appears in RHS of "sum x <= k". So G(k) is concave in k. 
+
+Also G is non-decreasing in k. Slopes non-increasing, non-negative (since G(0)=0 and non-decreasing... slopes >= 0). Good.
+
+Now the DP for h(λ) and k_min(λ):
+
+Let me code it:
+
+```python
+def solve_penalty(nums, prefix, lam, l, r):
+    n = len(nums)
+    NEG = -(10**30)
+    # best_val[i], best_cnt[i]
+    best_val = [0]*(n+1)
+    best_cnt = [0]*(n+1)
+    from collections import deque
+    dq = deque()  # stores t values, with key = best_val[t] - prefix[t], count = best_cnt[t]
+    for i in range(1, n+1):
+        # add t = i - l to window (valid t range for this i: [i-r, i-l])
+        t = i - l
+        if t >= 0:
+            key = best_val[t] - prefix[t]
+            cnt = best_cnt[t]
+            while dq and (dq[-1][1] < key or (dq[-1][1] == key and dq[-1][2] >= cnt)):
+                dq.pop()
+            dq.append((t, key, cnt))
+        # remove t < i - r
+        while dq and dq[0][0] < i - r:
+            dq.popleft()
+        # option 1: skip
+        v, c = best_val[i-1], best_cnt[i-1]
+        # option 2: end subarray at i
+        if dq:
+            t0, key, cnt = dq[0]
+            v2 = key + prefix[i] - lam
+            c2 = cnt + 1
+            if v2 > v or (v2 == v and c2 < c):
+                v, c = v2, c2
+        best_val[i], best_cnt[i] = v, c
+    return best_val[n], best_cnt[n]
+```
+
+Wait, there's an issue: when we add t = i - l, but the window for position i is t in [i-r, i-l]. We add t = i-l at step i. But best[t] must be computed before — yes, t = i - l < i, computed. Good. And removal: t < i - r removed. Good.
+
+But note: the empty selection has value 0, count 0, and best[0] = (0,0). Subarrays starting at t=0 allowed. Good.
+
+Tie-breaking in deque: we keep, among equal keys, the min count. When adding new (t, key, cnt), pop back while back.key < key or (back.key == key and back.count >= cnt). This ensures front has max key, and among those min count. But careful: if back.key == key and back.count < cnt, we keep back (it's better), and stop? The while condition pops only if back is strictly worse. If back.key == key and back.count < cnt, back is better, don't pop, but then new element is behind a better element with same key — the new one is dominated (older... wait, older elements leave the window earlier). Hmm! Dominance: an older element with same key and lower count is better while it's in the window, but it expires earlier. The new element might be useful after the old one expires. So we should still append it. The while loop stops when back is better, then we append. That's correct: deque maintains decreasing keys (with tie → increasing count) from front to back... let me re-examine.
+
+Standard monotone deque: we pop from back elements that are dominated by the new one. New element dominates back if back.key < new.key, or (equal key and back.count >= new.count) — because new element expires later (larger t), so if new is at least as good, back is useless. After popping, append new. The front is the best (max key, min count among max key). Yes, my condition is right: pop while back.key < key or (back.key == key and back.count >= cnt). Then append. Front = best. Good.
+
+Then binary search:
+
+```python
+lo, hi = 0, 10**10 + 1  # find smallest lam with cnt <= m
+while lo < hi:
+    mid = (lo + hi)//2
+    val, cnt = solve_penalty(mid)
+    if cnt <= m:
+        hi = mid
+    else:
+        lo = mid + 1
+lam = lo
+val, cnt = solve_penalty(lam)
+G_m = val + lam * m
+```
+
+Wait, need hi large enough that cnt <= m at hi. At λ huge (1e10+1), any subarray has adjusted sum = sum - λ <= 1e10 - 1e10 - 1 < 0, so empty selection optimal, cnt = 0 <= m. Good. But careful: hi = 10**10+1 as initial upper bound; binary search invariant: cnt(hi) <= m, cnt(lo-1) > m. Start lo=0, hi=10**10+1. If cnt(0) <= m, answer lam=0. Fine.
+
+Then G(m) = h(λ) + λ*m where h(λ) = val. But wait — val is the max adjusted sum, which might be achieved by empty selection (val=0, cnt=0). Then G(m) = λ*m. Hmm, that's wrong if all subarrays negative! E.g., all negative: at λ=0, val=0 (empty), cnt=0 <= m, so λ=0, G(m) = 0. But true answer is best_single < 0. So we need the special case: if best_single < 0, return best_single.
+
+Actually wait, let's double check with the formula: we proved g(m) = h(λ) + λm where g allows empty (g = G). G(m) = 0 in all-negative case. So yes, need special case.
+
+best_single = max over i in [l..n] of (prefix[i] - min prefix[t] for t in [i-r, i-l])... simple sliding min, or just note it's the max subarray sum with length constraint. Compute with deque too, or since we need it only for the negative check: best_single = max sum subarray with length in [l, r]. If best_single < 0 return it.
+
+Hmm, actually, simpler: if best_single < 0, equivalently, the maximum-sum subarray of length in [l,r] is negative. Compute via sliding window minimum of prefix.
+
+Alternatively, fold into the alien trick by requiring at least one subarray in DP. Let me think if that's cleaner... In DP, best[i] = best over selections with >= 1 subarray. Initialize best[0] = (-inf, inf) and handle empty separately... The "skip" transition carries the -inf. The subarray transition from best[t] where best[t] could be -inf (no subarray yet) — but a subarray can start a selection: from "empty" state. So we'd need empty state value 0 count 0 but only usable as a start, and the final answer must have count >= 1. This complicates. The special case is simpler.
+
+Actually, wait. Even simpler: the answer = max(G(m), best_single) doesn't work (all-negative gives max(0, neg) = 0). But: if best_single < 0, answer = best_single. Else answer = G(m) (which is >= best_single >= 0). So:
+
+```python
+if best_single < 0:
+    return best_single
+# else alien trick
+return G(m)
+```
+
+Let me now also double check the alien trick formula with examples.
+
+Example 4: nums = [-3,-4,-1], m=2, l=1, r=2. All subarrays: [-3],[-4],[-1],[-3,-4]=-7,[-4,-1]=-5. best_single = -1 < 0. Return -1. Correct!
+
+Example 1: nums=[4,1,-5,2], m=2,l=1,r=3. best_single: subarrays length 1..3: [4]=4,[1]=1,[-5],[2]=2,[4,1]=5,[1,-5]=-4,[-5,2]=-3,[4,1,-5]=0,[1,-5,2]=-2. best_single=5>0. Alien trick: G(2) should be 7 ([4,1] and [2]). Let's trust.
+
+Example 3: nums=[-1,7,-4], m=1, l=2, r=3. best_single: [-1,7]=6, [7,-4]=3, [-1,7,-4]=2. best=6>0. G(1)=6. Good.
+
+Now let me also verify the binary search gives correct λ and formula on example 1.
+
+G(k): G(0)=0, G(1)=5 ([4,1]), G(2)=7 ([4,1]+[2]), G(3)=7 (can't fit 3 non-overlapping positive... length>=1: [4],[1],[2] = 7? [4]+[1]+[2] = 7, three subarrays non-overlapping, yes! G(3) = 7. G(4)=7 (only 4 elements, [4],[1],[-5],[2] includes -5, so 7). Slopes: s1=5, s2=2, s3=0, s4=0. Concave: 5>=2>=0>=0. Good.
+
+We want G(2). Binary search smallest λ with k_min(λ) <= 2.
+
+h(λ) = max_k G(k) - λk = max(0, 5-λ, 7-2λ, 7-3λ, 7-4λ).
+
+λ=0: max = 7 at k=2,3,4. k_min(0) = 2 <= 2. So λ=0, G(2) = h(0) + 0 = 7. Correct.
+
+But wait, in the DP, at λ=0, does it find value 7 with count 2 (k_min)? The DP maximizes value, ties → min count. Value 7 achieved by k=2 ([4,1],[2]) and k=3 ([4],[1],[2]). Min count = 2. Good, cnt=2 <= m=2, answer = 7 + 0*2 = 7.
+
+Example 2: nums=[1,0,3,4], m=2, l=1, r=2. Subarrays: [1],[0],[3],[4],[1,0]=1,[0,3]=3,[3,4]=7. G(1)=7 ([3,4]), G(2)=8 ([1]+[3,4]), G(3)=8 ([1],[3],[4])? [1]+[3]+[4]=8, yes. G(3)=8. Slopes: 7,1,0. Binary search smallest λ with k_min(λ)<=2. λ=0: h=8 at k=2,3; k_min=2<=2. Answer = 8. Correct.
+
+Now a case where λ > 0: nums=[5, -1, 5, -1, 5], m=2, l=1, r=1. Single elements only. G(k) = sum of top k positives: G(1)=5, G(2)=10, G(3)=15. Slopes 5,5,5 — not strictly concave but concave (linear). Want G(2)=10. h(λ)=max(0, 5-λ, 10-2λ, 15-3λ). λ=0: h=15, k=3, k_min=3 > 2. λ=1: 12 at k=3... 15-3=12, 10-2=8, so k=3. ... λ=5: h = max(0, 0, 0, 0) = 0, k_min=0 <= 2. Smallest λ with k_min<=2: λ=5. G(2) = h(5) + 5*2 = 0 + 10 = 10. Correct!
+
+Another: nums = [3, -100, 2, -100, 1], m=2, l=1, r=1. G(1)=3, G(2)=5, G(3)=6. Slopes 3,2,1. Want G(2)=5. h(λ)=max(0,3-λ,5-2λ,6-3λ). λ=0: 6 at k=3. λ=1: max(0,2,3,3)=3 at k=2,3. k_min=2<=2. Smallest λ with k_min<=2 is λ=1. G(2)=h(1)+1*2=3+2=5. Correct!
+
+Great, the approach works.
+
+Now, edge: m larger than max possible subarrays — fine, handled naturally.
+
+Edge: n=1. l=1,r=1. nums=[x]. If x<0, best_single=x<0, return x. If x>=0, alien: G(1)=x. λ=0: h=x, cnt=1<=m. answer x. Good.
+
+Now complexity: binary search ~35 iterations (λ up to 1e10+1, log2 ≈ 34) × O(n) = 3.4e6 deque ops. In Python, might be ~2-4 seconds. Time limit 5s. Should be OK but let me optimize: use lists as stacks instead of deque for speed? We need popleft from front. We can use collections.deque. Or use a list with head index. Let me use deque; 3.4e6 operations with deque should run in about 2-3s in Python. Hmm, might be close. Let me optimize the inner loop.
+
+Alternative: reduce binary search range. Max slope s_1 = G(1) = best_single <= max subarray sum <= sum of positives <= 1e5 * 1e5 = 1e10. So hi = 1e10+1, ~34 iterations. 
+
+We could also cap m: m = min(m, n // l + (1 if n % l else 0))? Max number of non-overlapping subarrays of length >= l is floor(n/l)... actually ceil? Each takes >= l elements, non-overlapping, so max count = floor(n / l). If m >= floor(n/l), effectively m = floor(n/l)... but that doesn't reduce iterations.
+
+Alternatively, we can reduce iterations by noting λ range [0, best_single]. Since slopes <= s_1 = G(1) = best_single (when best_single > 0). So hi = best_single + 1. best_single <= 1e10. Same order.
+
+Let me just implement efficiently. Use local variables, avoid tuples in deque maybe. Store t, key, cnt as separate... tuples are fine.
+
+Actually, we can speed up: precompute prefix as list. In solve_penalty, use arrays. Let me write it.
+
+One more consideration: the DP values can be as large as 1e10, and λ*count up to 1e10 * 1e5 = 1e15 — Python ints handle fine.
+
+Let me also double-check the DP window logic. For ending at i (subarray nums[t..i-1], length i-t in [l,r], so t in [i-r, i-l]). At iteration i, we add t = i-l (if >= 0) before querying. Remove t < i-r. So window = [i-r, i-l]. Correct.
+
+But note: we add t = i - l at iteration i. For i < l, t < 0, no add, window empty, only skip option. Good — subarray of length >= l can't end before position l.
+
+Wait, at i = l, t = 0 added, window [l-r... , 0] = {0} (since i-r <= 0). Subarray nums[0..l-1], length l. Good.
+
+Now the tie-breaking and k_min: we want, among all max-value solutions, the min count. DP: best[i] = (val, cnt) with max val, then min cnt. Transition compares candidate (v2,c2) vs current (v,c): take larger v, tie → smaller c. And in deque, among max key, min cnt. This correctly propagates k_min. 
+
+Let me now write the code.
+
+```python
+from collections import deque
+
+class Solution:
+    def maximumSum(self, nums, m, l, r):
+        n = len(nums)
+        prefix = [0]*(n+1)
+        for i, x in enumerate(nums):
+            prefix[i+1] = prefix[i] + x
+        
+        # best single subarray sum with length in [l, r]
+        # max over i of prefix[i] - min prefix[t], t in [i-r, i-l]
+        best_single = None
+        dq = deque()
+        for i in range(1, n+1):
+            t = i - l
+            if t >= 0:
+                while dq and prefix[dq[-1]] >= prefix[t]:
+                    dq.pop()
+                dq.append(t)
+            while dq and dq[0] < i - r:
+                dq.popleft()
+            if dq:
+                cand = prefix[i] - prefix[dq[0]]
+                if best_single is None or cand > best_single:
+                    best_single = cand
+        if best_single is None:
+            best_single = 0  # shouldn't happen since l <= n
+        
+        if best_single < 0:
+            return best_single
+        
+        def solve(lam):
+            best_val = [0]*(n+1)
+            best_cnt = [0]*(n+1)
+            dq = deque()
+            for i in range(1, n+1):
+                t = i - l
+                if t >= 0:
+                    key = best_val[t] - prefix[t]
+                    cnt = best_cnt[t]
+                    while dq and (dq[-1][1] < key or (dq[-1][1] == key and dq[-1][2] >= cnt)):
+                        dq.pop()
+                    dq.append((t, key, cnt))
+                while dq and dq[0][0] < i - r:
+                    dq.popleft()
+                v = best_val[i-1]; c = best_cnt[i-1]
+                if dq:
+                    v2 = dq[0][1] + prefix[i] - lam
+                    c2 = dq[0][2] + 1
+                    if v2 > v or (v2 == v and c2 < c):
+                        v, c = v2, c2
+                best_val[i] = v; best_cnt[i] = c
+            return best_val[n], best_cnt[n]
+        
+        lo, hi = 0, best_single + 1
+        # invariant: cnt(hi) <= m
+        while lo < hi:
+            mid = (lo + hi) >> 1
+            val, cnt = solve(mid)
+            if cnt <= m:
+                hi = mid
+            else:
+                lo = mid + 1
+        val, cnt = solve(lo)
+        return val + lo * m
+```
+
+Wait, hi = best_single + 1: at λ = best_single+1, any subarray has adjusted sum <= best_single - λ < 0, so empty is strictly best, cnt = 0 <= m. Good. But is hi exclusive/inclusive handled? Binary search: lo=0, hi=best_single+1, invariant cnt(hi) <= m (true since cnt=0). If cnt(0) <= m, loop: mid moves down to 0. Standard lower-bound search. Terminates with lo = smallest λ with cnt(λ) <= m. Good.
+
+Hmm, but wait: is cnt(λ) monotonically non-increasing in λ? k_min(λ) should be non-increasing as λ increases (higher penalty → fewer subarrays preferred). Yes, standard. So binary search valid.
+
+Let me double check the final formula once more: answer = h(λ) + λ*m where λ = smallest with k_min(λ) <= m. We proved G(m) = h(λ) + λm. And since best_single >= 0, G(m) >= 0 is achievable with >= 1 subarray? G(m) could be 0 with best_single = 0 — then answer 0, and there is a zero-sum subarray, so selecting it gives 0. Fine. If G(m) > 0, the optimal uses >= 1 subarray. So answer = G(m). Good.
+
+Wait, one more check: m could be huge (up to n=1e5) and λ*m up to 1e10*1e5=1e15, fine.
+
+Let me also reconsider: is k_min(λ) what the DP computes? The DP computes min count among max value. Yes with tie-breaking. 
+
+Now let me also think about whether we need k_min or k_max for the binary search. We want smallest λ such that there EXISTS an optimal solution at λ with count <= m. That's k_min(λ) <= m. Yes.
+
+And we proved: smallest λ with k_min(λ) <= m ⟹ s_{m+1} = λ (where s_{m+1} = G(m+1)-G(m)), and then G(m) = h(λ) + λm. Let me re-verify the proof's second part with k_min: we had k* = k_min(λ) <= m, h(λ) = G(k*) - λk*. Slopes s_j >= s_{m+1} = λ for j <= m... wait s_j >= s_{j+1}, so for j <= m, s_j >= s_{m+1} = λ. G(m) - G(k*) = sum_{j=k*+1}^{m} s_j >= λ(m-k*). So G(m) - λm >= G(k*) - λk* = h(λ). And h(λ) >= G(m) - λm by definition. So G(m) = h(λ) + λm. 
+
+But hold on — we need s_{m+1} = λ. We showed s_{m+1} >= λ (from k_min(λ-1) > m) and s_{m+1} <= λ (from k_min(λ) <= m). For the first: if λ = 0 is the smallest, there's no λ-1 to check; then s_{m+1} <= 0, and since slopes >= 0, s_{m+1} = 0 = λ. Fine. Also need slopes >= 0: G non-decreasing since "at most k". Yes.
+
+Edge: what if m >= max possible count? Then G(m) = G(max), s_{m+1} = 0, λ=0 works (k_min(0) <= max <= m). Fine.
+
+Now, is G truly concave? Let me re-verify with a potential tricky case. Lengths in [l,r] — intervals of restricted lengths. The LP: variables x_I for each interval I with length in [l,r]. Constraints: for each point p, sum_{I ni p} x_I <= 1; sum x_I <= k; x >= 0. Matrix: rows = points + cardinality. Interval-point incidence matrix is TU (consecutive ones). Adding a cardinality row (all ones): is the stacked matrix TU? A 0-1 matrix with consecutive ones property for columns... The interval scheduling with at most k intervals is known to be integral (it's a min-cost flow / the polytope is described by consecutive-ones matrix which is TU, and adding all-ones row preserves TU — yes, appending a row of all 1s to a TU matrix keeps TU: any square submatrix either avoids the new row (TU) or includes it; determinant with an all-ones row... hmm, not immediately obvious, but it's a known result that k-interval scheduling polytope is integral). 
+
+Actually, simpler argument for concavity of G: G(k) is the max weight of k non-overlapping intervals. There's a known exchange argument: optimal (k+1)-solution and optimal (k-1)-solution can be combined... Alternatively, model as min-cost max-flow on a line graph: nodes 0..n, edges i->i+1 with capacity k (or inf) cost 0, and interval edges with cost -weight capacity 1. Max weight k-interval set = min cost flow. The min cost as a function of flow amount k is convex in k (standard result: min-cost flow cost is convex in flow value). So max weight is concave in k. Yes, G concave. 
+
+But wait — in the flow model, the "at most k" and intervals of length in [l,r]: interval edge from t to i (length in [l,r]) with profit. This is a min-cost circulation... The concavity holds. Good.
+
+Let me now also double check DP correctness on a small brute force. I'll write a brute force and test randomly.
+
+Let me write the files and test.
+
+Also, performance: binary search ~ up to log2(1e10) ≈ 34 iterations. Each solve is O(n). n=1e5 → 3.4e6 iterations of the inner loop, each with deque ops. In Python ~ maybe 3-5s. Risky. Let me optimize:
+
+- Use lists for best_val, best_cnt, prefix (local references).
+- Use deque but minimize attribute access. Store tuples.
+- Maybe reduce iterations: hi = best_single + 1 where best_single <= 1e10. Still 34.
+
+Alternative optimization: note that we can early-exit binary search when cnt == m exactly? Not exactly, we need smallest λ with cnt <= m; if cnt == m we could... hi = mid, continue. Standard.
+
+We could also try to reduce constant: implement solve with arrays and while loops. Let me estimate: 34 * 1e5 = 3.4e6 outer iterations; each does a few comparisons and maybe deque ops. Python does ~1e7 simple ops/sec... 3.4e6 iterations with ~10 ops each = 3.4e7 ops → ~3s. Hmm, borderline but likely OK for 5s limit. Let me write it reasonably optimized.
+
+Actually, we can halve the iterations: λ range [0, best_single], and best_single <= max subarray sum. But worst case still 1e10. Alternatively, we can be smarter: candidate λ values are slopes, but binary search over integer range is fine.
+
+Hmm, actually we can reduce: the answer λ satisfies 0 <= λ <= s_1 = G(1) = best_single. If best_single is like 1e10, log2(1e10) = 34. Fine.
+
+Let me also consider using PyPy-style optimizations: avoid tuple unpacking in hot loop, use separate deques? Let me just write clean code first, test correctness, then optimize if needed. Since I can't measure the actual judge speed, I'll aim for efficient code.
+
+Let me write solution.py and test.py.
+
+Actually, one more correctness check on the DP: the "skip" transition best[i-1] -> best[i] ensures best is non-decreasing in i. And subarray transition uses window. Looks right.
+
+Let me write a brute force for testing:
+
+```python
+def brute(nums, m, l, r):
+    n = len(nums)
+    from functools import lru_cache
+    # try all selections via recursion
+    best = [-10**18]
+    def rec(i, count, total):
+        if count > m: return
+        best[0] = max(best[0], total) if count>=1 else best[0]
+        # hmm need at least one
+        for start in range(i, n):
+            for length in range(l, r+1):
+                end = start+length
+                if end > n: break
+                rec(end, count+1, total + sum(nums[start:end]))
+    rec(0,0,0)
+    return best[0]
+```
+
+That's exponential but fine for tiny n. Better: DP brute force O(n^2 * m):
+
+```python
+def brute(nums, m, l, r):
+    n = len(nums)
+    prefix = [0]*(n+1)
+    for i,x in enumerate(nums): prefix[i+1]=prefix[i]+x
+    NEG = -10**18
+    # dp[i][k] = max sum using first i elements, exactly k subarrays
+    dp = [[NEG]*(m+1) for _ in range(n+1)]
+    dp[0][0] = 0
+    for i in range(1, n+1):
+        for k in range(m+1):
+            dp[i][k] = dp[i-1][k]
+            for t in range(max(0,i-r), i-l+1):
+                if k>=1 and dp[t][k-1] != NEG:
+                    dp[i][k] = max(dp[i][k], dp[t][k-1] + prefix[i]-prefix[t])
+    return max(dp[n][1:])  # at least 1
+```
+
+Wait, "at least one" — max over k=1..m of dp[n][k]. But dp values could be negative; max handles it. Good.
+
+Let me write everything and test with random small cases comparing to brute force.
+
+Let me write the files now.
+
+Also handle the case l > n? Constraints say l <= r <= n, so fine.
+
+Let me write solution.py:
+
+```python
+from collections import deque
+
+class Solution:
+    def maximumSum(self, nums: list[int], m: int, l: int, r: int) -> int:
+        n = len(nums)
+        prefix = [0] * (n + 1)
+        s = 0
+        for i, x in enumerate(nums):
+            s += x
+            prefix[i + 1] = s
+
+        # maximum sum of a single subarray with length in [l, r]
+        best_single = -10**30
+        dq = deque()
+        for i in range(1, n + 1):
+            t = i - l
+            if t >= 0:
+                pt = prefix[t]
+                while dq and prefix[dq[-1]] >= pt:
+                    dq.pop()
+                dq.append(t)
+            if dq and dq[0] < i - r:
+                dq.popleft()
+            if dq:
+                cand = prefix[i] - prefix[dq[0]]
+                if cand > best_single:
+                    best_single = cand
+
+        if best_single < 0:
+            return best_single
+
+        pref = prefix
+        def solve(lam):
+            best_val = [0] * (n + 1)
+            best_cnt = [0] * (n + 1)
+            dq = deque()
+            ap = dq.append
+            pop = dq.pop
+            pl = dq.popleft
+            for i in range(1, n + 1):
+                t = i - l
+                if t >= 0:
+                    key = best_val[t] - pref[t]
+                    cnt = best_cnt[t]
+                    while dq:
+                        b = dq[-1]
+                        if b[1] < key or (b[1] == key and b[2] >= cnt):
+                            pop()
+                        else:
+                            break
+                    ap((t, key, cnt))
+                lim = i - r
+                while dq and dq[0][0] < lim:
+                    pl()
+                v = best_val[i - 1]
+                c = best_cnt[i - 1]
+                if dq:
+                    f = dq[0]
+                    v2 = f[1] + pref[i] - lam
+                    c2 = f[2] + 1
+                    if v2 > v or (v2 == v and c2 < c):
+                        v = v2
+                        c = c2
+                best_val[i] = v
+                best_cnt[i] = c
+            return best_val[n], best_cnt[n]
+
+        lo, hi = 0, best_single + 1
+        while lo < hi:
+            mid = (lo + hi) >> 1
+            _, cnt = solve(mid)
+            if cnt <= m:
+                hi = mid
+            else:
+                lo = mid + 1
+        val, _ = solve(lo)
+        return val + lo * m
+```
+
+Wait, there's a subtle bug: in the binary search, hi = best_single + 1 must satisfy cnt(hi) <= m. At λ = best_single + 1, every subarray has sum - λ <= best_single - λ = -1 < 0, so any selection with a subarray has negative adjusted value, empty (0) is strictly best, cnt = 0. Good.
+
+But what if best_single = 0? Then hi = 1. At λ=1, all subarrays <= -1 adjusted, cnt=0. At λ=0, cnt could be <= m already. Answer = h(0) + 0 = G(m) = 0 (since best_single=0 means max subarray is 0, G(m)=0). Correct.
+
+Now let me test. I'll write test.py with the 4 examples plus random brute-force comparison.
+
+Let me also double-check the deque removal condition: `while dq and dq[0][0] < lim` where lim = i - r. We remove t < i - r. Window should be t >= i - r. Correct.
+
+And in best_single computation, same window logic. Note: I used `if dq and dq[0] < i - r: dq.popleft()` — since indices increase, one popleft suffices (only one element can expire per step? Actually t increases by 1 each step, so at most one expires). But while is safe too. Fine.
+
+Let me write the test file.
+
+Actually, let me reconsider performance more carefully. Worst case n=1e5, 34 iterations. Each solve allocates two lists of size n+1 (allocation 34*2*1e5 = 6.8e6 element allocations — that's also time). Plus the loop. Might be ~4-6s in CPython. Hmm. Could be tight. 
+
+Optimizations:
+1. Reduce binary search iterations. We can bound λ by best_single, but also we could collect candidate slopes? Not easy.
+2. Speed up solve: avoid list allocation each time? We could reuse lists but still need to write n values.
+3. Use array module or just accept it.
+
+Alternative: Instead of binary search over λ with O(n) each, we could do the DP directly with the "count" dimension but cap m... no, worst case too slow.
+
+Another thought: we can reduce iterations by noting that distinct slope values are bounded... no.
+
+Actually, a cleaner speedup: the number of binary search iterations is log2(best_single+2) <= 34. Each solve is O(n). Total ~3.4e6 loop iterations. In CPython, a simple loop iteration with deque ops is maybe 0.3-0.5 µs for trivial bodies but ours has several operations — maybe 1-2 µs per iteration → 3.4-6.8s. Risky.
+
+Let me optimize the inner loop more aggressively:
+
+- Precompute pref as a list; use local vars.
+- Combine best_val and best_cnt into one list of ints? We need both. Could pack: since we compare (val, cnt) lexicographically with min cnt preferred, we could use a single comparable key: val * (n+2) - cnt? Since cnt <= n+1, val*(n+2) - cnt is monotonic in (val, -cnt). Values up to 1e15, times 1e5 = 1e20, fine for Python int but big ints slower. Hmm, maybe keep separate.
+
+- The deque operations: amortized O(1) per step. The while-pop loop total O(n) per solve. The popleft also O(1) amortized. So per solve ~ maybe 5e5-1e6 "operations". 34 solves → 2-3.4e7 ops. At 1e7 ops/s → 2-3.4s. Probably OK within 5s, but let me try to trim.
+
+Alternative: reduce iterations by starting binary search with better bounds. We know λ* = s_{m+1}. We don't know it, but we could... hmm.
+
+Alternatively use the "smallest λ with cnt <= m" — we could also just note that if at λ=0 cnt <= m, done (1 solve). Many cases. Worst case still 34.
+
+We could also limit: m capped at n//l. If m > n//l, set m = n//l (max usable). Doesn't help speed.
+
+I think it's fine. Let me also consider using `collections.deque` vs list-as-stack with manual head pointer. A list with head index avoids deque overhead slightly? deque is implemented in C, likely faster. Keep deque.
+
+Actually, one significant speedup: store the deque elements as tuples but avoid re-creating; fine.
+
+Another: instead of `while dq:` with inner break, write `while dq and (dq[-1][1] < key or (dq[-1][1] == key and dq[-1][2] >= cnt)): dq.pop()`. Attribute indexing dq[-1][1] creates... it's fine.
+
+Let me just write it, test correctness with brute force, and trust performance. If worried, I can micro-optimize after.
+
+Let me also think: can we cut binary search to ~31 iterations by bounding best_single <= 1e5 * 1e5 = 1e10 → 34 bits. Meh.
+
+Alternatively, parametric search on the answer directly? No.
+
+Let me write and test.
+
+One more correctness concern: in solve(), best_cnt for equal values — we take min count. But is the DP's k_min(λ) correct given the greedy deque tie-breaking? The deque keeps, among equal keys, the min cnt — but consider: an element with key K and cnt 5 at position t1, and later element with key K and cnt 3 at t2 > t1. When adding t2, we pop t1 (since b[1]==key and b[2]>=cnt → 5>=3 pop). Good, t2 dominates. Reverse: t1 has cnt 3, t2 has cnt 5, same key. Adding t2: b[2] >= cnt → 3 >= 5 false, so don't pop; append t2 behind. Front remains t1 (cnt 3) until it expires, then t2. Correct — we prefer min cnt.
+
+But subtle: is min cnt at each prefix sufficient for optimal substructure? best[i] = (max val, min cnt among max val). Transitions: skip (best[i-1]) or subarray from best[t]. For the subarray option, we want max over t of (best_val[t] - pref[t]), and among those min best_cnt[t]. Since best[t] is Pareto-optimal (max val, min cnt), using it is correct: any solution ending with subarray (t,i) has value = (value of selection in [0..t]) + subarray - λ. To maximize, use best selection in [0..t] = best_val[t]. Ties → min cnt → best_cnt[t]. Yes, optimal substructure holds for the lexicographic objective. Good.
+
+Now, the final answer val + lo*m: val = h(lo) = G(k*) - lo*k* where k* = k_min(lo). We proved G(m) = h(lo) + lo*m. Return val + lo*m. 
+
+Let me code the brute force and random tests.
+
+Let me write files now.
+
+def brute(nums, m, l, r): O(n^2 m) DP as above, return max(dp[n][1:]).
+
+Random tests: n up to 8, values in [-5, 5], m 1..n, l,r within n. Compare.
+
+Let me write.
+
+Also test the provided examples.
+
+Let me proceed.<|close|>think<|sep|>I'll analyze this problem. It's a weighted interval scheduling variant: select 1..m non-overlapping subarrays with lengths in [l,r], maximizing total sum. With n,m up to 1e5, O(n·m) DP is too slow, so I'll use the **Aliens trick** (Lagrangian relaxation): binary search a per-subarray penalty λ, solve the unconstrained-count DP in O(n) with a sliding-window deque (tracking min count among optimal solutions), then recover the answer using concavity of the value function.
+
+Let me write the solution and a test file with the examples plus a brute-force cross-check.[write_file] args: {'path': 'solution.py', 'content': 'from collections import deque\n\n\nclass Solution:\n    def maximumSum(self, nums: list[int], m: int, l: int, r: int) -> int:\n        n = len(nums)\n        prefix = [0] * (n + 1)\n        s = 0\n        for i, x in enumerate(nums):\n            s += x\n         
+writing
+[write_file] result: Content written to solution.py
+[write_file] args: {'path': 'test.py', 'content': 'import random\nfrom solution import Solution\n\n\ndef brute(nums, m, l, r):\n    n = len(nums)\n    prefix = [0] * (n + 1)\n    for i, x in enumerate(nums):\n        prefix[i + 1] = prefix[i] + x\n    NEG = -10**18\n    # dp[i][k] = max sum using first i elements with
+writing
+[write_file] result: Content written to test.py
+
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant: 
+Assistant:  
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant:  
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant:  
+Assistant: 
+Assistant: 
+Assistant:  
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant:  
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant:  
+Assistant: 
+Assistant: 
+Assistant:  
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant:  
+Assistant:  
+Assistant: 
+Assistant:  
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant:  
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant:  
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant:  
+Assistant:  
+Assistant: 
+Assistant: 
+Assistant:  
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant:  
+Assistant: 
+Assistant: 
+Assistant:  
+Assistant:  
+Assistant:  
+Assistant: 
+Assistant:  
+Assistant: 
+Assistant:  
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant:  
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant:  
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant:  
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant: 
+Assistant:  

@@ -41,6 +41,7 @@ class ModelInvoker:
 
         rspns = ""
         tool_calls = {}
+        finish_reason, provider, usage, reasoning_chars = None, None, None, 0
         print("\nAssistant: ", end="")
         for line in response.iter_lines():
             line = line.decode("utf-8")
@@ -51,9 +52,13 @@ class ModelInvoker:
                 chunk = json.loads(data)
                 if "error" in chunk:
                     print(f"\n[stream error] {chunk['error']}")
+                provider = chunk.get("provider", provider)
+                usage = chunk.get("usage", usage)
                 if not chunk.get("choices"):
                     continue
                 delta = chunk["choices"][0]["delta"]
+                finish_reason = chunk["choices"][0].get("finish_reason") or finish_reason
+                reasoning_chars += len(delta.get("reasoning") or "")
                 if "content" in delta and delta["content"]:
                     print(delta["content"], end="", flush=True)
                     rspns += delta["content"]
@@ -70,6 +75,7 @@ class ModelInvoker:
                         }
                     tool_calls[i]["function"]["arguments"] += call["function"].get("arguments", "")
         
+        print(f"\n[finish_reason: {finish_reason} | provider: {provider} | reasoning chars: {reasoning_chars} | usage: {usage}]")
         response_block = {"role": "assistant", "content": rspns}
         if tool_calls:
             response_block["tool_calls"] = list(tool_calls.values())

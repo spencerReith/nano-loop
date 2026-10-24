@@ -1,0 +1,1082 @@
+
+Assistant: Let me analyze this problem:
+
+1. `nums1` is small (≤ 5 elements)
+2. `nums2` is large (≤ 5×10^4 elements)
+3. Queries: range add on nums2, and count pairs (j,k) with nums1[j] + nums2[k] == tot
+
+Since nums1 has at most 5 elements, for a type-2 query with total `tot`, the answer is:
+sum over j of count of elements in nums2 equal to `tot - nums1[j]`.
+
+So we need a data structure on nums2 that supports:
+- Range add
+- Query: count of elements equal to a specific value
+
+A segment tree with lazy propagation where each node stores a Counter of values in its range. But range add shifts all values in a node by val — we can maintain a lazy "add" tag per node, and the Counter stores the original values; when querying for value v in a node with accumulated add `a`, we look up `v - a` in the counter.
+
+Actually, a cleaner approach: since nums1 is tiny (≤5), we can think of it differently. For each value v in nums1, we need count of nums2 elements equal to tot - v.
+
+Segment tree approach:
+- Build a segment tree over nums2. Each node stores a sorted list (or Counter) of values in its range.
+- Range add: lazy propagation. When a node is fully covered, add val to its lazy tag.
+- Point query count of value v over whole array: traverse from root, accumulating lazy tags along the path... but we need count over the whole array, not a point.
+
+Hmm, counting elements equal to v over the whole array with range adds: we traverse the tree. At each node, the effective values are stored_values + lazy_tag (accumulated from ancestors). If we query the whole array, we visit nodes covering the whole range. For each node fully inside the query range (the whole array), count = counter[v - accumulated_lazy]. We sum over the O(log n) nodes that partition the range [0, n-1].
+
+Wait, but the lazy tag at a node applies to its whole segment. When we query the full range, we decompose [0, n-1] into O(log n) canonical nodes. For each such node, the effective values = stored + (sum of lazy tags from root to that node, including its own). So count of v = counter.get(v - total_lazy).
+
+Range add with lazy: standard. When updating a node fully covered, node.lazy += val. When pushing down, propagate.
+
+But there's a subtlety: the Counter at each node is built from initial values and never changes (the lazy tags handle the adds). Since adds only shift values, and we never need to merge/split counters, this works.
+
+Build: O(n) counters total size O(n). Each query type 2: for each of ≤5 values in nums1, do a range-count query O(log n). So O(5 log n) per type-2 query. Type 1: O(log n) range add.
+
+Total: O((n + q) log n × 5) — well within limits.
+
+Let me implement an iterative or recursive segment tree.
+
+Recursive approach with arrays:
+- tree counter: list of dicts, size 4n
+- lazy: list of ints, size 4n
+
+Build(node, l, r): if l==r, counter = {nums2[l]: 1}; else merge children counters (add counts).
+
+Range add: standard lazy.
+
+Query count of value v over [0, n-1]: recursive function that carries down accumulated lazy. Actually simpler: query(node, l, r, ql, qr, v, acc) where acc is accumulated lazy from ancestors. If node fully inside: return counter.get(v - acc - lazy[node], 0)... wait, need to be careful: the lazy at node applies to the node's segment. So effective value = stored + acc + lazy[node] where acc is sum of ancestors' lazy. So count = counter.get(v - (acc + lazy[node])).
+
+For partial overlap: recurse to children with acc + lazy[node].
+
+Since we always query the full range, ql=0, qr=n-1.
+
+Alternatively, push-down style. Let me just do the accumulate approach.
+
+Let me write it:
+
+```python
+from collections import Counter
+
+class Solution:
+    def numberOfPairs(self, nums1, nums2, queries):
+        n = len(nums2)
+        size = 4 * n
+        cnt = [None] * size
+        lazy = [0] * size
+
+        def build(node, l, r):
+            if l == r:
+                cnt[node] = {nums2[l]: 1}
+                return
+            mid = (l + r) // 2
+            build(2*node, l, mid)
+            build(2*node+1, mid+1, r)
+            c = dict(cnt[2*node])
+            for k, v in cnt[2*node+1].items():
+                c[k] = c.get(k, 0) + v
+            cnt[node] = c
+
+        build(1, 0, n-1)
+
+        def add(node, l, r, ql, qr, val):
+            if ql <= l and r <= qr:
+                lazy[node] += val
+                return
+            mid = (l + r) // 2
+            if ql <= mid:
+                add(2*node, l, mid, ql, qr, val)
+            if qr > mid:
+                add(2*node+1, mid+1, r, ql, qr, val)
+
+        def query(node, l, r, ql, qr, v, acc):
+            acc += lazy[node]
+            if ql <= l and r <= qr:
+                return cnt[node].get(v - acc, 0)
+            mid = (l + r) // 2
+            res = 0
+            if ql <= mid:
+                res += query(2*node, l, mid, ql, qr, v, acc)
+            if qr > mid:
+                res += query(2*node+1, mid+1, r, ql, qr, v, acc)
+            return res
+
+        # Deduplicate nums1 values with counts
+        from collections import Counter as C
+        c1 = C(nums1)
+
+        ans = []
+        for q in queries:
+            if q[0] == 1:
+                _, x, y, val = q
+                add(1, 0, n-1, x, y, val)
+            else:
+                tot = q[1]
+                total = 0
+                for v, c in c1.items():
+                    total += c * query(1, 0, n-1, 0, n-1, tot - v, 0)
+                ans.append(total)
+        return ans
+```
+
+Recursion depth: tree depth ~ log2(5×10^4) ≈ 17, fine. But number of recursive calls could be large; Python recursion limit default 1000 — depth is fine.
+
+Performance: build is O(n) dict merges but each merge at higher levels is O(segment size), total O(n log n) ~ 5e4 × 17 = 8.5e5 dict operations — fine.
+
+Queries: each type-2 does ≤5 full-range queries, each O(log n) nodes visited (full range decomposes into O(log n) canonical nodes... actually visiting full range visits O(log n) nodes since root is fully covered immediately! Wait — query [0, n-1] on root: root is fully covered, so it returns immediately at root!
+
+Oh right! If we always query the entire array, the root covers everything, so query is just cnt[root].get(v - lazy[root])... but wait, that's only valid if all adds applied to the root's lazy. But range adds on subranges push lazy to children, not root. The root's counter stores initial values; effective values of elements = initial + sum of lazy tags on path from root to leaf. The root's lazy only captures adds covering the whole array.
+
+So for a full-range count query, we can't just look at root. We need to traverse down, accumulating lazy, and at each node... hmm, but if we traverse the whole tree it's O(n).
+
+Wait, reconsider. The query function with ql=0, qr=n-1: at root, fully covered → returns cnt[root].get(v - lazy[root]). That's wrong because children's lazy tags aren't accounted for.
+
+The issue: the counter at root represents initial values, and root.lazy represents adds applied to the whole range. But adds to subranges updated children's lazy, and root's counter doesn't reflect those. So root's counter + root.lazy does NOT give the current distribution.
+
+So the invariant needs care. Standard segment tree with lazy: node.counter should represent the values in its segment INCLUDING its own lazy tag applied? No — typically with lazy, the node's stored aggregate reflects updates applied to it fully (i.e., includes its lazy), but not yet propagated to children.
+
+If counter stored value distribution, applying an add of val to a node would require shifting all keys in the counter by val — expensive. That's why we keep counter as initial and use lazy offset. But then the parent's counter is stale relative to children's lazies.
+
+Alternative: query must traverse to leaves? No.
+
+Better approach: query full range means we need sum over all canonical nodes... but full range is just root. The problem is root's counter doesn't reflect partial updates.
+
+Hmm. So we need a different invariant. Option: don't store counters at internal nodes based on initial values; instead, the query traverses down accumulating lazy until it reaches nodes whose counter is "valid". But counters are only valid (reflecting current values via their own lazy) if all updates to that segment were full-cover updates. Partial updates went deeper.
+
+Standard lazy segment tree query: to query full range, you'd traverse and combine children's results when the node isn't fully covered... but full range always fully covers root.
+
+The real fix: the query for the whole array must aggregate over a decomposition where each node's (counter, lazy) accurately reflects current values. With lazy propagation, a node's counter + its lazy reflects current values of its segment ONLY IF we consider that updates fully covering the node updated its lazy, and updates partially covering pushed... but in my `add` function, partial updates don't push lazy down first, and don't update the node's counter. So after a partial update, the node's counter is stale.
+
+In standard lazy segment trees (e.g., sum), after partial update you'd recompute node.sum = left.sum + right.sum to keep it valid. Here we can't recompute counter cheaply.
+
+So the counter approach requires the query to go down to nodes that haven't been "split". Actually the standard way: query traverses; if node fully covered by query range, use node data (valid because node.lazy accounts for all full updates, and any partial updates... no wait).
+
+Let me think again with the sum example: node.sum is always kept valid: full cover update adds val*(r-l+1) to node.sum and sets lazy. Partial update: push lazy to children, recurse, then node.sum = left.sum + right.sum. So node.sum always valid.
+
+For counter: full cover update — we can't shift keys, so we use lazy offset: counter stores values WITHOUT the lazy offset; effective = counter keys + lazy. That's fine and O(1). Partial update: push (propagate lazy to children — children's lazy += node.lazy, node.lazy = 0), recurse into children, then... node.counter = merge of children's counters? That's expensive (O(segment size)).
+
+Hmm, but note: after push, children's counters + children's lazy reflect current values. Merging children's counters (raw keys) gives node.counter valid with node.lazy = 0. But merge cost O(size).
+
+Alternative: don't merge. Keep node.counter stale but query traverses to leaves in the worst case — O(n) per query. Too slow potentially: 5e4 queries × 5e4 = 2.5e9. Too slow.
+
+Better idea: since nums1 ≤ 5, use a different structure. 
+
+Alternative approach: sqrt decomposition. Block size ~ sqrt(n) ≈ 224. Each block maintains a Counter of its values (actual current values) and a lazy add tag. Range add: for full blocks, lazy += val; for partial blocks, apply to elements individually and rebuild counter (O(block size)). Count query for value v over whole array: for each block, counter.get(v - block_lazy), sum. O(number of blocks) = O(sqrt(n)) per value, × 5 values = O(5 sqrt(n)) ≈ 1100 per type-2 query. With 5e4 queries: 5.5e7 — might be borderline but okay in 12s? Python might be too slow. Hmm.
+
+Actually let's reconsider the segment tree but with a smarter query. 
+
+Key insight: we query the WHOLE array every time. So we need to maintain the global multiset of values under range adds. 
+
+Segment tree where each node's counter reflects current values of its segment (with lazy offset trick). The issue is only keeping parent counters updated. 
+
+Alternative: query by traversing and only using nodes where the segment is "clean". Actually here's the standard trick: with lazy propagation, when we do a partial update, we push lazy down first. The node's counter remains valid in the sense: effective values of segment = counter keys + (sum of lazies from root to this node)? No. After a partial update to children, children's values changed but node's counter didn't. So node.counter + path lazy ≠ current values. Broken.
+
+So for the counter approach to work with O(log n) full-range queries, we need the root counter to always reflect the true distribution. That requires updating all O(log n) ancestors' counters on each update... but a range add changes values, requiring key shifts in ancestor counters — expensive.
+
+Hmm wait — actually there's a neat trick. Since we only ever query the whole array, think about it as: we need, for value v, count of indices i with nums2[i] + (range-add structure)[i] == v.
+
+Alternative: for each of the ≤5 values a in nums1, we need count of nums2[i] == tot - a. 
+
+Different idea: since nums1 is tiny, answer = sum over a in nums1 of (count of tot-a in nums2). Maintain a global Counter of nums2 values. Range add [x, y, val] changes values of up to y-x+1 elements — updating the global counter requires knowing each element's old value, O(length) per update. Worst case 5e4 × 5e4 = 2.5e9. Too slow.
+
+So we need the block/segment approach. Let's reconsider sqrt decomposition complexity: 
+- n = 5e4, blocks ≈ 224 of size ≈ 224.
+- Type 1 update: O(number of full blocks + partial block rebuild) = O(sqrt(n)) ≈ 224 + 2×224 = ~672 operations.
+- Type 2 query: for each block, dict lookup per distinct nums1 value (≤5): 224 × 5 = 1120 dict lookups.
+- 5e4 queries worst case all type 2: 5.6e7 dict lookups. In Python, ~5.6e7 operations might take ~10-20s. Risky.
+
+Segment tree with counters, done right: Let's reconsider. Actually the segment tree CAN work if we never need to merge after updates. Key: query full range. Traverse tree; maintain accumulated lazy from ancestors. We want to sum, over a partition of [0,n-1] into nodes, of counter.get(v - acc). Which partition? The partition into "maximal clean nodes" — but every node's counter is stale after partial updates beneath it.
+
+Unless... we use the counters only at leaves? No.
+
+OK here's another thought: what if internal node counters are NOT updated on partial updates, and the query traverses all the way down whenever a node has been partially updated? We can track a "dirty" flag. Worst case degrades.
+
+Let me think about the segment tree more carefully with the correct invariant:
+
+Invariant: For each node, `cnt[node]` (keys shifted by `lazy[node]`) equals the true current multiset of its segment, PROVIDED we only require this when the node is "resolved". Standard lazy: node is fully updated → lazy updated, cnt stays (keys + lazy = true values ✓). Partial update → push lazy to children (children's lazy += node.lazy; node.lazy = 0; now children are valid), recurse, then pull: cnt[node] = merge(cnt[left], cnt[right]).
+
+The pull merge is O(segment size) — too expensive in worst case (update [0,0] costs O(n) at root). Total could be O(n q). Too slow.
+
+So segment tree with value counters doesn't easily work. 
+
+Alternative: Since values can be up to 1e5 and adds up to 1e5 × 5e4 = 5e9, value range is large.
+
+Let me reconsider: nums1 ≤ 5 is the key constraint. For each a in nums1, define target t = tot - a. We need frequency of t in nums2.
+
+What about a segment tree / BIT over... hmm.
+
+Alternative approach: sqrt decomposition with smaller constant. Actually, let's reconsider: number of type-2 queries could be up to 5e4. 5e4 × 224 blocks × (up to 5 lookups) — but we can reduce: distinct values in nums1 ≤ 5. Lookups per block = number of distinct targets ≤ 5. So 5e4 × 224 × 5 = 5.6e7 dict.get calls. Each dict.get ~50-100ns → 3-6 seconds. Plus update costs. Might fit in 12s but risky in Python.
+
+Can we do better? Choose block size to balance: update cost O(n/B + B), query cost O((n/B) × 5). If many type-2 queries, larger B better. Optimal B = sqrt(n × updates / (5 × queries))... unknown distribution. Balanced: B = sqrt(n) ≈ 224.
+
+Alternatively, a segment tree where each node stores a Counter, built once, and updates use lazy without merging — and the QUERY traverses correctly. Let me reconsider the query traversal:
+
+The problem was root's counter is stale after partial updates. But what if the query, instead of relying on root, traverses down and uses canonical decomposition with accumulated lazy, treating each node's counter as valid only relative to its own subtree's initial state plus its own lazy... no, still stale.
+
+Hmm wait, actually, let me reconsider. Is the counter really stale? Consider the invariant: "cnt[node] keys + lazy[node] + (ancestors' lazy sum) = true values". Initially true (lazy=0). Full-cover add on node: lazy[node] += val. Then true values of node's segment all increased by val ✓ invariant maintained. Partial-cover add: we recurse into children (after optionally pushing). Node's cnt unchanged, node's lazy unchanged. But children's values changed, so node's segment values changed, while cnt[node] + lazy[node] + ancestors unchanged → invariant BROKEN for node. Unless we push the update's effect into node... which requires shifting keys.
+
+So yes, broken. The only fix is the pull-merge, expensive.
+
+BUT: here's a thought — what if we only query full range, and we ensure updates always propagate to maintain root validity? No.
+
+Alternative clever approach: offline? Queries are sequential with dependencies, but we could process online with a Fenwick of... no, values shift.
+
+Let me reconsider the problem from LeetCode constraints: this is problem 3943 (hard-ish?). Actually "Number of Pairs After Increment" — I recall a similar problem. The intended solution likely uses sqrt decomposition or a segment tree with lazy + counter where query is full-range and they DO traverse to O(log n) nodes... 
+
+Wait, actually maybe I'm overcomplicating. Let me reconsider: maybe intended solution: since nums1 ≤ 5, for type-2 query answer = Σ_a freq(tot - a). Maintain freq via sqrt decomposition. Given time limit 12s, sqrt decomposition in Python should pass.
+
+Actually, let me reconsider the segment tree approach with a different lens: store counters at nodes built from INITIAL values. Updates only update lazy (never merge). Query(v): we need count of indices i where initial[i] + totaladd(i) == v, where totaladd(i) = sum of all range adds covering i. 
+
+Define f(i) = total add applied to index i. We need count of i with nums2_initial[i] + f(i) == v.
+
+f is a piecewise-constant function (after q updates, O(q) breakpoints... up to 1e5 breakpoints). Hmm, could use a map from intervals... but intervals fragment.
+
+Segment tree beats? No.
+
+OK here's another angle: the query traverses the segment tree; at each node, the accumulated lazy from ancestors PLUS the node's own lazy gives the offset for ALL elements in the node's segment IF the node's subtree has no pending partial updates below... no.
+
+Hmm, let me think about which nodes' counters are accurate. cnt[node] reflects initial values. lazy[node] reflects full-cover updates applied to node. When we do a partial update, we push lazy down (so children's lazy absorbs node's lazy, keeping children accurate), then recurse. After recursion, children's counters may become stale (if the update partially covers them), but the update fully covers some nodes and updates their lazy — those stay accurate.
+
+A node's counter is accurate (cnt + lazy = true values) iff no update has strictly partially covered it (i.e., every update either fully covered it or didn't intersect it... or fully covered an ancestor whose lazy was pushed into it). Actually once we push, the node's lazy transfers to children, node.lazy=0, and node becomes stale (children changed but node didn't).
+
+Query algorithm: traverse from root with acc = accumulated lazy. At node, if node is "clean" (never been partially updated / split), use cnt[node].get(v - acc - lazy[node]). Else recurse to children with acc + lazy[node]. We can track cleanliness with a flag, or implicitly: a node is clean if it has no lazy children... simplest: maintain a `stale` boolean. Initially all clean. When partial update reaches node (not full cover), mark node stale, push, recurse. Query: if node stale, recurse; else use counter.
+
+Complexity: each update marks O(log n) nodes stale and once stale... can a node become clean again? No (we never merge). So over time, more nodes stale, query degrades toward O(number of stale nodes) ~ O(q log n) total stale nodes. Worst case query visits O(min(n, q log n)) nodes. With q = 5e4 updates all on tiny ranges, stale nodes ~ 5e4 × 17 = 8.5e5, and each query could visit many. Too slow worst case.
+
+So sqrt decomposition it is. Or... hmm, wait. Let me reconsider the actual LeetCode problem. "Number of Pairs After Increment" — I think the intended solution might actually be sqrt decomposition given nums1 ≤ 5. Let me just go with sqrt decomposition and optimize.
+
+Actually, wait. Let me reconsider complexity more carefully and think about whether we can hit better. 
+
+Alternative: block decomposition where query is O(#blocks) and #blocks = sqrt(5e4) ≈ 224. Type-2 query: 224 iterations, each doing ≤5 dict lookups but we can loop over distinct nums1 values (≤5, often fewer). Say average 3 distinct → 672 lookups per query → 5e4 queries → 3.4e7. Updates: 5e4 × (224 full-block lazy updates + 2×224 element updates + 2 counter rebuilds of size 224). Element updates: 5e4 × 448 = 2.2e7, plus rebuilds 5e4 × 448 = 2.2e7 counter insertions. Total ~8e7 operations. Python ~ 8e7 simple ops ≈ 20-40s. Too slow worst case!
+
+Hmm. But worst case (all type-1 AND all type-2 both 5e4) can't happen simultaneously — total queries = 5e4. So worst case is max(all type-2: 5e4 × 672 = 3.4e7, all type-1: 5e4 × ~900 = 4.5e7). ~4e7 ops ≈ 10-15s in Python. Borderline. Need optimization.
+
+Optimize: choose block size to minimize. Let u = #type1, q2 = #type2, u + q2 = Q = 5e4. Cost ≈ u×(n/B + 2B) + q2×(n/B)×d where d = distinct nums1 values ≤ 5. With B = sqrt(n): n/B = 224.
+
+If all type-2: 5e4 × 224 × d. With d=5: 5.6e7 dict lookups. Dict lookup ~ 40ns → 2.2s. Plus loop overhead ~ maybe 5s total. Probably OK.
+
+If all type-1: 5e4 × (224 lazy + 448 elementwise + rebuild 448) ≈ 5e4 × 1100 = 5.5e7. Elementwise update: decrement old, increment new in counter — 2 dict ops each → more like 5e4 × (224 + 448×3) ≈ 7.9e7 ops. ~8s. Borderline but time limit 12s. Hmm.
+
+Can we do better with a smarter algorithm? Let me reconsider.
+
+Actually — key realization: maybe use a segment tree with counters but WITHOUT lazy for values; instead note that we only need full-array frequency. 
+
+Alternative: For each block, counter + lazy. That's sqrt decomp. To speed up type-1 partial blocks: instead of updating each element and counter, note partial blocks ≤ 2, each size B. Cost 2B per update. Full blocks: just lazy += val, O(1) each, n/B of them. So type-1 cost = n/B + 2B×(cost per element update ≈ 3 ops). Minimize over B: n/B = 6B → B = sqrt(n/6) ≈ 91. Then type-1 cost ≈ 550 + 546 ≈ 1100... similar.
+
+Type-2 cost = (n/B) × d. With B = 300: n/B ≈ 167, ×5 = 835 per query → 5e4 → 4.2e7.
+
+Honestly, let me look at this from the "is there a better structure" angle once more.
+
+We need: range add, and global frequency query of a value. 
+
+Idea: maintain global Counter `freq` of current values. Range add [x,y,val]: we need to move counts from value v to v+val for all elements in range. If we could get the distribution of the range quickly... that's the same problem.
+
+Idea: segment tree storing counters with lazy, and accept O(log n) per type-1 but the merge issue... 
+
+Actually WAIT. Reconsider segment tree: the merge issue arises because parent counter becomes stale. But what if we DON'T store counters at internal nodes at all, and instead the query uses the fact that we want the whole range — decompose whole range into O(log n) canonical nodes? The whole range [0, n-1] decomposes into just the root. So that doesn't help.
+
+Hmm, what if the segment tree is over the VALUE domain instead? Values range up to 1e5 + 5e4×1e5 = 5e9 — too big, but we could compress... values change dynamically though.
+
+What about a balanced BST of (value → count) per... no.
+
+Let me reconsider: is there structure in that adds are uniform over a range? f(i) = total add at index i. We need count of i with a[i] + f[i] = v. 
+
+Think of it as: maintain array A[i] = nums2[i]. Range add. Global value-frequency query. This is a classic problem and sqrt decomposition is the standard solution. Given constraints (n, q ≤ 5e4), sqrt decomp with ~5.6e7 ops is intended for C++ (easily fast). For Python with 12s, we need to be efficient but it should pass.
+
+Let me optimize the sqrt decomposition carefully:
+
+- Use block size around 200-300.
+- Represent nums2 as a flat list `a`.
+- Each block: lazy tag `lz[b]`, and Counter `cnt[b]`.
+- Type 1 [x, y, val]: 
+  - Find block range. For blocks fully inside [x, y]: lz[b] += val.
+  - For the (≤2) boundary blocks: for i in range within block: old = a[i]; a[i] += val; update counter: cnt[b][old] -= 1 (remove if 0), cnt[b][old+val] += 1.
+  - Note: a[i] stores the value WITHOUT lazy? Two conventions: (a) a[i] is the raw value, counter counts raw values, effective = raw + lz. Then partial update: effective value a[i]+lz increases by val → new raw = a[i] + val. Counter: move count from a[i] to a[i]+val. Same thing. Let me use: a[i] raw, effective = a[i] + lz[b]. Partial update on block b: for i in range: cnt[b][a[i]] -= 1; a[i] += val; cnt[b][a[i]] += 1. (Since effective old = a[i]+lz, new effective = a[i]+val+lz, new raw = a[i]+val ✓.)
+- Type 2 (tot): for each block b: base = lz[b]; for each distinct value v1 in nums1 with multiplicity m: target raw = tot - v1 - base; ans += m × cnt[b].get(target, 0).
+
+Optimization: precompute distinct nums1 values and multiplicities (≤5). For each block, loop over ≤5 targets.
+
+To speed up: precompute for type-2 the list of (target_offset, mult) = (tot - v1, mult). Then per block: base = lz[b]; c = cnt[b]; ans += sum(m * c.get(t - base, 0) for t, m in ...).
+
+Micro-optimizations: store blocks' counters and lazies in lists; iterate with local variables.
+
+Estimated per type-2 query: #blocks ≈ 5e4/250 = 200 blocks × 5 = 1000 dict.get. 5e4 queries → 5e7 dict.get ≈ 2-4s. OK.
+
+Per type-1: full blocks 200 lazy increments (fast), partial: ≤ 500 element updates × ~3 dict ops = 1500 ops. 5e4 updates → 200×5e4 = 1e7 (lazy) + worst case if all updates are tiny ranges within one block: 5e4 × (range length ≤ ...). Actually if update range is small (e.g., length 1), cost is small (≤ 2 blocks × few elements). Worst case for partial: update spans many blocks → partial work only at 2 boundary blocks (≤ 2B = 500 elements). So per update ≤ 200 + 1500 = 1700 ops → 5e4 × 1700 = 8.5e7. Hmm, that's the bad case: updates like [0, n-1] every time → but then partial blocks are 2 × B elements = 500, full blocks 198. 5e4 × (198 + 500×3) ≈ 8.5e7 ops. ~8-10s. Borderline.
+
+Can we reduce? If update covers almost everything, partial element updates dominate. Alternative for partial blocks: instead of per-element counter update, just rebuild: apply val to elements, rebuild counter from scratch O(B). Same order.
+
+Hmm, alternatively choose larger blocks to reduce #blocks for type-2 but that worsens type-1 partial. Balance point: type-1 worst per query ≈ n/B + 6B (3 ops per element × 2B), type-2 ≈ 5n/B. Total worst ≈ 5e4 × max(n/B + 6B, 5n/B). Minimize max: set n/B + 6B = 5n/B → 6B = 4n/B → B = sqrt(2n/3) ≈ 182. Then cost ≈ 5n/B = 5×5e4/182 ≈ 1370 per query → 6.8e7. Meh.
+
+Actually, per-element update cost: `c[old] -= 1; if c[old]==0: del c[old]; c[new] = c.get(new,0)+1` — that's ~4-5 dict ops. Could skip deletion (keep zero counts) to save: `c[old] -= 1; c[new] = c.get(new,0)+1` — 3 dict ops, but counter grows with stale zeros — fine for correctness (get returns 0 anyway... but c.get(t) could return a stale 0 — fine, adds 0). Memory: number of distinct raw values per block could grow but bounded by B + distinct added values... each update adds ≤1 new distinct value per element; over 5e4 updates could grow to B + 5e4 per block?? No — per block, distinct raw values ≤ B + (number of partial updates touching it) ≤ 182 + 5e4. Dict of 5e4 per block × 274 blocks — too much memory? Only if every block gets many partial updates. Total element updates across all blocks ≤ 2B × #updates = 364 × 5e4 = 1.8e7 total counter modifications. Memory could blow up. Better to delete zeros to keep counters ≤ B in size. Deleting zeros keeps counter size ≤ B always. 
+
+Let me just write it with zero-deletion and ~4 ops per element. 5e4 × 2 × 182 × 4 = 7.3e7 for the pathological all-full-range-updates case. Plus lazy 5e4 × 274 = 1.4e7. Total ~9e7. In Python ~ 15-25s. Too slow for worst case!
+
+Hmm. But is that worst case realistic for the test? LeetCode hard with 12s limit — Python solutions need to pass. Let me think of a genuinely better algorithm.
+
+Better idea: SEGMENT TREE with counters, but solve the merge problem differently. 
+
+Claim: we can avoid merging if we do queries that traverse to leaves only along updated paths... no.
+
+Alternative: Since nums1 ≤ 5, transform: answer for tot = Σ_{v1} freq(tot - v1). 
+
+What if we maintain, for the whole array, a hashmap freq, and handle range adds via a difference-array-like lazy structure, rebuilding periodically? 
+
+Sqrt decomposition on TIME (rebuild every K queries): maintain global freq counter current as of last rebuild, plus a list of pending updates. For a type-2 query, start with freq but adjust for pending updates: each pending update [x,y,val] changes elements in [x,y] — to compute its effect on freq of target t, we'd need to know values in [x,y]... circular.
+
+Alternative time-sqrt: rebuild every K queries: apply all pending updates to the array and rebuild block structure. Between rebuilds, ≤ K pending updates. For type-2 query, compute answer from the stale structure then correct for each pending update: for update [x,y,val], the change in count of target t = (number of i in [x,y] with current value t) - (number with stale value t)... still needs range info.
+
+Hmm.
+
+Let me reconsider the segment tree with counters and lazy, but analyze the "stale" approach's true worst case... it was bad.
+
+New idea: WAVELET TREE with lazy? Range add breaks value order.
+
+OK here's another classical approach: since we query GLOBAL frequency, use sqrt decomposition but with a twist to make type-1 faster: For full blocks, lazy += val (O(1) per block, n/B blocks). The n/B term is unavoidable for full blocks... unless we use a second level: a "lazy for consecutive groups of blocks"? That's just a segment tree over blocks with lazy propagation! 
+
+Segment tree over blocks: each leaf = a block with a Counter (raw values) and the segment tree provides lazy add propagation. Range add: O(log(n/B)) nodes get lazy updates... but the lazy needs to reach the block level for queries. Type-2 query: iterate over all blocks (n/B), and for each block compute its total lazy = sum of segment-tree node lazies along path — that's O(log) per block → O((n/B) log) per query. Worse.
+
+Alternatively, push-down lazies during updates so that block lazies are directly maintained: range add visits O(log(n/B)) segment tree nodes; nodes fully covered get lazy += val, and we immediately apply to... no, the blocks under a fully-covered node need their lazy updated eventually. If we apply lazy to all blocks under a covered node, that's O(#blocks) again.
+
+Hmm, but we could maintain block lazy via a Fenwick/range-add point-query structure! Range add [x,y,val] on blocks: block b gets += val if fully covered. Use a difference array / Fenwick for range-add point-query over blocks: O(log) per update. Then block b's lazy = point query. But partial blocks need element-level handling with the CURRENT block lazy... and the block lazy changes over time. Convention: counter stores raw values where effective = raw + blocklazy(b). blocklazy changes via Fenwick point query each time we touch the block. That works! Type-1: Fenwick range update O(log n) for the full-block part... wait, but full-block part is a contiguous range of blocks [bx+1, by-1] say. Range add over block indices: use a diff array `blz` with point query via prefix... but we need point queries interleaved with updates online — Fenwick range-add point-query: O(log n) per update, O(log n) per point query. Type-2 needs blocklazy for ALL blocks → n/B point queries × log = worse.
+
+Alternatively maintain block lazy directly as an array and apply range add to block-lazy array lazily using a diff array that we... we need all values each type-2 query. 
+
+OK, type-2 fundamentally needs to look at every block's counter (n/B blocks) unless there's a smarter aggregation. So type-2 ≥ n/B ≈ 200+ per query. 5e4 × 200 = 1e7 minimum for block iteration, ×5 for values = 5e7. That's the dominant cost and it's unavoidable with sqrt decomp. ~3-5s. Fine.
+
+For type-1, the full-block lazy updates cost n/B per update = 200 → 5e4 × 200 = 1e7. Fine. The partial element updates: ≤ 2B per update. With B = 250: 500 elements × ~4 ops = 2000 → 5e4 × 2000 = 1e8. THIS is the problem when updates are large-range. 
+
+Reduce partial cost: note partial blocks are only ≤2 per update regardless of range. 2B per update. To reduce, want small B. But small B increases n/B for type-2. Balance: type-2 total = 5e4 × 5 × n/B; type-1 partial total = 5e4 × 8B (8 ops per element? let's say 4). Set equal-ish: 25n/B = 2e5 B → B² = 25n/2e5 = 25×5e4/2e5 = 6.25 → B = 2.5?? That suggests tiny blocks, meaning type-1 partial dominates the design. With B=50: type-2 per query = 5 × 1000 = 5000 → 2.5e8. Worse!
+
+Wait I think I mis-set. Let me redo: total cost ≈ q2 × d × (n/B) + q1 × (n/B + c×2B) where d ≤ 5, c ≈ 4. Worst case q2 = 5e4 or q1 = 5e4 (not both). So total ≤ max(5e4 × 5 × n/B, 5e4 × (n/B + 8B)). 
+
+Case all type-2: 2.5e5 × n/B. Minimized by large B, but B ≤ n. With B = 1000: 2.5e5 × 50 = 1.25e7. 
+Case all type-1: 5e4 × (n/B + 8B). Minimized at B = sqrt(n/8) ≈ 79: 5e4 × (632 + 632) = 6.3e7. With B = 1000: 5e4 × (50 + 8000) = 4e8. Bad.
+
+Mixed worst: half-half: 2.5e4 × 5 × n/B + 2.5e4 × (n/B + 8B). With B = 300: 2.5e4×5×167 + 2.5e4×(167+2400) = 2.1e7 + 6.4e7 = 8.5e7.
+
+Hmm the type-1 partial updates are the bottleneck. Can we make partial updates cheaper? 
+
+Idea: for a partial block, instead of updating each element's counter entry individually, note we add val to a contiguous sub-range of the block. No structure within block... 
+
+Alternative: two-level sqrt? Or: for partial blocks, just update the raw array elements (a[i] += val) and mark the block's counter as dirty; rebuild counter lazily only when a type-2 query needs it. Rebuild O(B). If a block gets many partial updates between queries, we save. Worst case same though: alternating update/query → rebuild every time O(B) each → same as before. But rebuild is cheaper: single pass building a dict from B elements = B insertions ≈ 2 ops per element vs 4. And we can rebuild with `Counter(a[l:r])` which is C-speed! `collections.Counter(list_slice)` runs in C — very fast. And for the update itself, a[i] += val for i in subrange — Python loop B... hmm, or use slice operations? Can't add val to a slice in C easily. But list comprehension: `a[l:r] = [x + val for x in a[l:r]]` — C-speed-ish loop. Then `cnt[b] = Counter(a[blockstart:blockend])` — C speed. This could be ~5-10x faster than per-element dict ops. 
+
+So partial block cost ≈ 2 × (B comprehension + B Counter) ≈ 2 × 2 × B C-ops. With B=300: 1200 C-ops per update ≈ maybe 0.5µs×1200... Counter construction ~ 100ns/elem → 300 elems = 30µs? Hmm, 5e4 × 2 × 30µs = 3s. Plus comprehension similar. Total ~6s for pathological. Plus type-2 cost. Borderline but likely OK given 12s and realistic tests not being adversarial worst-case.
+
+Actually, wait. Let me reconsider — maybe there's a cleaner asymptotic solution I'm missing.
+
+We have n ≤ 5e4, q ≤ 5e4, nums1 ≤ 5. O((n+q) sqrt(n)) = 5e4 × 224 ≈ 1.1e7 — that's the C++ intended. Python needs the constant small.
+
+Alternatively O((n + q) log n) with a segment tree of Counters WITH merging on pull — merge cost too high.
+
+Hmm, what about a segment tree over POSITION where each node stores a Counter, and range add is done by... shifting keys is the problem. What if counters are keyed by value and we use a global "value offset" trick per node via lazy — and for the stale-parent problem, we accept traversing but bound it: Actually here's a cleaner idea for the segment tree: query(v) over full range: recurse, but at each node use cnt[node] with accumulated lazy, and to handle staleness, ALWAYS go to leaves? O(n). No.
+
+Let me just go with sqrt decomposition + Counter rebuild optimization. Actually, let me reconsider the per-element approach vs rebuild:
+
+Per-element for partial block of size B with r elements in range (r ≤ B): cost ~ 4r dict ops. Rebuild: B (comprehension) + B (Counter) ≈ 2B C-ops. When range covers most of block, rebuild better; when small range, per-element better. Since worst case is large ranges, rebuild is simpler and C-speed. But actually for a partial block, the uncovered elements' counter entries remain valid — rebuild wastes B work vs r work. Worst case r ≈ B/2 average for boundary blocks... whatever, both O(B).
+
+Let me just implement with per-element updates but optimized, OR rebuild. Let me benchmark mentally: I'll go with rebuild using Counter(slice) for simplicity and C speed.
+
+Hmm, actually, let me reconsider once more. There's an even simpler framing: since nums1 has ≤ 5 elements, and we need freq of (tot - v1). 
+
+Let me also double check the problem: pairs (j, k) — j indexes nums1, k indexes nums2. So multiplicity in nums1 matters (we multiply by count of v1 in nums1). Yes.
+
+Let me now write the sqrt decomposition solution:
+
+```python
+from collections import Counter
+
+class Solution:
+    def numberOfPairs(self, nums1, nums2, queries):
+        n = len(nums2)
+        B = 300  # block size
+        a = list(nums2)
+        # block id of index i: i // B
+        nb = (n + B - 1) // B
+        lz = [0] * nb
+        cnt = [None] * nb
+        for b in range(nb):
+            cnt[b] = Counter(a[b*B:(b+1)*B])
+        
+        # nums1 multiplicities
+        c1 = Counter(nums1)
+        vals = list(c1.items())  # (value, multiplicity)
+        
+        ans = []
+        for q in queries:
+            if q[0] == 1:
+                _, x, y, val = q
+                bx, by = x // B, y // B
+                if bx == by:
+                    # partial single block
+                    b = bx
+                    s, e = b*B, min((b+1)*B, n)
+                    base = lz[b]
+                    c = cnt[b]
+                    for i in range(x, y+1):
+                        old = a[i]
+                        a[i] = old + val
+                        # update counter
+                        if c[old] == 1:
+                            del c[old]
+                        else:
+                            c[old] -= 1
+                        c[old+val] = c.get(old+val, 0) + 1
+                else:
+                    # left partial block bx: indices x..end of bx
+                    # right partial block by: start of by..y
+                    # full blocks bx+1..by-1: lazy += val
+                    for b in range(bx+1, by):
+                        lz[b] += val
+                    # left partial
+                    b = bx
+                    e = min((b+1)*B, n)
+                    c = cnt[b]
+                    for i in range(x, e):
+                        old = a[i]
+                        a[i] = old + val
+                        if c[old] == 1:
+                            del c[old]
+                        else:
+                            c[old] -= 1
+                        c[old+val] = c.get(old+val, 0) + 1
+                    # right partial
+                    b = by
+                    s = b*B
+                    c = cnt[b]
+                    for i in range(s, y+1):
+                        old = a[i]
+                        a[i] = old + val
+                        if c[old] == 1:
+                            del c[old]
+                        else:
+                            c[old] -= 1
+                        c[old+val] = c.get(old+val, 0) + 1
+            else:
+                tot = q[1]
+                total = 0
+                for b in range(nb):
+                    base = lz[b]
+                    c = cnt[b]
+                    for v1, m in vals:
+                        total += m * c.get(tot - v1 - base, 0)
+                ans.append(total)
+        return ans
+```
+
+Wait, there's a subtle issue with the raw-value convention: a[i] is raw, effective = a[i] + lz[b]. When partial-updating block b, new effective = old effective + val = a[i] + lz[b] + val, so new raw = a[i] + val. ✓. Counter stores raw values ✓. Query: target effective = tot - v1; raw target = tot - v1 - lz[b] ✓.
+
+The per-element counter update: `if c[old] == 1: del c[old] else: c[old] -= 1` — 2 dict ops (lookup + del/setitem). Plus `c.get(old+val,0)+1` and setitem — 2 ops. Total ~4-5 ops per element. 
+
+Optimization for full blocks: `for b in range(bx+1, by): lz[b] += val` — Python loop over up to n/B ≈ 167 blocks. Could use... it's fine, 5e4 × 167 = 8.4e6.
+
+Hmm, can optimize full-block lazy with slice addition? `lz[bx+1:by] = [v + val for v in lz[bx+1:by]]` — similar cost. Keep loop.
+
+Let me reconsider block size. n = 5e4. Type-2 cost per query ≈ nb × d where d = len(vals) ≤ 5. nb = ceil(5e4/B). Type-1 worst ≈ nb (full blocks) + 2B×5 (partial elements, ~5 ops each). 
+
+Choose B = 350: nb ≈ 143. Type-2: 143 × 5 = 715/query → 5e4 → 3.6e7 dict.get ≈ 2-3s. Type-1 worst: 143 + 3500 = 3643 → 5e4 → 1.8e8. Too slow if many large updates. 
+
+Choose B = 200: nb = 250. Type-2: 1250/query → 6.25e7. Type-1 worst: 250 + 2000 = 2250 → 1.1e8.
+
+The type-1 worst case is concerning. Let me optimize the partial update using rebuild-with-Counter approach and list comprehension, which is much faster per element:
+
+```python
+# partial block b, range [l, r] inclusive
+s, e = b*B, min((b+1)*B, n)
+for i in range(l, r+1):
+    a[i] += val
+cnt[b] = Counter(a[s:e])
+```
+
+The loop `a[i] += val` over ≤B elements, then Counter over ≤B elements — both fast-ish. Counter(slice) is C-implemented (it iterates the list in C and does dict increments in C). ~B × 50ns = 15µs for B=300. The Python loop for a[i] += val: B × 60ns = 18µs. So ~35µs per partial block, 2 per update = 70µs → 5e4 updates = 3.5s. Plus full-block lazies. Acceptable!
+
+But wait — rebuild discards the old counter and creates a new one each time; the old one gets GC'd. Fine.
+
+Even better: use list comprehension for the range update: `a[l:r+1] = [v + val for v in a[l:r+1]]`. Comprehension is faster than indexed loop. Then `cnt[b] = Counter(a[s:e])`.
+
+Actually, we can be even smarter: only rebuild if the block is partial; and note for a partial block we could update only the changed elements in the counter (r-l+1 ops) vs rebuild (B ops). For worst case (large ranges), r ≈ B/2 to B, so rebuild with C-speed Counter wins. For small ranges, per-element wins. Hybrid: if r - l + 1 < B // 3: per-element; else rebuild. Let me keep it simpler: always per-element but write it tightly? Hmm.
+
+Let me just benchmark both approaches quickly with a script. Actually, let me just write the solution with the rebuild approach and test correctness first, then benchmark speed with a worst-case stress test.
+
+Actually, let me reconsider: is there an even better approach avoiding the partial-block cost entirely? 
+
+What if block size B and we store counters, and for range add we ALWAYS do full-block lazy for covered blocks and per-element for boundaries — that's what we have. The boundary cost is inherent to sqrt decomp. Fine.
+
+Let me also consider: maybe use B ≈ 256 and numpy? Numpy could speed the array updates but counter updates are dict-based. Not helpful for counters.
+
+Let me write it and stress test.
+
+Plan:
+1. Write solution.py with sqrt decomposition.
+2. Write test.py with the 3 examples.
+3. Run tests.
+4. Stress test with random large input vs brute force for correctness, and time a worst-case perf test.
+
+Let me write the code carefully.
+
+Edge cases:
+- n=1: single block, all updates are "bx == by" partial. ✓
+- Update range spanning exactly full blocks: e.g., x=0, y=2B-1 → bx=0, by=1. Full blocks range(bx+1, by) = range(1,1) = empty. Left partial: block 0 indices x..e-1 = 0..B-1 (full block 0 updated per-element). Right partial: block 1 indices B..y = B..2B-1 (full block 1 per-element). Correct but does per-element on full blocks — O(2B), fine, correct.
+- tot up to 1e9, values up to 1e5 + 5e4×1e5 = 5e9. Python ints fine.
+
+Let me write it:
+
+```python
+from collections import Counter
+
+class Solution:
+    def numberOfPairs(self, nums1: list[int], nums2: list[int], queries: list[list[int]]) -> list[int]:
+        n = len(nums2)
+        B = 300
+        a = list(nums2)
+        nb = (n + B - 1) // B
+        lz = [0] * nb
+        cnt = [Counter(a[b*B:(b+1)*B]) for b in range(nb)]
+        vals = list(Counter(nums1).items())
+        ans = []
+        for q in queries:
+            if q[0] == 1:
+                _, x, y, val = q
+                bx = x // B
+                by = y // B
+                if bx == by:
+                    s = bx * B
+                    e = min(s + B, n)
+                    for i in range(x, y + 1):
+                        a[i] += val
+                    cnt[bx] = Counter(a[s:e])
+                else:
+                    for b in range(bx + 1, by):
+                        lz[b] += val
+                    # left partial block bx: x .. e-1
+                    s = bx * B
+                    e = s + B  # bx < by so block bx is full size? 
+                    ...
+```
+
+Wait, careful: block bx might be the last block (smaller) only if bx == nb-1, but bx < by ≤ nb-1, so bx is full size. e = s+B ≤ n ✓. Block by: s = by*B, e = min(s+B, n).
+
+```python
+                else:
+                    for b in range(bx + 1, by):
+                        lz[b] += val
+                    s = bx * B
+                    e = s + B
+                    for i in range(x, e):
+                        a[i] += val
+                    cnt[bx] = Counter(a[s:e])
+                    s = by * B
+                    e = min(s + B, n)
+                    for i in range(s, y + 1):
+                        a[i] += val
+                    cnt[by] = Counter(a[s:e])
+```
+
+Type 2:
+```python
+            else:
+                tot = q[1]
+                total = 0
+                for b in range(nb):
+                    base = lz[b]
+                    c = cnt[b]
+                    for v1, m in vals:
+                        total += m * c.get(tot - v1 - base, 0)
+                ans.append(total)
+```
+
+Optimization: hoist `tot` and combine: for each block, `t_base = tot - base`, then target = t_base - v1.
+
+Micro-opt for type-2: iterate blocks as zip(lz, cnt):
+```python
+                for base, c in zip(lz, cnt):
+                    t = tot - base
+                    for v1, m in vals:
+                        total += m * c.get(t - v1, 0)
+```
+
+That's clean. 
+
+Now performance estimate for type-2: nb × d dict.get. With B=300, nb=167, d≤5: 835 per query. 5e4 → 4.2e7 dict.get + loop overhead. Maybe 4-6s. Hmm. Let me reduce by choosing B adaptively based on query composition? We don't know it in advance... we could pre-scan queries! Count type-1 and type-2, then choose optimal B. 
+
+Let u = #type1, w = #type2. Cost ≈ w × d × n/B + u × (n/B + 2B×k) where k ≈ cost ratio of rebuild per element vs dict.get... roughly rebuild per element ~ 2 C-ops ~ similar to dict.get. Let's just say cost ∝ w×d×n/B + u×(n/B + 4B). d ≤ 5.
+
+dCost/dB = -w×d×n/B² - u×n/B² + 4u = 0 → B² = n(wd + u)/(4u). If u=0: B = n (single block, type-2 = d lookups per query!). If w=0: B = sqrt(n/4) = 112. 
+
+Nice — adaptive B. But B = n means rebuild cost per type-1... if u=0 there are no type-1, fine. If u small and w large, B large: type-1 cost 2B×4 could be big but u small → OK.
+
+Let me just compute B = sqrt(n × (w×d + u) / (4u)) when u > 0, else B = n. Clamp B to [1, n]. Also clamp to reasonable [50, 5000]?
+
+Hmm, but the constants are rough. Let me simplify: cost_model(B) = w*d*(n//B + 1) + u*((n//B+1) + 8*B) and just try a few candidate B values and pick the best? Overkill. Let me just pick B = max(1, round(sqrt(n*(w*d+u)/(8*u)))) if u else n. Eh, let me not over-engineer; I'll benchmark with B=300 fixed first, and maybe adaptive.
+
+Actually, simpler robust choice: B = 256. nb ≈ 196. Let me benchmark.
+
+Let me also think about whether the type-2 inner loop can be vectorized: precompute vals as two lists v1s and ms. For each block: `t = tot - base`; `total += m0*c.get(t-v0,0) + m1*c.get(t-v1,0) + ...` — unrolled for d=5? Since d varies, keep loop.
+
+Alternatively, swap loops: for each (v1, m), target = tot - v1; for each block: total += m * c.get(target - base). Same op count.
+
+Could we precompute per block a combined structure? No.
+
+OK let me write and test. I'll also write a brute-force checker and a perf stress.
+
+Let me write solution.py:
+
+```python
+from collections import Counter
+
+class Solution:
+    def numberOfPairs(self, nums1: list[int], nums2: list[int], queries: list[list[int]]) -> list[int]:
+        n = len(nums2)
+        B = 300
+        a = list(nums2)
+        nb = (n + B - 1) // B
+        lz = [0] * nb
+        cnt = [Counter(a[b*B:(b+1)*B]) for b in range(nb)]
+        vals = list(Counter(nums1).items())
+        ans = []
+        for q in queries:
+            if q[0] == 1:
+                _, x, y, val = q
+                bx, by = x // B, y // B
+                if bx == by:
+                    s = bx * B
+                    e = min(s + B, n)
+                    a[x:y+1] = [v + val for v in a[x:y+1]]
+                    cnt[bx] = Counter(a[s:e])
+                else:
+                    for b in range(bx + 1, by):
+                        lz[b] += val
+                    s = bx * B
+                    e = s + B
+                    a[x:e] = [v + val for v in a[x:e]]
+                    cnt[bx] = Counter(a[s:e])
+                    s = by * B
+                    e = min(s + B, n)
+                    a[s:y+1] = [v + val for v in a[s:y+1]]
+                    cnt[by] = Counter(a[s:e])
+            else:
+                tot = q[1]
+                total = 0
+                for base, c in zip(lz, cnt):
+                    t = tot - base
+                    for v1, m in vals:
+                        total += m * c.get(t - v1, 0)
+                ans.append(total)
+        return ans
+```
+
+Wait, `a[x:y+1] = [v + val for v in a[x:y+1]]` — creates slices; fine.
+
+Hmm, one concern: rebuilding Counter on every partial update even for single-element updates wastes O(B). For small-range updates (common in tests?), per-element would be much faster. Hybrid:
+
+```python
+if y - x + 1 <= 32 and bx == by:  # small update, per-element
+    c = cnt[bx]
+    for i in range(x, y+1):
+        old = a[i]
+        a[i] = old + val
+        if c[old] == 1: del c[old]
+        else: c[old] -= 1
+        c[old+val] = c.get(old+val, 0) + 1
+else: rebuild path
+```
+
+But the bx != by case with small ranges at boundaries — per-element there too. Let me restructure: 
+
+```python
+def range_add(x, y, val):
+    bx, by = x // B, y // B
+    if bx == by:
+        partial_update(bx, x, y, val)
+    else:
+        for b in range(bx+1, by): lz[b] += val
+        partial_update(bx, x, (bx+1)*B - 1, val)
+        partial_update(by, by*B, y, val)
+
+def partial_update(b, l, r, val):
+    # update a[l..r] within block b
+    if r - l + 1 <= 16:
+        c = cnt[b]
+        for i in range(l, r+1):
+            old = a[i]; a[i] = old + val
+            if c[old] == 1: del c[old]
+            else: c[old] -= 1
+            c[old+val] = c.get(old+val, 0) + 1
+    else:
+        a[l:r+1] = [v + val for v in a[l:r+1]]
+        s = b * B; e = min(s + B, n)
+        cnt[b] = Counter(a[s:e])
+```
+
+This gives good performance for both small and large updates. 
+
+Let me now also pick B. I'll go adaptive-lite: scan queries for counts u (type1) and w (type2). If u == 0: B = n (one block). Else B = int(sqrt(n * (w*len(vals) + u) / (6*u))) clamped to [64, n]. Hmm, the constant 6 is a guess. Let me just benchmark a few B values on synthetic worst cases and pick a good fixed one, or simple adaptive.
+
+Actually, let me keep it simpler and robust: B = 256 fixed, benchmark worst cases, adjust if needed.
+
+Let me write the test file and a stress/brute-force test, run, then benchmark.
+
+Let me write files now.
+
+test.py:
+```python
+from solution import Solution
+s = Solution()
+print(s.numberOfPairs([1,2],[3,4],[[2,5],[1,0,0,2],[2,5]]), "expected", [2,1])
+print(s.numberOfPairs([1,1],[2,2,3],[[2,4],[1,0,1,1],[2,4]]), "expected", [2,6])
+print(s.numberOfPairs([2,5,8,4],[1,3,8],[[2,9],[1,1,2,1],[2,10]]), "expected", [1,0])
+```
+
+Then a brute force stress test in a separate file.
+
+Let me write everything and run.
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 1499, 'completion_tokens': 15078, 'total_tokens': 16577, 'cost': 0.180329269, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.180329269, 'upstream_inference_prompt_cost': 0.000358261, 'upstream_inference_completions_cost': 0.179971008}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'path': 'solution.py', 'content': 'from collections import Counter\n\n\nclass Solution:\n    def numberOfPairs(self, nums1: list[int], nums2: list[int], queries: list[list[int]]) -> list[int]:\n        n = len(nums2)\n        B = 256  # block size for sqrt decomposition\n        a = list(nums2)\n  
+writing
+[write_file] result: Content written to solution.py
+[write_file] args: {'path': 'test.py', 'content': 'from solution import Solution\ns = Solution()\nprint(s.numberOfPairs([1,2],[3,4],[[2,5],[1,0,0,2],[2,5]]), "expected", [2,1])\nprint(s.numberOfPairs([1,1],[2,2,3],[[2,4],[1,0,1,1],[2,4]]), "expected", [2,6])\nprint(s.numberOfPairs([2,5,8,4],[1,3,8],[[2,9],[1,1,2,1],[2
+writing
+[write_file] result: Content written to test.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 16640, 'completion_tokens': 40, 'total_tokens': 16680, 'cost': 0.0087952, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0087952, 'upstream_inference_prompt_cost': 0.00832, 'upstream_inference_completions_cost': 0.0004752}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'test.py'}
+running python
+[run_python] result: Result running test.py: stdout + stderr: [2, 1] expected [2, 1]
+[2, 6] expected [2, 6]
+[1, 0] expected [1, 0]
+
+
+Assistant: All three examples pass. Now let me verify correctness against a brute-force solution on random inputs, and benchmark performance on worst-case inputs.
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 16762, 'completion_tokens': 1010, 'total_tokens': 17772, 'cost': 0.0179222, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 16384, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0179222, 'upstream_inference_prompt_cost': 0.0059234, 'upstream_inference_completions_cost': 0.0119988}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'path': 'stress.py', 'content': 'import random\nfrom solution import Solution\n\ndef brute(nums1, nums2, queries):\n    nums2 = list(nums2)\n    ans = []\n    for q in queries:\n        if q[0] == 1:\n            _, x, y, val = q\n            for i in range(x, y + 1):\n                nums2[i] += v
+writing
+[write_file] result: Content written to stress.py
+[write_file] args: {'path': 'perf.py', 'content': 'import random, time\nfrom solution import Solution\n\nrandom.seed(999)\nn = 50000\nq = 50000\n\n# Worst case A: all type-2 queries\nnums1 = [random.randint(1, 100000) for _ in range(5)]\nnums2 = [random.randint(1, 100000) for _ in range(n)]\nqueries = [[2, random.rand
+writing
+[write_file] result: Content written to perf.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 17836, 'completion_tokens': 71, 'total_tokens': 17907, 'cost': 0.00715028, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 17408, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00715028, 'upstream_inference_prompt_cost': 0.0063068, 'upstream_inference_completions_cost': 0.00084348}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'stress.py'}
+running python
+[run_python] result: Result running stress.py: stdout + stderr: all random tests passed
+
+[run_python] args: {'path': 'perf.py'}
+running python
+[run_python] result: Result running perf.py: timed out after 10s. stdout + stderr so far: 
+
+Assistant: Correctness passes, but performance timed out. Let me time each case separately to find the bottleneck.
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 17994, 'completion_tokens': 379, 'total_tokens': 18373, 'cost': 0.01088832, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 17408, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.01088832, 'upstream_inference_prompt_cost': 0.0063858, 'upstream_inference_completions_cost': 0.00450252}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'path': 'perf1.py', 'content': 'import random, time\nfrom solution import Solution\n\nrandom.seed(999)\nn = 50000\nq = 50000\nnums1 = [random.randint(1, 100000) for _ in range(5)]\nnums2 = [random.randint(1, 100000) for _ in range(n)]\n\nqueries = [[2, random.randint(1, 200000)] for _ in range(q)]\
+writing
+[write_file] result: Content written to perf1.py
+[write_file] args: {'path': 'perf2.py', 'content': 'import random, time\nfrom solution import Solution\n\nrandom.seed(999)\nn = 50000\nq = 50000\nnums1 = [random.randint(1, 100000) for _ in range(5)]\nnums2 = [random.randint(1, 100000) for _ in range(n)]\n\nqueries = [[1, 0, n - 1, random.randint(1, 100000)] for _ in 
+writing
+[write_file] result: Content written to perf2.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 18439, 'completion_tokens': 73, 'total_tokens': 18512, 'cost': 0.00739874, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 17920, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00739874, 'upstream_inference_prompt_cost': 0.0065315, 'upstream_inference_completions_cost': 0.00086724}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'perf1.py'}
+running python
+[run_python] result: Result running perf1.py: stdout + stderr: all type-2: 4.47 s
+
+[run_python] args: {'path': 'perf2.py'}
+running python
+[run_python] result: Result running perf2.py: stdout + stderr: all type-1 full range: 1.58 s
+
+
+Assistant: All type-2 takes 4.47s, all type-1 takes 1.58s. The type-2 case is the bottleneck: 196 blocks × 5 values × 5e4 queries ≈ 4.9e7 dict.get calls. Let me optimize:
+
+1. Increase block size when there are many type-2 queries (adaptive B based on pre-scanning queries).
+2. Micro-optimize the type-2 loop.
+
+Let me first check the alternating case timing, then optimize.
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 18610, 'completion_tokens': 354, 'total_tokens': 18964, 'cost': 0.01074572, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 18432, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.01074572, 'upstream_inference_prompt_cost': 0.0065402, 'upstream_inference_completions_cost': 0.00420552}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'path': 'perf3.py', 'content': 'import random, time\nfrom solution import Solution\n\nrandom.seed(999)\nn = 50000\nq = 50000\nnums1 = [random.randint(1, 100000) for _ in range(5)]\nnums2 = [random.randint(1, 100000) for _ in range(n)]\n\nqueries = []\nfor i in range(q):\n    if i % 2 == 0:\n       
+writing
+[write_file] result: Content written to perf3.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 19004, 'completion_tokens': 41, 'total_tokens': 19045, 'cost': 0.00714748, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 18944, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00714748, 'upstream_inference_prompt_cost': 0.0066604, 'upstream_inference_completions_cost': 0.00048708}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'perf3.py'}
+running python
+[run_python] result: Result running perf3.py: stdout + stderr: alternating: 3.0 s
+
+
+Assistant: Alternating is 3.0s. The worst case is all type-2 at 4.47s. Total across all my perf tests exceeded the 10s tool timeout, but individually each is under 12s. Still, 4.47s is close-ish; let me optimize the type-2 path with adaptive block size and micro-optimizations to get comfortable margin.
+
+Key optimizations:
+1. **Adaptive B**: pre-scan queries to count type-1 (`u`) and type-2 (`w`). Cost model: type-2 ≈ `w × d × n/B`, type-1 ≈ `u × (n/B + c×B)`. Pick B to minimize. When u=0, use one big block (B=n) → type-2 becomes just d lookups per query.
+2. **Micro-opt type-2**: hoist `vals` into local vars, minimize attribute lookups.
+
+Let me implement adaptive B: cost(B) ≈ w×d×(n/B) + u×(n/B + 8B). Minimize: d/dB = -(w×d×n + u×n)/B² + 8u = 0 → B = sqrt(n×(w×d + u)/(8u)) for u>0, else B=n.
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 19097, 'completion_tokens': 1019, 'total_tokens': 20116, 'cost': 0.01881262, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 18944, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.01881262, 'upstream_inference_prompt_cost': 0.0067069, 'upstream_inference_completions_cost': 0.01210572}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'path': 'solution.py', 'content': 'from collections import Counter\n\n\nclass Solution:\n    def numberOfPairs(self, nums1: list[int], nums2: list[int], queries: list[list[int]]) -> list[int]:\n        n = len(nums2)\n        vals = list(Counter(nums1).items())  # (value, multiplicity) in nums1\n  
+writing
+[write_file] result: Content written to solution.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 20155, 'completion_tokens': 71, 'total_tokens': 20226, 'cost': 0.00792578, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 19968, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00792578, 'upstream_inference_prompt_cost': 0.0070823, 'upstream_inference_completions_cost': 0.00084348}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'test.py'}
+running python
+[run_python] result: Result running test.py: stdout + stderr: [2, 1] expected [2, 1]
+[2, 6] expected [2, 6]
+[1, 0] expected [1, 0]
+
+[run_python] args: {'path': 'stress.py'}
+running python
+[run_python] result: Result running stress.py: stdout + stderr: all random tests passed
+
+
+Assistant: 
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 20342, 'completion_tokens': 105, 'total_tokens': 20447, 'cost': 0.0084232, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 19968, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0084232, 'upstream_inference_prompt_cost': 0.0071758, 'upstream_inference_completions_cost': 0.0012474}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'perf1.py'}
+running python
+[run_python] result: Result running perf1.py: stdout + stderr: all type-2: 0.04 s
+
+[run_python] args: {'path': 'perf2.py'}
+running python
+[run_python] result: Result running perf2.py: stdout + stderr: all type-1 full range: 1.79 s
+
+[run_python] args: {'path': 'perf3.py'}
+running python
+[run_python] result: Result running perf3.py: stdout + stderr: alternating: 3.5 s
+
+
+Assistant: All type-2 dropped to 0.04s (single block). But alternating went from 3.0s to 3.5s — the adaptive B picked a larger B which hurt the type-1 partial updates. Let me check what B was chosen for the alternating case: u = w = 25000, d = 5, n = 50000. B = sqrt(50000×(25000×5+25000)/(8×25000)) = sqrt(50000×6/8) = sqrt(37500) ≈ 194. Hmm, that's smaller than 256, so type-2 per query = 50000/194 ≈ 258 blocks × 5 = 1290 lookups × 25000 = 3.2e7. And type-1: 258 full-block lazies + partials.
+
+The issue is the cost model constant. Let me measure the actual costs more carefully and tune. Let me try a few fixed B values for the alternating case to find the best.
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 20583, 'completion_tokens': 932, 'total_tokens': 21515, 'cost': 0.01836846, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 19968, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.01836846, 'upstream_inference_prompt_cost': 0.0072963, 'upstream_inference_completions_cost': 0.01107216}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'path': 'tune.py', 'content': 'import random, time\nfrom collections import Counter\n\ndef solve(nums1, nums2, queries, B):\n    n = len(nums2)\n    vals = list(Counter(nums1).items())\n    a = list(nums2)\n    nb = (n + B - 1) // B\n    lz = [0] * nb\n    cnt = [Counter(a[b * B:(b + 1) * B]) for b
+writing
+[write_file] result: Content written to tune.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 21554, 'completion_tokens': 41, 'total_tokens': 21595, 'cost': 0.00803848, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 21504, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00803848, 'upstream_inference_prompt_cost': 0.0075514, 'upstream_inference_completions_cost': 0.00048708}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'tune.py'}
+running python
+[run_python] result: Result running tune.py: timed out after 10s. stdout + stderr so far: 
+
+Assistant: The tuning run timed out (7 block sizes × ~3s each > 10s). Let me test fewer block sizes per run.
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 21648, 'completion_tokens': 736, 'total_tokens': 22384, 'cost': 0.01634208, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 21504, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.01634208, 'upstream_inference_prompt_cost': 0.0075984, 'upstream_inference_completions_cost': 0.00874368}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'path': 'tune.py', 'content': 'import random, time, sys\nfrom collections import Counter\n\ndef solve(nums1, nums2, queries, B):\n    n = len(nums2)\n    vals = list(Counter(nums1).items())\n    a = list(nums2)\n    nb = (n + B - 1) // B\n    lz = [0] * nb\n    cnt = [Counter(a[b * B:(b + 1) * B]) 
+writing
+[write_file] result: Content written to tune.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 22423, 'completion_tokens': 170, 'total_tokens': 22593, 'cost': 0.0099287, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 22016, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0099287, 'upstream_inference_prompt_cost': 0.0079091, 'upstream_inference_completions_cost': 0.0020196}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'path': 'run_tune1.py', 'content': 'import subprocess\nprint(subprocess.run(["python", "tune.py", "192", "256", "384"], capture_output=True, text=True).stdout)\n'}
+writing
+[write_file] result: Content written to run_tune1.py
+[write_file] args: {'path': 'run_tune2.py', 'content': 'import subprocess\nprint(subprocess.run(["python", "tune.py", "512", "768", "1024"], capture_output=True, text=True).stdout)\n'}
+writing
+[write_file] result: Content written to run_tune2.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 22661, 'completion_tokens': 75, 'total_tokens': 22736, 'cost': 0.0088423, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 22528, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0088423, 'upstream_inference_prompt_cost': 0.0079513, 'upstream_inference_completions_cost': 0.000891}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'run_tune1.py'}
+running python
+[run_python] result: Result running run_tune1.py: stdout + stderr: B = 192 : 3.53 s
+B = 256 : 3.07 s
+B = 384 : 2.5 s
+
+
+[run_python] args: {'path': 'run_tune2.py'}
+running python
+[run_python] result: Result running run_tune2.py: stdout + stderr: B = 512 : 2.65 s
+B = 768 : 2.69 s
+B = 1024 : 3.71 s
+
+
+
+Assistant: For the alternating case, B ≈ 384 is best (2.5s). My adaptive formula gave 194, which is suboptimal. The cost model constant is off — the type-2 lookup cost per block is higher relative to type-1 costs than I modeled. Let me reconsider:
+
+Measured: type-2 per block per value ≈ dict.get ≈ significant. Type-1 full-block lazy is cheap, partial rebuild is C-speed. So the model should weight type-2's per-block cost more. Cost ≈ w×d×(n/B)×α + u×((n/B)×β + 2B×γ) where α (dict.get + loop) is large, β (lazy increment) tiny, γ (rebuild, C-speed) small.
+
+With α dominant: B should be larger. Optimal B = sqrt(n×(w×d×α + u×β)/(2u×γ)). With α=1, β=0.1, γ=0.15 (C-speed rebuild): B = sqrt(n×(w×d + 0.1u)/(0.3u)). For alternating: sqrt(50000×(125000+2500)/(0.3×25000)) = sqrt(50000×127500/7500) = sqrt(850000) ≈ 922. Hmm, but measured best was 384, and 1024 was worse (3.71). 
+
+The model is imperfect because partial_update cost isn't really 2B×γ when updates have random ranges — the boundary blocks' updated portions are random-sized, and the `r-l+1<=16` path handles small ones. Let me just empirically pick: fixed B around 350-400 seems robust. Let me check the all-type-1-full-range case and a mixed case with B=384, and also verify all-type-2 stays fast (with u=0 → B=n special case anyway).
+
+Actually, let me simplify: use the special case B=n when u=0, otherwise fixed B=384. But if u is tiny and w huge, B=384 gives type-2 cost = w×5×130 — for w=5e4 that's 3.25e7 ≈ 3s, whereas B=n would be ~0. Better: make B scale with w/u ratio. Let me use: B = sqrt(n × (w×d + u) / u) × k, tuned so alternating (w=u) gives ~384: sqrt(50000×6)×k = 548k = 384 → k ≈ 0.7. Check u=0 → infinite → clamp to n ✓. Check all-type-1 (w=0): B = sqrt(50000)×0.7 ≈ 157. All-type-1 full-range measured 1.79s at B=194 — fine.
+
+Let me formalize: B = clamp(0.7×sqrt(n×(w×d+u)/max(u,1)), 32, n). For alternating: 0.7×sqrt(50000×150000/25000) = 0.7×sqrt(300000) = 0.7×548 = 384 ✓. 
+
+Let me verify with a few scenarios and finalize. Also test a case with u small but nonzero and w large.
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 22879, 'completion_tokens': 1432, 'total_tokens': 24311, 'cost': 0.02507246, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 22528, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.02507246, 'upstream_inference_prompt_cost': 0.0080603, 'upstream_inference_completions_cost': 0.01701216}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'path': 'solution.py', 'content': 'from collections import Counter\n\n\nclass Solution:\n    def numberOfPairs(self, nums1: list[int], nums2: list[int], queries: list[list[int]]) -> list[int]:\n        n = len(nums2)\n        vals = list(Counter(nums1).items())  # (value, multiplicity) in nums1\n  
+writing
+[write_file] result: Content written to solution.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 24350, 'completion_tokens': 103, 'total_tokens': 24453, 'cost': 0.00978904, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 24064, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00978904, 'upstream_inference_prompt_cost': 0.0085654, 'upstream_inference_completions_cost': 0.00122364}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'test.py'}
+running python
+[run_python] result: Result running test.py: stdout + stderr: [2, 1] expected [2, 1]
+[2, 6] expected [2, 6]
+[1, 0] expected [1, 0]
+
+[run_python] args: {'path': 'stress.py'}
+running python
+[run_python] result: Result running stress.py: stdout + stderr: all random tests passed
+
+[run_python] args: {'path': 'perf3.py'}
+running python
+[run_python] result: Result running perf3.py: stdout + stderr: alternating: 2.57 s
+
+
+Assistant: Alternating is now 2.57s. Let me verify the other perf cases and a few more edge scenarios (mostly type-2 with few updates, and all type-1 with small ranges).
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 24607, 'completion_tokens': 580, 'total_tokens': 25187, 'cost': 0.0155843, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 24064, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.0155843, 'upstream_inference_prompt_cost': 0.0086939, 'upstream_inference_completions_cost': 0.0068904}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'perf1.py'}
+running python
+[run_python] result: Result running perf1.py: stdout + stderr: all type-2: 0.04 s
+
+[run_python] args: {'path': 'perf2.py'}
+running python
+[run_python] result: Result running perf2.py: stdout + stderr: all type-1 full range: 1.47 s
+
+[write_file] args: {'path': 'perf4.py', 'content': 'import random, time\nfrom solution import Solution\n\nrandom.seed(999)\nn = 50000\nq = 50000\nnums1 = [random.randint(1, 100000) for _ in range(5)]\nnums2 = [random.randint(1, 100000) for _ in range(n)]\n\n# mostly type-2, few updates\nqueries = []\nfor i in range(q)
+writing
+[write_file] result: Content written to perf4.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 25311, 'completion_tokens': 41, 'total_tokens': 25352, 'cost': 0.00937938, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 25088, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00937938, 'upstream_inference_prompt_cost': 0.0088923, 'upstream_inference_completions_cost': 0.00048708}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'perf4.py'}
+running python
+[run_python] result: Result running perf4.py: stdout + stderr: mostly type-2: 1.12 s
+all type-1 small: 0.33 s
+all type-1 medium: 1.05 s
+
+
+Assistant: All performance cases are now well under the 12s limit:
+- all type-2: 0.04s
+- all type-1 full range: 1.47s
+- alternating: 2.57s
+- mostly type-2: 1.12s
+- all type-1 small: 0.33s
+- all type-1 medium: 1.05s
+
+Let me run one final comprehensive correctness check with larger random tests against brute force, including edge cases (n=1, single element, large values), then confirm the examples one more time.
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 25431, 'completion_tokens': 838, 'total_tokens': 26269, 'cost': 0.01890774, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 25088, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.01890774, 'upstream_inference_prompt_cost': 0.0089523, 'upstream_inference_completions_cost': 0.00995544}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[write_file] args: {'path': 'stress2.py', 'content': 'import random\nfrom solution import Solution\n\ndef brute(nums1, nums2, queries):\n    nums2 = list(nums2)\n    ans = []\n    for q in queries:\n        if q[0] == 1:\n            _, x, y, val = q\n            for i in range(x, y + 1):\n                nums2[i] += 
+writing
+[write_file] result: Content written to stress2.py
+
+Assistant: 
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 26309, 'completion_tokens': 41, 'total_tokens': 26350, 'cost': 0.00972478, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 26112, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00972478, 'upstream_inference_prompt_cost': 0.0092377, 'upstream_inference_completions_cost': 0.00048708}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[run_python] args: {'path': 'stress2.py'}
+running python
+[run_python] result: Result running stress2.py: stdout + stderr: edge n=1: [1, 0, 1] expected [1, 0, 1] OK
+edge dup: [5, 0, 5] expected [5, 0, 5] OK
+done, fails = 0
+
+
+Assistant: All correctness tests pass (400 random tests with full constraint value ranges, plus edge cases), and all performance scenarios run in under 3 seconds (well within the 12s limit). Let me do a final read of the solution and run the example test one last time.
+[finish_reason: tool_calls | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 26451, 'completion_tokens': 126, 'total_tokens': 26577, 'cost': 0.01080558, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 26112, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.01080558, 'upstream_inference_prompt_cost': 0.0093087, 'upstream_inference_completions_cost': 0.00149688}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]
+[read_file] args: {'path': 'solution.py'}
+reading
+[read_file] result: Content at solution.py:
+stdout:
+ from collections import Counter
+
+
+class Solution:
+    def numberOfPairs(self, nums1: list[int], nums2: list[int], queries: list[list[int]]) -> list[int]:
+        n = len(nums2)
+        vals = list(Counter(nums1).items())  # (value, multiplicity) in nums1
+        d = len(vals)
+
+        # Pre-scan queries to pick a good block size.
+        u = 0  # number of type-1 queries
+        w = 0  # number of type-2 queries
+        for q in queries:
+            if q[0] == 1:
+[run_python] args: {'path': 'test.py'}
+running python
+[run_python] result: Result running test.py: stdout + stderr: [2, 1] expected [2, 1]
+[2, 6] expected [2, 6]
+[1, 0] expected [1, 0]
+
+
+Assistant: All three examples pass, correctness is verified against brute force on 700+ random tests including edge cases, and performance is well within limits (worst observed ~2.6s vs 12s limit).
+
+The solution uses square-root decomposition on `nums2`:
+- Each block keeps a `Counter` of its raw values plus a lazy add tag (effective value = raw + tag).
+- Type-1 update: full blocks just bump the lazy tag; the ≤2 boundary blocks are updated element-wise (or rebuilt via C-speed `Counter` for large ranges).
+- Type-2 query: since `nums1` has ≤5 elements, the answer is `Σ_{v1 in nums1} mult(v1) × freq(tot − v1)` summed over all blocks (looking up `tot − v1 − lazy` in each block's counter).
+- Block size is chosen adaptively by pre-scanning the query mix.
+
+```python
+from collections import Counter
+
+
+class Solution:
+    def numberOfPairs(self, nums1: list[int], nums2: list[int], queries: list[list[int]]) -> list[int]:
+        n = len(nums2)
+        vals = list(Counter(nums1).items())  # (value, multiplicity) in nums1
+        d = len(vals)
+
+        # Pre-scan queries to pick a good block size.
+        u = 0  # number of type-1 queries
+        w = 0  # number of type-2 queries
+        for q in queries:
+            if q[0] == 1:
+                u += 1
+            else:
+                w += 1
+
+        if u == 0:
+            B = n  # no updates: a single block is optimal
+        else:
+            B = int(0.7 * (n * (w * d + u) / u) ** 0.5) + 1
+            if B < 32:
+                B = 32
+            elif B > n:
+                B = n
+
+        a = list(nums2)
+        nb = (n + B - 1) // B
+        lz = [0] * nb                       # lazy add per block
+        cnt = [Counter(a[b * B:(b + 1) * B]) for b in range(nb)]  # raw-value counter per block
+        ans = []
+
+        def partial_update(b: int, l: int, r: int, val: int) -> None:
+            # add val to a[l..r], all inside block b
+            if r - l + 1 <= 16:
+                c = cnt[b]
+                for i in range(l, r + 1):
+                    old = a[i]
+                    a[i] = old + val
+                    if c[old] == 1:
+                        del c[old]
+                    else:
+                        c[old] -= 1
+                    c[old + val] = c.get(old + val, 0) + 1
+            else:
+                a[l:r + 1] = [v + val for v in a[l:r + 1]]
+                s = b * B
+                e = s + B
+                if e > n:
+                    e = n
+                cnt[b] = Counter(a[s:e])
+
+        for q in queries:
+            if q[0] == 1:
+                _, x, y, val = q
+                bx, by = x // B, y // B
+                if bx == by:
+                    partial_update(bx, x, y, val)
+                else:
+                    for b in range(bx + 1, by):
+                        lz[b] += val
+                    partial_update(bx, x, (bx + 1) * B - 1, val)
+                    partial_update(by, by * B, y, val)
+            else:
+                tot = q[1]
+                total = 0
+                for base, c in zip(lz, cnt):
+                    t = tot - base
+                    for v1, m in vals:
+                        total += m * c.get(t - v1, 0)
+                ans.append(total)
+        return ans
+```
+[finish_reason: stop | provider: InferenceNet | reasoning chars: 0 | usage: {'prompt_tokens': 27358, 'completion_tokens': 873, 'total_tokens': 28231, 'cost': 0.02013344, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 26112, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.02013344, 'upstream_inference_prompt_cost': 0.0097622, 'upstream_inference_completions_cost': 0.01037124}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

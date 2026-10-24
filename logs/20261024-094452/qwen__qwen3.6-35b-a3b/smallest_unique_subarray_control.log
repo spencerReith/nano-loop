@@ -1,0 +1,301 @@
+
+Assistant: To solve this problem, we need to find the minimum length of a subarray in `nums` that is unique (i.e., does not appear anywhere else in `nums`). 
+
+### Approach
+1. **Binary Search on Length**: The key observation is that if there exists a unique subarray of length `L`, then there might exist unique subarrays of length `L+1`, but we are interested in the smallest such `L`. More importantly, the property of having at least one unique subarray is monotonic with respect to length in a specific way: if all subarrays of length `L` are duplicates, it's possible that some subarrays of length `L+1` are unique. However, it's easier to check for each length from 1 upwards until we find the first length where at least one subarray is unique. But since the maximum length can be up to $10^5$, checking each length naively would be too slow.
+
+2. **Efficient Checking with Rolling Hash**: For a given length `L`, we can use a rolling hash (or simply store tuples/strings in a set) to count the occurrences of each subarray. However, storing all subarrays for large `L` can be memory intensive. Instead, we can iterate `L` from 1 to `n` and for each `L`, slide a window of size `L` across the array, compute a hash for each subarray, and count frequencies. The first `L` for which there is a subarray with frequency 1 is our answer.
+
+3. **Optimization**: Since we start from length 1 and go up, the first length we find that has a unique subarray is our answer. We can stop as soon as we find such a length. In the worst case, the entire array might be the only unique subarray (like all same elements), so we might check up to length `n`.
+
+4. **Hashing**: To avoid hash collisions, we can use Python's built-in hash for tuples, but for large arrays, this might be slow. Alternatively, we can use a double hash or a robust rolling hash. Given the constraints and time limit, using tuple slicing and storing in a dictionary might be acceptable if we break early. However, for length `L`, there are `n - L + 1` subarrays. The total work over all lengths could be $O(n^2)$ in the worst case, which is too slow for $n = 10^5$.
+
+5. **Better Approach**: We need a more efficient method. Notice that if a subarray of length `L` is unique, then any extension of it to length `L+1` is also unique? Not necessarily, because the extension might match another subarray. Actually, uniqueness is not monotonic in the sense that if a subarray of length L is unique, a subarray of length L-1 (if it existed as part of it) might not be. But we are looking for the minimal L. 
+
+Alternative idea: For each starting index, the subarray starting at that index is unique if it doesn't appear starting at any other index. We can for each length L, check uniqueness. But we want the minimal L.
+
+We can binary search on the length L. For a fixed L, we check if there is any subarray of length L that is unique. How to check efficiently?
+- Collect all subarrays of length L as tuples, count their frequencies using a dictionary.
+- If any subarray has frequency 1, then L is feasible.
+- We want the minimal L, so we can binary search L from 1 to n.
+
+The check for a fixed L takes $O(n \cdot L)$ time because each tuple has length L and we create n-L+1 tuples. In the worst case, if the answer is large, say $n/2$, then the check for L=n/2 takes $O(n^2/2)$ which is too slow.
+
+But note: we can use a rolling hash to compute the hash of each subarray in $O(1)$ per subarray after $O(L)$ preprocessing? Actually, for a fixed L, we can compute rolling hash in $O(n)$ time. But we have to be careful with collisions.
+
+Given the constraints and time limit, we can try the following:
+- Iterate L from 1 to n.
+- For each L, compute hashes of all subarrays of length L using a rolling hash (e.g., polynomial rolling hash).
+- Use a dictionary to count frequencies of each hash.
+- To handle collisions, for hashes with frequency 1, verify the actual subarray is unique? Or use a double hash to minimize collisions.
+- If any hash has frequency 1, then return L.
+
+But worst-case, if the answer is large, we do many iterations. However, note that in many cases, the answer is small. For example, in Example 2, the answer is 1. In Example 3, the answer is 2. In Example 1, the answer is 3. 
+
+But worst-case: all elements distinct. Then length 1 subarrays: each appears once, so answer is 1. So worst-case for binary search is when the array has many duplicates. 
+
+Actually, the worst-case for the linear scan is when the answer is large. For example, [1,1,1,...,1] (n times). Then for L=1 to n-1, all subarrays are duplicates. Only at L=n, it is unique. So we check L=1: n subarrays, each tuple of length 1 -> O(n). L=2: n-1 subarrays, each tuple of length 2 -> O(n). ... L=n: 1 subarray -> O(1). Total O(n^2). This is too slow for n=10^5.
+
+We need a better approach.
+
+### Better Approach: Suffix Automaton or Suffix Array
+We can use a Suffix Automaton to count the number of occurrences of each subarray. Each node in the suffix automaton represents a set of substrings. The endpos set size (or the cnt field) tells the number of occurrences. We want the shortest substring (smallest length) that has occurrence count 1.
+
+In a Suffix Automaton:
+- Each state `u` has `len(u)`: the length of the longest substring in the equivalence class.
+- `minlen(u) = len(link(u)) + 1`, where `link(u)` is the suffix link.
+- The substrings represented by state `u` have lengths in `[minlen(u), len(u)]`.
+- Each state has a `cnt` (or `endpos` size) which is the number of occurrences of the substrings in that state.
+
+We want the minimum length `l` such that there is a substring of length `l` that occurs exactly once.
+
+Steps:
+1. Build a Suffix Automaton for the string `nums` (treated as a sequence of integers).
+2. For each state, compute the `cnt` (number of occurrences). This is done by:
+   - Initially, for states created during the extension (the last state after each character addition), set `cnt = 1`.
+   - Then, propagate the counts from longer substrings to their suffix links: for each state in reverse order of length (from longest to shortest), add its count to the count of its suffix link state.
+3. For each state, if `cnt == 1`, then all substrings in this state occur exactly once. The shortest such substring in this state has length `minlen(u) = len(link(u)) + 1`.
+4. The answer is the minimum `minlen(u)` over all states with `cnt == 1`.
+
+Note: The initial state (root) has cnt=0 or should be ignored? Actually, the root represents the empty string. We skip it.
+
+This approach runs in $O(n)$ time.
+
+### Implementation of Suffix Automaton for Integer Array
+
+We'll implement a Suffix Automaton for the list `nums`.
+
+Steps for building:
+- Initialize: last = 0 (root), st[0].len = 0, st[0].link = -1, st[0].next = {}
+- For each character c in nums:
+  - Create a new state cur with len = st[last].len + 1
+  - cnt[cur] = 1 (since this state is created at the current position)
+  - p = last
+  - While p != -1 and c not in st[p].next:
+    - st[p].next[c] = cur
+    - p = st[p].link
+  - If p == -1:
+    - st[cur].link = 0
+  - Else:
+    - q = st[p].next[c]
+    - If st[p].len + 1 == st[q].len:
+      - st[cur].link = q
+    - Else:
+      - Clone state q: create new state clone with len = st[p].len + 1, next = q.next.copy(), link = st[q].link
+      - cnt[clone] = 0 (because it's a clone, not an end position by itself initially)
+      - While p != -1 and st[p].next.get(c) == q:
+        - st[p].next[c] = clone
+        - p = st[p].link
+      - st[q].link = st[cur].link = clone
+  - last = cur
+
+After building, propagate counts:
+- Create a list of states sorted by length descending (or just use the order of creation but reverse, since later states have greater or equal length? Actually, we need to sort by len descending).
+- For each state u in descending order of len (excluding root):
+  - if st[u].link != -1:
+    - cnt[st[u].link] += cnt[u]
+
+Then, iterate over all states (except root), if cnt[u] == 1, then candidate = st[u].len if we take the longest? But we want the shortest unique substring. For state u with cnt[u]==1, the shortest substring in this state has length = st[st[u].link].len + 1. Why? Because the state u represents substrings with lengths from (st[link(u)].len + 1) to st(u).len. And since the entire class has the same endpos set (size=cnt[u]), all these substrings occur exactly cnt[u] times. So if cnt[u]==1, then the shortest substring in this class has length = st[link(u)].len + 1.
+
+So answer = min{ st[st[u].link].len + 1 for all u with cnt[u]==1 and u != root }
+
+Note: The root is state 0. We skip it.
+
+Let's implement this.
+
+Edge: if no state has cnt==1? But the entire string is always a subarray that appears once? Actually, the entire string is represented by the last state (or a state that has the entire string). So there will be at least one state with cnt==1.
+
+But note: the root state has link=-1. We skip root.
+
+Let's code accordingly.
+
+Complexity: O(n) time and space.
+
+```python
+class Solution:
+    def smallestUniqueSubarray(self, nums: list[int]) -> int:
+        # Suffix Automaton implementation
+        # Each state: [len, link, next_dict, cnt]
+        # We'll use lists for state attributes for efficiency
+        
+        # Initialize root state
+        st_len = [0]
+        st_link = [-1]
+        st_next = [{}]
+        cnt = [0]
+        
+        last = 0  # index of the last state
+        
+        for c in nums:
+            cur = len(st_len)
+            st_len.append(st_len[last] + 1)
+            st_link.append(0)
+            st_next.append({})
+            cnt.append(1)
+            
+            p = last
+            while p != -1 and c not in st_next[p]:
+                st_next[p][c] = cur
+                p = st_link[p]
+            
+            if p == -1:
+                st_link[cur] = 0
+            else:
+                q = st_next[p][c]
+                if st_len[p] + 1 == st_len[q]:
+                    st_link[cur] = q
+                else:
+                    clone = len(st_len)
+                    st_len.append(st_len[p] + 1)
+                    st_link.append(st_link[q])
+                    st_next.append(st_next[q].copy())
+                    cnt.append(0)
+                    
+                    while p != -1 and st_next[p].get(c) == q:
+                        st_next[p][c] = clone
+                        p = st_link[p]
+                    
+                    st_link[q] = clone
+                    st_link[cur] = clone
+            last = cur
+        
+        # Propagate counts from longer states to their suffix links
+        # Get states sorted by length descending
+        states_by_len = sorted(range(len(st_len)), key=lambda i: st_len[i], reverse=True)
+        
+        for u in states_by_len:
+            if u == 0:
+                continue
+            link = st_link[u]
+            if link != -1:
+                cnt[link] += cnt[u]
+        
+        # Find the minimum minlen for states with cnt==1
+        ans = float('inf')
+        for u in range(1, len(st_len)):  # skip root (0)
+            if cnt[u] == 1:
+                # The shortest substring in this state has length = st_len[st_link[u]] + 1
+                link = st_link[u]
+                min_len = st_len[link] + 1
+                if min_len < ans:
+                    ans = min_len
+                    
+        return ans
+```
+
+Let's test with examples.
+
+Example 1: [3,3,3]
+States:
+- Start: root(0): len=0, link=-1, next={}
+- Add 3: cur=1, len=1, link=0, cnt[1]=1. 
+  - p=0, 3 not in st_next[0] -> st_next[0][3]=1, p=-1 -> st_link[1]=0.
+- Add 3: cur=2, len=2, cnt[2]=1.
+  - p=1, 3 in st_next[1]? no, so st_next[1][3]=2, p=st_link[1]=0.
+  - p=0, 3 in st_next[0]? yes, q=1.
+  - st_len[0]+1=1, st_len[1]=1 -> equal, so st_link[2]=1.
+- Add 3: cur=3, len=3, cnt[3]=1.
+  - p=2, 3 not in st_next[2]? -> st_next[2][3]=3, p=st_link[2]=1.
+  - p=1, 3 in st_next[1]? yes, q=2.
+  - st_len[1]+1=2, st_len[2]=2 -> equal, st_link[3]=2.
+
+Counts after propagation:
+Sort by len desc: [3(len=3), 2(len=2), 1(len=1), 0(len=0)]
+- u=3: link=2, cnt[2] += cnt[3] -> cnt[2]=1+1=2
+- u=2: link=1, cnt[1] += cnt[2] -> cnt[1]=1+2=3
+- u=1: link=0, cnt[0] += cnt[1] -> cnt[0]=0+3=3
+- u=0: skip
+
+Check states with cnt==1: 
+- state 3: cnt[3]=1 -> min_len = st_len[st_link[3]]+1 = st_len[2]+1 = 2+1=3.
+- state 2: cnt[2]=2 -> skip
+- state 1: cnt[1]=3 -> skip
+ans=3. Correct.
+
+Example 2: [2,1,2,3,3]
+We'll build the automaton. The unique subarray of length 1 is [1]. So answer should be 1.
+
+In the automaton, the state corresponding to "1" will have cnt=1. Its link will be root (len=0), so min_len=1.
+
+Example 3: [1,1,2,2,1]
+Answer=2. There is a unique subarray of length 2, e.g., [1,1] appears once? Actually, [1,1] appears once, [1,2] once, [2,2] once, [2,1] once. So minimal unique length is 2.
+
+In the automaton, there will be states with cnt=1 for substrings of length 2. The min_len for such a state will be 2.
+
+This approach should work.
+
+Let's write the code accordingly.
+
+Note: We must be cautious with the state indices and the propagation.
+
+Final Code:
+
+```python
+class Solution:
+    def smallestUniqueSubarray(self, nums: list[int]) -> int:
+        # Initialize the suffix automaton
+        st_len = [0]
+        st_link = [-1]
+        st_next = [{}]
+        cnt = [0]
+        
+        last = 0
+        
+        for c in nums:
+            cur = len(st_len)
+            st_len.append(st_len[last] + 1)
+            st_link.append(0)
+            st_next.append({})
+            cnt.append(1)
+            
+            p = last
+            while p != -1 and c not in st_next[p]:
+                st_next[p][c] = cur
+                p = st_link[p]
+            
+            if p == -1:
+                st_link[cur] = 0
+            else:
+                q = st_next[p][c]
+                if st_len[p] + 1 == st_len[q]:
+                    st_link[cur] = q
+                else:
+                    clone = len(st_len)
+                    st_len.append(st_len[p] + 1)
+                    st_link.append(st_link[q])
+                    st_next.append(st_next[q].copy())
+                    cnt.append(0)
+                    
+                    while p != -1 and st_next[p].get(c) == q:
+                        st_next[p][c] = clone
+                        p = st_link[p]
+                    
+                    st_link[q] = clone
+                    st_link[cur] = clone
+            last = cur
+        
+        # Sort states by length in descending order
+        states_by_len = sorted(range(len(st_len)), key=lambda i: st_len[i], reverse=True)
+        
+        # Propagate counts
+        for u in states_by_len:
+            if u == 0:
+                continue
+            link = st_link[u]
+            if link != -1:
+                cnt[link] += cnt[u]
+        
+        # Find the minimum length of a unique subarray
+        ans = float('inf')
+        for u in range(1, len(st_len)):
+            if cnt[u] == 1:
+                link = st_link[u]
+                min_len = st_len[link] + 1
+                if min_len < ans:
+                    ans = min_len
+        
+        return ans
+```
+
+This should run in O(n) time and space.
+[finish_reason: stop | provider: DeepInfra | reasoning chars: 0 | usage: {'prompt_tokens': 617, 'completion_tokens': 4251, 'total_tokens': 4868, 'cost': 0.00410015, 'is_byok': False, 'prompt_tokens_details': {'cached_tokens': 0, 'cache_write_tokens': 0, 'audio_tokens': 0, 'video_tokens': 0}, 'cost_details': {'upstream_inference_cost': 0.00410015, 'upstream_inference_prompt_cost': 6.17e-05, 'upstream_inference_completions_cost': 0.00403845}, 'completion_tokens_details': {'reasoning_tokens': 0, 'image_tokens': 0, 'audio_tokens': 0}}]

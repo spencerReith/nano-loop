@@ -1,0 +1,293 @@
+
+Assistant: Looking at this problem, I need to:
+1. For each non-zero cell with value x, check all cells within x rows and x columns
+2. Ignore cells where both row distance AND column distance are exactly x
+3. Check if any considered cell has value greater than x
+4. If not, it's a local maximum
+
+Since constraints are n, m ≤ 200 and values ≤ 200, a brute force approach would be O(n*m*max_value²) which could be 200*200*200*200 = 1.6 billion - too slow.
+
+Wait, let me think again. For each cell, we check a square of size (2x+1)². If x can be up to 200, and n,m up to 200... the square would cover the entire matrix anyway. So in the worst case, checking each cell is O(n*m), and there are O(n*m) cells, so total is O(n²m²) = 200⁴ = 1.6 billion. That's too slow for 2 seconds in Python.
+
+Hmm, but let me reconsider. Actually, for a cell with value x, the neighborhood is at most (2x+1)² cells, but clipped to the matrix. If x ≥ max(n, m), the neighborhood covers the whole matrix. So in the worst case, for each non-zero cell we scan O(min(2x+1, n) * min(2x+1, m)) cells.
+
+Worst case: matrix is 200x200 with all values 200. Then each cell scans the full 200x200 matrix = 40,000 cells, times 40,000 cells = 1.6 billion operations. Too slow in Python.
+
+I need a smarter approach. One idea: precompute a 2D prefix maximum structure. We can use a sparse table for 2D range maximum queries, or we can be smarter.
+
+Alternative: for each cell (r, c) with value x, we want to know the maximum value in the rectangle [max(0,r-x), min(n-1,r+x)] × [max(0,c-x), min(m-1,c+x)], excluding the four corner cells (where both distances equal x).
+
+The maximum over the rectangle can be computed with a 2D sparse table in O(1) per query after O(nm log n log m) preprocessing. But we need to exclude corners only if the corners are strictly greater than x... actually we need to check if any considered cell has value > x. The corners are excluded. So we need max over rectangle minus corners.
+
+Approach: compute the max of the rectangle. If max ≤ x, it's a local max. If max > x, we need to check whether all cells achieving values > x are among the excluded corners. 
+
+Simpler: compute max of rectangle excluding up to 4 corner cells. We can do: for the query rectangle, the answer needed is max over (rectangle minus corners). One way: compute rectangle max via sparse table; if rectangle max > x, then check whether the source of >x values could be only corners. But there could be multiple cells with max value.
+
+Alternative simpler approach: exclude corners by computing max of rectangle but compare corners separately. Let rectMax = max over full rectangle. Let cornerMax = max over the (up to 4) corner cells (that are within the matrix and at exact distance x both ways). Then:
+- If rectMax ≤ x: local max.
+- Else: we need to know if there's a non-corner cell with value > x. This requires "second max" or max excluding positions, which is harder with sparse tables.
+
+Alternative: break the rectangle into parts that exclude the corners. The rectangle minus 4 corners is not a rectangle, but we can decompose: if we exclude only the corner cells (single cells), the remaining region can be covered by... hmm.
+
+Actually, easier: the max over (rectangle minus 4 single cells) equals max of:
+- Row range [r1, r1] × [c1+1, c2-1] (top row excluding corners)
+- Row range [r2, r2] × [c1+1, c2-1] (bottom row excluding corners)
+- Row range [r1+1, r2-1] × [c1, c2] (middle rows full width)
+
+These are up to 3 rectangles. Each can be answered with a 2D sparse table in O(1). Or with 2D prefix sums we can't do max.
+
+Alternatively, we could use a 2D sparse table (O(nm log n log m) space, ~200*200*8*8 = 2.56M entries - fine).
+
+Alternatively, use a segment tree approach: for each row, build a sparse table over columns (1D RMQ per row). Then a 2D query can be done by... no, that's for each row, not a row range.
+
+Hmm, actually another thought: since values are ≤ 200 but n,m ≤ 200, the neighborhood (2x+1)² where x = matrix value. For small x, brute force is cheap. For large x, neighborhood is large but... number of cells with large x might be large too.
+
+Actually, let me think about the actual worst-case complexity of brute force more carefully. Sum over all cells of (2x+1)² clipped. If all cells have value 200, it's 40000 cells × 40000 = 1.6e9. Definitely too slow.
+
+So I need range-max queries. Let me implement a 2D sparse table. Actually, simpler: since we only need to compare against x, maybe we can do something with counting values greater than x. But x varies per cell.
+
+Let me just implement a 2D sparse table:
+
+Precompute st[kx][ky][i][j] = max over rectangle with top-left (i,j), height 2^kx, width 2^ky. Memory: 8*8*200*200 = 2.56M integers. In Python that's a lot of memory/time. Hmm, 2.56M Python ints in nested lists... maybe 100+ MB overhead? Actually Python ints are ~28 bytes, so 2.56M × 28 ≈ 72 MB plus list overhead. Risky.
+
+Better: build sparse table where we only sparsify rows, and for each row-block level store a 1D sparse table over columns? That's the standard 2D sparse table, same memory.
+
+Alternative: Use a segment tree over rows, where each node contains a segment tree over columns - too heavy in Python.
+
+Alternative approach: For each cell, we need max in square. Instead, use the "sliding window maximum" twice trick? That gives max over a fixed-size window, but window size varies per cell (depends on x).
+
+Alternative approach: sort cells by value descending, and use a union-find / activation structure. Process values from high to low. Hmm, think: cell (r,c) with value x is NOT a local max iff there exists a cell (r',c') with value > x, |r-r'| ≤ x, |c-c'| ≤ x, and not (|r-r'| = x and |c-c'| = x).
+
+Process cells in decreasing order of value, maintaining a data structure of "activated" cells (those with value > current x). For each query cell, we ask: is there an activated cell in the square, excluding the 4 exact corners? 
+
+A 2D range query "does there exist a point in rectangle" can be done with a 2D BIT (Fenwick) storing counts: add activated points, query rectangle sum. That's O(log² n) per operation. Total O(nm log² n) ≈ 40000 × 64 ≈ 2.56M operations - fine in Python.
+
+But wait, we need to exclude the 4 corners. Query rectangle sum minus corner sums. Corners are specific points; we can query point values at the 4 corners (only those inside the matrix, and corners are at (r±x, c±x)). Since corners are part of the rectangle (rectangle is inclusive [r-x, r+x] × [c-x, c+x], corners are exactly the 4 corners of this rectangle!). So: considered region = rectangle minus its 4 corners. Count of activated cells in rectangle minus activated cells among the 4 corners. If > 0, then there exists a higher-value considered cell → not a local max. Otherwise local max.
+
+Careful with clipping: "Ignore cells that are outside the matrix." So the rectangle is clipped to the matrix bounds. Corners of the clipped rectangle might differ from (r±x, c±x). The excluded cells are those where both row distance and column distance are exactly x, i.e., exactly (r±x, c±x) that are inside the matrix. So the excluded points are at most 4 specific points, independent of clipping. So:
+
+count = rectSum(max(0,r-x), max(0,c-x), min(n-1,r+x), min(m-1,c+x)) - sum of point values at (r±x, c±x) for those inside the matrix.
+
+If count > 0, there is an activated cell (value > x) in the considered region → not local max. Else local max.
+
+Processing order: descending value. For cells with equal values: they should not see each other (since we only care about cells with strictly greater value). So process all queries for value x before adding cells of value x. Group by value.
+
+Data structure: 2D Fenwick tree (200×200), point updates (add 1), rectangle sum queries. O(log²200) ≈ 56 operations per query. 40,000 updates + 40,000 queries × 56 ≈ 4.5M ops. Should run within 2 seconds in Python, maybe borderline but likely fine with optimized Fenwick.
+
+Alternatively, since we just need existence and values are added in descending order... a 2D BIT is fine.
+
+Actually, even simpler: a 2D prefix sum can't handle dynamic additions. BIT it is.
+
+Let me also double check example 3: matrix = [[1,0,1],[0,1,0],[1,0,1]]. All five 1's. For a 1-cell, x=1, considered cells are within 1 row/col, excluding cells where both distances = 1 (the 4 diagonal cells). So considered = cross (self + 4-directional neighbors). For corner cell (0,0) value 1: neighbors (0,1)=0, (1,0)=0 → max 0 ≤ 1, plus itself... wait, does the cell consider itself? The cell itself is at distance (0,0), which is within x rows/cols, and not excluded (both distances = x requires x=0... x=1, so no). So self is considered, but self has value 1, not greater than 1. So fine. All 5 ones are local maxima. Output 5. ✓
+
+Example 2: [[1,2],[3,4]]. Process descending: 4 first: query for 4 before adding: no activated cells → local max. Add 4. Then 3 at (1,0): x=3, rectangle clipped = whole matrix. Activated cells = {4 at (1,1)}. Is (1,1) a corner? Corners at (1±3, 0±3) - all out of matrix. So count = 1 > 0 → not local max. Similarly 2 and 1 see greater cells → not local max. Output 1. ✓
+
+Example 1: single 2 → 1. ✓
+
+Example 4: all 1's. Each sees only equal values (none strictly greater, since all equal are added in same batch after queries). Output 4. ✓
+
+Great, approach works.
+
+Implementation:
+
+```python
+class Solution:
+    def countLocalMaximums(self, matrix):
+        n = len(matrix)
+        m = len(matrix[0])
+        
+        # 2D Fenwick tree
+        bit = [[0]*(m+1) for _ in range(n+1)]
+        
+        def update(r, c, delta):
+            i = r+1
+            while i <= n:
+                j = c+1
+                row = bit[i]
+                while j <= m:
+                    row[j] += delta
+                    j += j & -j
+                i += i & -i
+        
+        def query(r, c):
+            # sum of [0..r][0..c]
+            s = 0
+            i = r+1
+            while i > 0:
+                j = c+1
+                row = bit[i]
+                while j > 0:
+                    s += row[j]
+                    j -= j & -j
+                i -= i & -i
+            return s
+        
+        def rectSum(r1, c1, r2, c2):
+            if r1 > r2 or c1 > c2:
+                return 0
+            res = query(r2, c2)
+            if r1 > 0:
+                res -= query(r1-1, c2)
+            if c1 > 0:
+                res -= query(r2, c1-1)
+            if r1 > 0 and c1 > 0:
+                res += query(r1-1, c1-1)
+            return res
+        
+        # group cells by value
+        from collections import defaultdict
+        byVal = defaultdict(list)
+        for r in range(n):
+            for c in range(m):
+                v = matrix[r][c]
+                if v > 0:
+                    byVal[v].append((r,c))
+        
+        ans = 0
+        for v in sorted(byVal.keys(), reverse=True):
+            cells = byVal[v]
+            # query phase
+            for (r, c) in cells:
+                x = v
+                r1 = r - x
+                if r1 < 0: r1 = 0
+                r2 = r + x
+                if r2 >= n: r2 = n-1
+                c1 = c - x
+                if c1 < 0: c1 = 0
+                c2 = c + x
+                if c2 >= m: c2 = m-1
+                cnt = rectSum(r1, c1, r2, c2)
+                # subtract corners (r±x, c±x) inside matrix
+                for dr in (-x, x):
+                    rr = r + dr
+                    if 0 <= rr < n:
+                        for dc in (-x, x):
+                            cc = c + dc
+                            if 0 <= cc < m:
+                                cnt -= rectSum(rr, cc, rr, cc)
+                if cnt == 0:
+                    ans += 1
+            # update phase
+            for (r, c) in cells:
+                update(r, c, 1)
+        
+        return ans
+```
+
+Wait — one subtlety: the same cell could be counted twice as a corner if x = 0, but x ≥ 1 always (non-zero cells). Also dr pairs (-x, x) give distinct rows unless x=0. Fine.
+
+Another subtlety: corner cells at distance exactly x in both directions — there are exactly 4 such positions, each unique for x ≥ 1. Good.
+
+Complexity: O(nm log² n) ≈ 40000 × (up to 6 queries of log² each). Each rectSum does up to 4 prefix queries, each O(log n × log m) ≈ 8×8 = 64 steps. Per cell: 1 rectangle + 4 corner points = 5 rectSums ≈ 20 prefix queries ≈ 1280 steps... times 40000 cells = 51M steps. That might be too slow in Python! Hmm.
+
+Let me reduce: corner point queries can be answered by just checking whether that corner cell is activated — but we need to know if it's activated (added earlier, i.e., value > x). Instead of querying BIT for point, we can check the matrix value directly: corner cell (rr, cc) is activated iff matrix[rr][cc] > x (strictly greater, since processing descending and ties added later). That's O(1)!
+
+So: cnt = rectSum(r1,c1,r2,c2) - number of corners (rr,cc) inside matrix with matrix[rr][cc] > x.
+
+That reduces to 1 rectSum (4 prefix queries ≈ 256 steps) + O(1) per cell. 40000 × 256 ≈ 10M steps. Should be okay, maybe ~2-3s in Python. Borderline. Let me optimize the BIT loops.
+
+Actually log2(200) ≈ 7.6, so prefix query ≈ 8×8=64 iterations worst case but average less. 4 prefix queries per rectSum, ~40000 cells → ~10M inner iterations. Python does ~30-50M simple ops per second... borderline but probably OK within 2s? Might be tight. Let me think of optimizations.
+
+Alternative: since n, m ≤ 200, we can precompute... hmm.
+
+Alternative optimization: Use one BIT query function and inline bounds. Also, many cells have small x; the rectangle is small. Could we brute-force small rectangles directly? For x ≤ some threshold B, scan the (2x+1)² cells directly (clipped), checking matrix values and corners. For large x, use BIT. With B = 16, brute force cost per cell ≤ 33² ≈ 1089 ops, but such cells with x≤16 scanning matrix directly with early exit... average much less. Number of cells with large x: could be all 40000 (e.g., all values 200). Then all use BIT: 40000 rectSums.
+
+Hmm. Alternatively use 2D sparse table for O(1) queries. Memory: 8×8×200×200 = 2.56M ints. Build time: 2.56M×small. In Python, that's a lot. Hmm.
+
+Alternative: a row-sparse-table approach: For 2D RMQ, there's a method: build sparse table over rows for each "column segment tree"... same thing.
+
+Alternative simpler: 2D sliding window max per distinct window size? Distinct x values ≤ 200... For each distinct value x present, compute max over all (2x+1)×(2x+1) windows using separable sliding window max (deque): O(nm) per distinct x. With 200 distinct values: 200 × 40000 = 8M ops × 2 passes = 16M. Hmm also heavy but simple. But number of distinct values in matrix could be up to 200, worst case 8M deque operations... maybe too slow too.
+
+Actually wait — think again about the BIT approach count. Not all cells are non-zero necessarily, but worst case all are non-zero. 40,000 cells, each 1 rectSum = 4 prefix sums. Prefix sum: i from r+1 down via i -= i&-i: average number of iterations = average number of 1 bits ≈ 4 for numbers up to 200. Similarly inner loop average ~4. So ~16 iterations average per prefix query, 64 per rectSum, 2.56M total iterations for queries plus updates (updates: i goes up, ~log - popcount... average ~4-5, similar 2.5M for 40000 updates... wait updates are 40000 too, each O(log²) ≈ 64). Total maybe ~5M inner iterations. That's fine, < 1s probably.
+
+Worst-case iteration counts are fine. Let me just write clean code.
+
+Let me also handle a micro-optimization: precompute for the corner checks using matrix values directly.
+
+Edge case: x can be up to 200; r±x may go out of bounds — handled by clipping and corner checks.
+
+Now write solution.py and test.py.
+
+Let me write the BIT with local variable references for speed.
+
+```python
+class Solution:
+    def countLocalMaximums(self, matrix: list[list[int]]) -> int:
+        n = len(matrix)
+        m = len(matrix[0])
+        bit = [[0] * (m + 1) for _ in range(n + 1)]
+
+        # group non-zero cells by value
+        by_val = {}
+        for r in range(n):
+            row = matrix[r]
+            for c in range(m):
+                v = row[c]
+                if v:
+                    by_val.setdefault(v, []).append((r, c))
+
+        def prefix(i, j):
+            # sum over rows [0, i), cols [0, j)
+            s = 0
+            while i > 0:
+                brow = bit[i]
+                jj = j
+                while jj > 0:
+                    s += brow[jj]
+                    jj -= jj & -jj
+                i -= i & -i
+            return s
+
+        ans = 0
+        for x in sorted(by_val, reverse=True):
+            cells = by_val[x]
+            for r, c in cells:
+                r1 = r - x
+                if r1 < 0:
+                    r1 = 0
+                r2 = r + x
+                if r2 >= n:
+                    r2 = n - 1
+                c1 = c - x
+                if c1 < 0:
+                    c1 = 0
+                c2 = c + x
+                if c2 >= m:
+                    c2 = m - 1
+                cnt = (prefix(r2 + 1, c2 + 1)
+                       - prefix(r1, c2 + 1)
+                       - prefix(r2 + 1, c1)
+                       + prefix(r1, c1))
+                # subtract excluded corners that have greater value
+                mrow = matrix
+                for rr in (r - x, r + x):
+                    if 0 <= rr < n:
+                        rowv = mrow[rr]
+                        for cc in (c - x, c + x):
+                            if 0 <= cc < m and rowv[cc] > x:
+                                cnt -= 1
+                if cnt == 0:
+                    ans += 1
+            # add these cells
+            for r, c in cells:
+                i = r + 1
+                while i <= n:
+                    brow = bit[i]
+                    j = c + 1
+                    while j <= m:
+                        brow[j] += 1
+                        j += j & -j
+                    i += i & -i
+        return ans
+```
+
+Wait, corner coordinates: (r-x, c-x), (r-x, c+x), (r+x, c-x), (r+x, c+x). My loops handle that. Also note r-x == r+x only if x==0, not possible. Good.
+
+One more check: corners must be inside the matrix AND we subtract only if that corner cell has value > x (i.e., it's activated and counted in rectSum). Since rectSum counts activated cells (values > x) in the clipped rectangle, and corners inside matrix are within the clipped rectangle (they're at distance exactly x, and clipping only shrinks toward the cell... wait, is a corner inside the matrix always inside the clipped rectangle? The clipped rectangle is [max(0,r-x), min(n-1,r+x)] × [max(0,c-x), min(m-1,c+x)]. Corner (r-x, c-x): if 0 ≤ r-x < n and 0 ≤ c-x < m, then r-x ≥ max(0, r-x) — yes it equals the bound, and ≤ min(n-1, r+x) since r-x ≤ r+x and r-x < n. Yes, inside. Good.
+
+Double counting: rectSum counts each activated corner once; we subtract each qualifying corner once. Good.
+
+Test the examples. Also maybe test an edge case: single cell [[5]] → no greater cells → 1.
+
+Let me write the test file with all 4 examples, run it.
