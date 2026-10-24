@@ -6,7 +6,7 @@ A most-simple implementation of the Claude Code architecture, that is actually e
 <sub>Inspired by Karpathy's [nanoGPT](https://github.com/karpathy/nanoGPT).</sub>
 
 Most harnesses claiming to achieve the above fall short for one of two reasons:
-1) There is far more code, and are far more features than needed for effective performance (more on the definition of "effective" below).
+1) There is far more code, and are far more features than needed for effective performance (more on the definition of 'effective' below).
 2) They are overly simplistic and claim to demonstrate the Claude Code architecture pattern, but they are never benchmarked against anything.
 
 NanoLoop solves these issues. It is hand-coded and demonstrates the minimum functionality required to make an effective coding agent.
