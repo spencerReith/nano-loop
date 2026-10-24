@@ -5,7 +5,8 @@ core query loop
 """
 
 import ast
-from dotenv import load_dotenv 
+import json
+from dotenv import load_dotenv
 from functools import partial
 
 
@@ -73,12 +74,15 @@ class NanoLoop:
             self.msg_history.append(response_block)
             if tool_calls:
                 for idx in tool_calls.keys():
-                    cleaned_tool_call = {
-                        "id": tool_calls[idx]['id'],
-                        "name": tool_calls[idx]['function']['name'],
-                        "arguments": ast.literal_eval(tool_calls[idx]['function']['arguments'])
-                    }
-                    tool_response_block = self.tool_processor.use_tool(cleaned_tool_call)
+                    try:
+                        cleaned_tool_call = {
+                            "id": tool_calls[idx]['id'],
+                            "name": tool_calls[idx]['function']['name'],
+                            "arguments": json.loads(tool_calls[idx]['function']['arguments'])
+                        }
+                        tool_response_block = self.tool_processor.use_tool(cleaned_tool_call)
+                    except Exception as e:
+                        tool_response_block = {"role": "tool", "tool_call_id": tool_calls[idx]['id'], "content": f"Tool call failed: {e!r}. Fix it and try again."}
                     self.msg_history.append(tool_response_block)
                 ASK_INPUT = False
                 continue
