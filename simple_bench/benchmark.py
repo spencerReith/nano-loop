@@ -15,8 +15,8 @@ import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
-from sandbox import Sandbox
-from main import NanoLoop
+from shared.sandbox import Sandbox
+from nano_loop.main import NanoLoop
 from control.main import Control
 
 DEFAULT_MODELS = ["ibm-granite/granite-4.2-8b"]
@@ -70,8 +70,8 @@ done(status="PASS", seconds=round(time.perf_counter() - start, 3))
 
 def load_problems():
     problems = {}
-    for md in sorted(pathlib.Path("problems").glob("*.md")):
-        cases = pathlib.Path("cases") / f"{md.stem}.json"
+    for md in sorted(pathlib.Path("simple_bench/problems").glob("*.md")):
+        cases = pathlib.Path("simple_bench/cases") / f"{md.stem}.json"
         if not cases.exists():
             print(f"skipping {md.stem}: no cases file")
             continue
@@ -136,7 +136,7 @@ def main(models=None):
     models = models or sys.argv[1:] or DEFAULT_MODELS
     problems = load_problems()
     run_id = time.strftime("%Y%m%d-%H%M%S")
-    out = pathlib.Path("results") / f"{run_id}.json"
+    out = pathlib.Path("simple_bench/results") / f"{run_id}.json"
     out.parent.mkdir(exist_ok=True)
     results = {m: {name: {} for name in problems} for m in models}
     lock = threading.Lock()
@@ -154,7 +154,7 @@ def main(models=None):
         started[(model, name, agent_name)] = time.time()
         log_path = None
         if LOG_TO_FILES:
-            log_dir = pathlib.Path("logs") / run_id / model.replace("/", "__")
+            log_dir = pathlib.Path("simple_bench/logs") / run_id / model.replace("/", "__")
             log_dir.mkdir(parents=True, exist_ok=True)
             log_path = log_dir / f"{name}_{agent_name}.log"
         return run_agent(AGENTS[agent_name], model, problems[name], log_path, agents, (model, name, agent_name))

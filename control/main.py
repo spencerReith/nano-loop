@@ -3,7 +3,7 @@ main.py
 
 single-turn llm call
 """
-from llm import ModelInvoker
+from shared.llm import ModelInvoker
 from dotenv import load_dotenv
 
 

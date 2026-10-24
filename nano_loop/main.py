@@ -12,25 +12,25 @@ from functools import partial
 
 load_dotenv()
 
-from tool_definitions.write_file import write_file, write_file_header
-from tool_definitions.read_file import read_file, read_file_header
-from tool_definitions.run_python import run_python, run_python_header
-from llm import ModelInvoker
-from sandbox import Sandbox
+from nano_loop.tool_definitions.write_file import write_file, write_file_header
+from nano_loop.tool_definitions.read_file import read_file, read_file_header
+from nano_loop.tool_definitions.run_python import run_python, run_python_header
+from shared.llm import ModelInvoker
+from shared.sandbox import Sandbox
 
-SOLVER_PROMPT = open("system_prompts/solver_v2.md").read()
+SOLVER_PROMPT = open("nano_loop/system_prompts/solver_v2.md").read()
 
 
 
 class ToolProcessor:
     def __init__(self, sandbox):
         self.tool_map = {
-                        "get_weather": {"path": "tool_definitions/get_weather.py", "function": get_weather},
-                        "get_population": {"path": "tool_definitions/get_population.py", "function": get_population},
-                        "write_file": {"path": "tool_definitions/write_file.py", "function": partial(write_file, sandbox=sandbox)},
-                        "read_file": {"path": "tool_definitions/read_file.py", "function": partial(read_file, sandbox=sandbox)},
-                        "run_python": {"path": "tool_definitions/run_python.py", "function": partial(run_python, sandbox=sandbox)},
-                        "submit": {"path": "tool_definitions/submit.py", "function": submit},
+                        "get_weather": {"path": "nano_loop/tool_definitions/get_weather.py", "function": get_weather},
+                        "get_population": {"path": "nano_loop/tool_definitions/get_population.py", "function": get_population},
+                        "write_file": {"path": "nano_loop/tool_definitions/write_file.py", "function": partial(write_file, sandbox=sandbox)},
+                        "read_file": {"path": "nano_loop/tool_definitions/read_file.py", "function": partial(read_file, sandbox=sandbox)},
+                        "run_python": {"path": "nano_loop/tool_definitions/run_python.py", "function": partial(run_python, sandbox=sandbox)},
+                        "submit": {"path": "nano_loop/tool_definitions/submit.py", "function": submit},
                         }
     
     def use_tool(self, cleaned_tool_call):
