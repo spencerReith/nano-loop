@@ -12,14 +12,9 @@ from functools import partial
 
 load_dotenv()
 
-
-
-from tool_definitions.get_weather import get_weather, get_weather_header
-from tool_definitions.get_population import get_population, get_population_header
 from tool_definitions.write_file import write_file, write_file_header
 from tool_definitions.read_file import read_file, read_file_header
 from tool_definitions.run_python import run_python, run_python_header
-from tool_definitions.submit import submit, submit_header
 from llm import ModelInvoker
 from sandbox import Sandbox
 
