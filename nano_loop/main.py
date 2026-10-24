@@ -60,36 +60,41 @@ class NanoLoop:
 
         turns = 0
         empty_calls = 0
-        while LOOPING:
-            if ASK_INPUT:
-                user_msg = input("\nUser: ")
-                self.msg_history.append({"role": "user", "content": user_msg})
-            response_block, tool_calls = self.model_invoker.invoke(self.msg_history, self.tool_catologue)
-            self.msg_history.append(response_block)
-            turns += 1
-            empty_calls = empty_calls + 1 if not tool_calls and not response_block["content"].strip() else 0
-            if self.HEADLESS and empty_calls == 3:
-                return ""
-            if self.HEADLESS and turns == 50:
-                return response_block["content"]
-            if tool_calls:
-                for idx in tool_calls.keys():
-                    try:
-                        cleaned_tool_call = {
-                            "id": tool_calls[idx]['id'],
-                            "name": tool_calls[idx]['function']['name'],
-                            "arguments": json.loads(tool_calls[idx]['function']['arguments'])
-                        }
-                        tool_response_block = self.tool_processor.use_tool(cleaned_tool_call)
-                    except Exception as e:
-                        tool_response_block = {"role": "tool", "tool_call_id": tool_calls[idx]['id'], "content": f"Tool call failed: {e!r}. Fix it and try again."}
-                    self.msg_history.append(tool_response_block)
-                ASK_INPUT = False
-                continue
-
-            if self.HEADLESS:
-                if "```" in (response_block["content"] or ""):   # has a final code block -> done
+        try:
+            while LOOPING:
+                if ASK_INPUT:
+                    user_msg = input("\nUser: ")
+                    self.msg_history.append({"role": "user", "content": user_msg})
+                response_block, tool_calls = self.model_invoker.invoke(self.msg_history, self.tool_catologue)
+                self.msg_history.append(response_block)
+                turns += 1
+                empty_calls = empty_calls + 1 if not tool_calls and not response_block["content"].strip() else 0
+                if self.HEADLESS and empty_calls == 3:
+                    return ""
+                if self.HEADLESS and turns == 50:
                     return response_block["content"]
-                self.msg_history.append({"role": "user", "content": "Continue. Use your tools, and when you're done reply with the full solution.py in one ```python block."})
-                continue
-            ASK_INPUT = True
+                if tool_calls:
+                    for idx in tool_calls.keys():
+                        try:
+                            cleaned_tool_call = {
+                                "id": tool_calls[idx]['id'],
+                                "name": tool_calls[idx]['function']['name'],
+                                "arguments": json.loads(tool_calls[idx]['function']['arguments'])
+                            }
+                            tool_response_block = self.tool_processor.use_tool(cleaned_tool_call)
+                        except Exception as e:
+                            tool_response_block = {"role": "tool", "tool_call_id": tool_calls[idx]['id'], "content": f"Tool call failed: {e!r}. Fix it and try again."}
+                        self.msg_history.append(tool_response_block)
+                    ASK_INPUT = False
+                    continue
+
+                if self.HEADLESS:
+                    if "```" in (response_block["content"] or ""):   # has a final code block -> done
+                        return response_block["content"]
+                    self.msg_history.append({"role": "user", "content": "Continue. Use your tools, and when you're done reply with the full solution.py in one ```python block."})
+                    continue
+                ASK_INPUT = True
+        finally:
+            self.sandbox.kill()
+        
+        
