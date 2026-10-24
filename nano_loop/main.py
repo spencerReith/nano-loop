@@ -25,12 +25,9 @@ SOLVER_PROMPT = open("nano_loop/system_prompts/solver_v2.md").read()
 class ToolProcessor:
     def __init__(self, sandbox):
         self.tool_map = {
-                        "get_weather": {"path": "nano_loop/tool_definitions/get_weather.py", "function": get_weather},
-                        "get_population": {"path": "nano_loop/tool_definitions/get_population.py", "function": get_population},
                         "write_file": {"path": "nano_loop/tool_definitions/write_file.py", "function": partial(write_file, sandbox=sandbox)},
                         "read_file": {"path": "nano_loop/tool_definitions/read_file.py", "function": partial(read_file, sandbox=sandbox)},
                         "run_python": {"path": "nano_loop/tool_definitions/run_python.py", "function": partial(run_python, sandbox=sandbox)},
-                        "submit": {"path": "nano_loop/tool_definitions/submit.py", "function": submit},
                         }
     
     def use_tool(self, cleaned_tool_call):
