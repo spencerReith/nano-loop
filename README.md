@@ -15,11 +15,11 @@ NanoLoop solves these issues. It is hand-coded and demonstrates the minimum func
 
 ## Experiment
 
-NanoLoop is a harness that lives in nano-loop/. It runs a Claude-Code style query loop, tool registry and processor, and Docker sandboxing for file reading, writing, and python execution.
+NanoLoop is a harness that lives in nano_loop/. It runs a Claude-Code style query loop, tool registry and processor, and Docker sandboxing for file reading, writing, and python execution.
 
 Control is a harness that lives in control/. It simply performs an LLM call with an equivelent system prompt to NanoLoop.
 
-SimpleBench is a benchmark of 102 questions. It is comprised of all publically available LeetCode Medium and Hard problems from the last 6 months that follow standard formatting. It uses threading to simultaneously allow NanoLoop and Control to answer the benchmark's question catologue. It then runs a grading process in Docker.
+SimpleBench is a benchmark of 102 questions, living in simple_bench. It is comprised of all publically available LeetCode Medium and Hard problems from the last 6 months that follow standard formatting. It uses threading to simultaneously allow NanoLoop and Control to answer the benchmark's question catologue. It then runs a grading process in Docker.
 
 I ran NanoLoop and Control on SimpleBench, across 2 SLMs (ibm-granite/granite-4.2-8b, nvidia/nemotron-3.5-lightning) and 1 LLM (moonshotai/kimi-k3, reasoning off).
 
