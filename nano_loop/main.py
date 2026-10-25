@@ -89,7 +89,7 @@ class NanoLoop:
                     continue
 
                 if self.HEADLESS:
-                    if "```" in (response_block["content"] or ""):   # has a final code block -> done
+                    if "```" in (response_block["content"] or ""):
                         return response_block["content"]
                     self.msg_history.append({"role": "user", "content": "Continue. Use your tools, and when you're done reply with the full solution.py in one ```python block."})
                     continue
